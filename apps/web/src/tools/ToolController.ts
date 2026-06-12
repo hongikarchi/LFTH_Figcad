@@ -15,6 +15,8 @@ export interface Tool {
   up(info: ToolPointerInfo): void;
   /** Esc/도구 전환 시 정리 */
   cancel(): void;
+  /** Rhino RMB 클릭(드래그 없음) = Enter 의미론 — 체인 종료/확정 */
+  enter?(): void;
 }
 
 /** 활성 도구 라우터. InputManager가 펜/마우스좌클릭 이벤트를 여기로 보낸다. */
@@ -38,5 +40,9 @@ export class ToolController {
 
   cancel(): void {
     this.active?.cancel();
+  }
+
+  enter(): void {
+    this.active?.enter?.();
   }
 }

@@ -15,7 +15,7 @@
         --ink: #1d1d1f;
         --ink-soft: #6e6e73;
         --accent: #0a84ff;
-        --glass: rgba(255, 255, 255, 0.78);
+        --glass: rgba(255, 255, 255, 0.8);
         --hairline: rgba(0, 0, 0, 0.08);
         --shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
         --radius: 12px;
@@ -56,142 +56,46 @@
       }
 
       /* ---- 글래스 패널 공통 ---- */
-      .toolbar,
-      .props-panel,
-      .view-nav {
+      .toolbox,
+      .infobox,
+      .navigator,
+      .quick-options {
         background: var(--glass);
         -webkit-backdrop-filter: blur(24px) saturate(1.6);
         backdrop-filter: blur(24px) saturate(1.6);
         border: 1px solid var(--hairline);
         border-radius: var(--radius);
         box-shadow: var(--shadow);
-      }
-
-      /* ---- 툴바: 상단 중앙 필 ---- */
-      .toolbar {
-        position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 14px);
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 4px;
-        align-items: center;
-        padding: 5px;
         z-index: 20;
       }
-      .toolbar button {
-        padding: 9px 18px;
-        border: none;
-        border-radius: 9px;
-        background: transparent;
-        color: var(--ink);
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.12s;
-      }
-      .toolbar button:hover {
-        background: rgba(0, 0, 0, 0.05);
-      }
-      .toolbar button.active {
-        background: var(--ink);
-        color: #fff;
-      }
-      .toolbar select {
-        margin-left: 4px;
-        padding: 8px 10px;
-        border: 1px solid var(--hairline);
-        border-radius: 9px;
-        background: rgba(255, 255, 255, 0.9);
-        color: var(--ink);
-        font-size: 13px;
-        font-weight: 500;
-      }
 
-      /* ---- 속성 패널: 우상단 ---- */
-      .props-panel {
+      /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */
+      .toolbox {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 14px);
-        right: calc(env(safe-area-inset-right, 0px) + 14px);
-        width: 216px;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        z-index: 20;
-      }
-      .props-panel h3 {
-        margin: 0;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-      }
-      .props-panel label {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--ink-soft);
-        letter-spacing: 0.03em;
-      }
-      .props-panel .readonly {
-        color: var(--ink);
-        font-size: 14px;
-        font-weight: 500;
-        font-variant-numeric: tabular-nums;
-      }
-      .props-panel input,
-      .props-panel select {
-        padding: 9px 10px;
-        border: 1px solid var(--hairline);
-        border-radius: 8px;
-        background: rgba(0, 0, 0, 0.035);
-        color: var(--ink);
-        font-size: 14px;
-        font-variant-numeric: tabular-nums;
-        outline: none;
-      }
-      .props-panel input:focus,
-      .props-panel select:focus {
-        border-color: var(--accent);
-      }
-      .props-panel button.danger {
-        margin-top: 2px;
-        padding: 9px;
-        border: none;
-        border-radius: 8px;
-        background: rgba(0, 0, 0, 0.05);
-        color: #d70015;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      .props-panel button.danger:hover {
-        background: rgba(215, 0, 21, 0.1);
-      }
-
-      /* ---- 뷰 내비게이터: 좌하단 (Revit Project Browser의 경량판) ---- */
-      .view-nav {
-        position: fixed;
-        bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+        top: calc(env(safe-area-inset-top, 0px) + 72px);
         left: calc(env(safe-area-inset-left, 0px) + 14px);
+        width: 104px;
+        max-height: calc(100vh - 160px);
+        overflow-y: auto;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .toolbox-group {
         display: flex;
         flex-direction: column;
         gap: 2px;
-        padding: 6px;
-        min-width: 132px;
-        z-index: 20;
       }
-      .view-nav-title {
-        padding: 4px 10px 6px;
+      .toolbox-group-title {
+        padding: 2px 8px 4px;
         font-size: 10px;
         font-weight: 700;
         color: var(--ink-soft);
         letter-spacing: 0.08em;
       }
-      .view-nav button {
-        padding: 8px 12px;
+      .toolbox button {
+        padding: 7px 10px;
         border: none;
         border-radius: 8px;
         background: transparent;
@@ -202,17 +106,206 @@
         cursor: pointer;
         transition: background 0.12s;
       }
-      .view-nav button:hover {
+      .toolbox button:hover:not(:disabled) {
         background: rgba(0, 0, 0, 0.05);
       }
-      .view-nav button.active {
+      .toolbox button.active {
         background: var(--ink);
         color: #fff;
         font-weight: 600;
       }
-      .view-nav button.add-level {
+      .toolbox button:disabled {
+        color: rgba(0, 0, 0, 0.25);
+        cursor: default;
+      }
+
+      /* ---- Info Box: 상단 가로 (활성 도구/선택 요소 컨텍스트) ---- */
+      .infobox {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 14px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 16px;
+        max-width: calc(100vw - 460px);
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .infobox-title {
+        font-size: 13px;
+        font-weight: 700;
+        padding-right: 2px;
+      }
+      .infobox-field {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .infobox-field label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ink-soft);
+      }
+      .infobox-field .ro {
+        font-size: 13px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .infobox input,
+      .infobox select {
+        padding: 6px 8px;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        background: rgba(0, 0, 0, 0.035);
+        color: var(--ink);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        outline: none;
+        width: 86px;
+      }
+      .infobox select {
+        width: auto;
+        max-width: 150px;
+      }
+      .infobox input:focus,
+      .infobox select:focus {
+        border-color: var(--accent);
+      }
+      .infobox button.danger {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 7px;
+        background: rgba(0, 0, 0, 0.05);
+        color: #d70015;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .infobox button.danger:hover {
+        background: rgba(215, 0, 21, 0.1);
+      }
+      .infobox-hint {
+        font-size: 12px;
+        color: var(--ink-soft);
+      }
+
+      /* ---- Navigator: 우측 (프로젝트 맵 트리) ---- */
+      .navigator {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 72px);
+        right: calc(env(safe-area-inset-right, 0px) + 14px);
+        width: 188px;
+        max-height: calc(100vh - 160px);
+        overflow-y: auto;
+        padding: 10px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .nav-title {
+        padding: 0 8px 6px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .nav-section {
+        padding: 4px 8px;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--ink-soft);
+        letter-spacing: 0.08em;
+      }
+      .nav-subsection {
+        padding: 6px 8px 2px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ink-soft);
+      }
+      .nav-subsection.dim {
+        color: rgba(0, 0, 0, 0.25);
+      }
+      .navigator .nav-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 7px 10px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      .navigator .nav-item.indent {
+        margin-left: 8px;
+      }
+      .navigator .nav-item:hover:not(:disabled) {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .navigator .nav-item.active {
+        background: var(--ink);
+        color: #fff;
+        font-weight: 600;
+      }
+      .navigator .nav-item.active .nav-meta {
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .navigator .nav-item:disabled {
+        color: rgba(0, 0, 0, 0.25);
+        cursor: default;
+      }
+      .navigator .nav-item.add {
         color: var(--ink-soft);
         font-size: 12px;
+      }
+      .nav-meta {
+        font-size: 10px;
+        color: var(--ink-soft);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ---- Quick Options Bar: 하단 ---- */
+      .quick-options {
+        position: fixed;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 14px;
+      }
+      .qo-view {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .qo-label {
+        font-size: 12px;
+        color: var(--ink-soft);
+      }
+      .qo-sep {
+        width: 1px;
+        height: 16px;
+        background: var(--hairline);
+      }
+      .quick-options button {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        line-height: 1;
+      }
+      .quick-options button:hover {
+        background: rgba(0, 0, 0, 0.05);
       }
     </style>
   </head>

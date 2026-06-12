@@ -17,6 +17,8 @@ export class InputManager {
   private cameraButton = -1;
   private cameraPointerId: number | null = null;
   private lastMouse = { x: 0, y: 0 };
+  private cameraDownPos = { x: 0, y: 0 };
+  private cameraMoved = 0; // RMB 클릭(Enter) vs 드래그 판별용 누적 이동량
   private toolPointerId: number | null = null;
   private penActive = false;
 
@@ -66,6 +68,8 @@ export class InputManager {
       this.cameraButton = e.button;
       this.cameraPointerId = e.pointerId;
       this.lastMouse = { x: e.clientX, y: e.clientY };
+      this.cameraDownPos = { x: e.clientX, y: e.clientY };
+      this.cameraMoved = 0;
       return;
     }
     this.toolPointerId = e.pointerId;
@@ -89,8 +93,21 @@ export class InputManager {
         const dx = e.clientX - this.lastMouse.x;
         const dy = e.clientY - this.lastMouse.y;
         this.lastMouse = { x: e.clientX, y: e.clientY };
-        if (this.cameraButton === 2) this.rig.pan(dx, dy);
-        else this.rig.orbit(dx, dy);
+        this.cameraMoved += Math.abs(dx) + Math.abs(dy);
+        // Rhino 바인딩 (docs.mcneel.com / wiki.mcneel.com cameramanipulation) —
+        // 모디파이어는 드래그 중 실시간 평가
+        if (this.cameraButton === 2) {
+          // RMB: Ctrl+Shift=회전(평행 뷰 포함), Shift=팬, Ctrl=줌, 무수식=회전(원근)/팬(평행)
+          if (e.ctrlKey && e.shiftKey) this.rig.rotate(dx, dy);
+          else if (e.shiftKey) this.rig.pan(dx, dy);
+          else if (e.ctrlKey) this.rig.zoomDrag(dy);
+          else this.rig.orbit(dx, dy);
+        } else {
+          // MMB 기본 = 팬, Shift/Alt+MMB = 회전, Ctrl+MMB = 줌 (options/mouse.htm)
+          if (e.ctrlKey) this.rig.zoomDrag(dy);
+          else if (e.shiftKey || e.altKey) this.rig.rotate(dx, dy);
+          else this.rig.pan(dx, dy);
+        }
         this.onChange();
         return;
       }
@@ -109,8 +126,14 @@ export class InputManager {
       // 같은 포인터의 어떤 up이든 카메라 모드 해제 (button 일치 요구 금지)
       const bit = this.cameraButton === 2 ? 2 : 4;
       if ((e.buttons & bit) === 0) {
+        const wasRmb = this.cameraButton === 2;
         this.cameraButton = -1;
         this.cameraPointerId = null;
+        // Rhino: RMB 클릭(드래그 없음) = Enter/명령 반복 → 체인 종료/확정
+        if (wasRmb && this.cameraMoved < 3 && !e.ctrlKey && !e.shiftKey) {
+          this.tools.enter();
+          this.onChange();
+        }
         if (e.button !== 0) return;
       }
     }

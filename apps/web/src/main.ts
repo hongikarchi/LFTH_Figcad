@@ -73,22 +73,64 @@ useUiStore.subscribe((state, prev) => {
   }
 });
 
-// --- 키보드 ---
+// --- 키보드 (PageUp/Down 줌, 화살표 팬 — Rhino shortcuts.htm) ---
+const ARROW_PAN_PX = 40;
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-  if (e.key === 'Escape') {
-    tools.cancel();
-    engine.requestRender();
-  } else if (e.key === 'Delete' || e.key === 'Backspace') {
-    const sel = useUiStore.getState().selection;
-    if (sel) {
-      store.deleteElements([sel]);
-      useUiStore.getState().setSelection(null);
+  switch (e.key) {
+    case 'Escape':
+      tools.cancel();
+      engine.requestRender();
+      break;
+    case 'Delete':
+    case 'Backspace': {
+      const sel = useUiStore.getState().selection;
+      if (sel) {
+        store.deleteElements([sel]);
+        useUiStore.getState().setSelection(null);
+      }
+      break;
     }
+    case 'PageUp':
+      rig.zoom(1 / 1.25);
+      engine.requestRender();
+      break;
+    case 'PageDown':
+      rig.zoom(1.25);
+      engine.requestRender();
+      break;
+    case 'ArrowLeft':
+      rig.pan(ARROW_PAN_PX, 0);
+      engine.requestRender();
+      break;
+    case 'ArrowRight':
+      rig.pan(-ARROW_PAN_PX, 0);
+      engine.requestRender();
+      break;
+    case 'ArrowUp':
+      rig.pan(0, ARROW_PAN_PX);
+      engine.requestRender();
+      break;
+    case 'ArrowDown':
+      rig.pan(0, -ARROW_PAN_PX);
+      engine.requestRender();
+      break;
   }
 });
 
 // --- React UI (패널만 — 캔버스/HUD는 명령형) ---
-createRoot(document.getElementById('ui-root')!).render(createElement(App, { store }));
+const viewActions = {
+  zoomIn: () => {
+    rig.zoom(1 / 1.25);
+    engine.requestRender();
+  },
+  zoomOut: () => {
+    rig.zoom(1.25);
+    engine.requestRender();
+  },
+};
+createRoot(document.getElementById('ui-root')!).render(
+  createElement(App, { store, actions: viewActions }),
+);
 
 engine.requestRender();

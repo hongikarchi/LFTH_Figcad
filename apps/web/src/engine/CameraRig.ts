@@ -87,14 +87,33 @@ export class CameraRig {
     return (2 * Math.tan(((55 / 2) * Math.PI) / 180) * this.distance) / window.innerHeight;
   }
 
+  /**
+   * Rhino RMB 의미론: 원근 뷰 = 타깃 중심 회전, 평행(평면) 뷰 = 팬.
+   * (docs.mcneel.com rotateview / navigatingviewports)
+   */
   orbit(dx: number, dy: number): void {
     if (this.mode === 'plan') {
       this.pan(dx, dy);
       return;
     }
+    this.rotate(dx, dy);
+  }
+
+  /**
+   * 강제 회전 — Rhino Ctrl+Shift+RMB (평행 뷰 회전).
+   * 평면 모드에선 수직축(theta)만 — 뷰가 탑뷰에서 벗어나지 않게.
+   */
+  rotate(dx: number, dy: number): void {
     this.theta -= dx * 0.005;
-    this.phi = THREE.MathUtils.clamp(this.phi - dy * 0.005, MIN_PHI, MAX_PHI);
+    if (this.mode !== 'plan') {
+      this.phi = THREE.MathUtils.clamp(this.phi - dy * 0.005, MIN_PHI, MAX_PHI);
+    }
     this.apply();
+  }
+
+  /** Rhino Ctrl+RMB 줌 드래그 — 위로 = 줌인, 아래로 = 줌아웃 */
+  zoomDrag(dy: number): void {
+    this.zoom(Math.exp(dy * 0.004));
   }
 
   pan(dx: number, dy: number): void {

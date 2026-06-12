@@ -100,6 +100,14 @@ export class WallTool implements Tool {
     this.ctx.engine.requestRender();
   }
 
+  /** Rhino RMB 클릭 = Enter — 진행 중인 체인 종료 (마커는 유지) */
+  enter(): void {
+    this.chainStart = null;
+    this.downClient = null;
+    this.hideGhost();
+    this.ctx.engine.requestRender();
+  }
+
   private commit(end: Pt): void {
     const start = this.chainStart!;
     const lenMm = Math.hypot(end[0] - start[0], end[1] - start[1]);
