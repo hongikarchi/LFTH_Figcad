@@ -1,11 +1,11 @@
 /**
- * 로컬 데브 동기화 서버 — 순수 Node (workerd 미사용).
+ * 로컬 데브 동기화 서버 — 순수 Node (workerd 불필요).
  *
- * 이 환경(Windows)의 workerd는 클라이언트→서버 바이너리 WebSocket 페이로드를
- * 0바이트로 비워버린다 (wrangler 4.80/4.99 + miniflare 직통 모두 재현,
- * 텍스트와 서버→클라 바이너리는 정상). Yjs는 바이너리 프로토콜이라 로컬
- * workerd로는 동기화 개발이 불가능 → 와이어 포맷이 동일한 Node 서버로 대체.
- * 프로덕션은 apps/server/src/server.ts(Durable Object) 그대로 — 배포 후 검증.
+ * 역할: ① 가장 가벼운 일상 데브 서버 (재시작 빠름, 디버깅 쉬움)
+ *      ② Cloudflare 이탈 시(Railway 등) 그대로 올릴 수 있는 프로덕션 대체 코드.
+ * workerd 경로(dev.mjs)와 와이어 포맷 동일 — Yjs sync/awareness (y-protocols).
+ * (당초 workerd 바이너리 WS 파손 우회용으로 작성 — 진짜 원인은 compat 플래그였고
+ *  wrangler.jsonc/dev.mjs에 수정 반영됨. 이 서버는 위 ①② 가치로 유지.)
  *
  * 동일 URL 구조: ws://<host>:8787/parties/doc/<projectId>
  * 영속화: .dev-docs/<room>.bin (DO storage의 onSave 디바운스와 같은 의미론)

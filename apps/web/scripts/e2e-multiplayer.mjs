@@ -11,7 +11,9 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 
-const HOST = '127.0.0.1:8787';
+// 기본 = 로컬 데브 서버. 배포 검증: FIGCAD_HOST=figcad.xxx.workers.dev FIGCAD_WSS=1
+const HOST = process.env.FIGCAD_HOST ?? '127.0.0.1:8787';
+const PROTO = process.env.FIGCAD_WSS ? 'wss' : 'ws';
 const ROOM = `e2e-${Math.random().toString(36).slice(2, 10)}`;
 const results = [];
 
@@ -43,7 +45,7 @@ class Client {
     this.doc = new Y.Doc();
     this.awareness = new awarenessProtocol.Awareness(this.doc);
     this.synced = false;
-    this.ws = new WebSocket(`ws://${HOST}/parties/doc/${room}`);
+    this.ws = new WebSocket(`${PROTO}://${HOST}/parties/doc/${room}`);
     this.ws.binaryType = 'arraybuffer';
     this.ws.onmessage = (ev) => this.onMessage(new Uint8Array(ev.data));
     this.doc.on('update', (update, origin) => {
