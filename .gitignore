@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.wrangler/
+*.local
+.env
+.env.*
+.DS_Store
+Thumbs.db
+*.log
+.vite/
+coverage/
