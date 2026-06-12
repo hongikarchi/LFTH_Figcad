@@ -59,6 +59,7 @@
       .toolbox,
       .infobox,
       .navigator,
+      .edit-actions,
       .quick-options {
         background: var(--glass);
         -webkit-backdrop-filter: blur(24px) saturate(1.6);
@@ -189,6 +190,60 @@
       .infobox-hint {
         font-size: 12px;
         color: var(--ink-soft);
+      }
+
+      /* ---- 편집 액션 팔레트 (펫팔레트 경량판) ---- */
+      .edit-actions {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 64px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 10px;
+      }
+      .edit-actions button {
+        padding: 6px 11px;
+        border: none;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .edit-actions button:hover {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .edit-actions button.active {
+        background: var(--accent);
+        color: #fff;
+      }
+      .ea-param {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 4px;
+      }
+      .ea-param label {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--ink-soft);
+      }
+      .ea-param input {
+        width: 52px;
+        padding: 4px 6px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.035);
+      }
+      .ea-hint {
+        margin-left: 6px;
+        font-size: 11px;
+        color: var(--accent);
+        font-weight: 600;
       }
 
       /* ---- Navigator: 우측 (프로젝트 맵 트리) ---- */

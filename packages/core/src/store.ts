@@ -18,6 +18,50 @@ import {
   type WallElement,
 } from './schema';
 
+/** 좌표쌍 양자화 단축 */
+const q2 = (p: readonly [number, number] | [number, number]): Pt => [
+  quantize(p[0]),
+  quantize(p[1]),
+];
+
+/** 무한 직선 교차점 (평행이면 null) — trim/extend용 */
+export function infiniteLineIntersect(
+  a1: Pt,
+  a2: Pt,
+  b1: Pt,
+  b2: Pt,
+): [number, number] | null {
+  const d1x = a2[0] - a1[0];
+  const d1y = a2[1] - a1[1];
+  const d2x = b2[0] - b1[0];
+  const d2y = b2[1] - b1[1];
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((b1[0] - a1[0]) * d2y - (b1[1] - a1[1]) * d2x) / denom;
+  return [a1[0] + d1x * t, a1[1] + d1y * t];
+}
+
+/** 점을 직선(axisA→axisB)에 대해 반사 */
+export function reflectPoint(p: Pt, axisA: Pt, axisB: Pt): [number, number] {
+  const dx = axisB[0] - axisA[0];
+  const dy = axisB[1] - axisA[1];
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return [p[0], p[1]];
+  const t = ((p[0] - axisA[0]) * dx + (p[1] - axisA[1]) * dy) / len2;
+  const fx = axisA[0] + dx * t;
+  const fy = axisA[1] + dy * t;
+  return [2 * fx - p[0], 2 * fy - p[1]];
+}
+
+/** 점을 center 기준 angleRad 회전 */
+export function rotatePoint(p: Pt, center: Pt, angleRad: number): [number, number] {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const x = p[0] - center[0];
+  const y = p[1] - center[1];
+  return [center[0] + x * cos - y * sin, center[1] + x * sin + y * cos];
+}
+
 /** 선분 교차점 (없으면 null) — 그리드 교차 스냅용 */
 export function lineIntersect(a1: Pt, a2: Pt, b1: Pt, b2: Pt): [number, number] | null {
   const d1x = a2[0] - a1[0];
@@ -473,6 +517,210 @@ export class DocStore {
       for (const [k, v] of Object.entries(el)) ymap.set(k, v);
       this.yElements.set(id, ymap);
     });
+  }
+
+  // ===== 편집 ops (M3.5) — 전부 단일 transact = undo 1스텝, 협업 원자적 =====
+
+  /** 검증 후 새 id로 요소 기록 (transact 내부에서 호출) — 유니온이라 런타임 zod 검증 */
+  private writeNew(el: Record<string, unknown>): Id {
+    const id = nanoid(12);
+    const parsed = ElementSchema.parse({ ...el, id }) as Element;
+    const ymap = new Y.Map<unknown>();
+    for (const [k, v] of Object.entries(parsed)) ymap.set(k, v);
+    this.yElements.set(id, ymap);
+    return id;
+  }
+
+  /** 선택 집합 정규화: 벽이 포함되면 그 벽의 개구부도 함께 (중복 제거) */
+  private withHostedOpenings(ids: Id[]): Element[] {
+    const map = new Map<Id, Element>();
+    for (const id of ids) {
+      const el = this.elements.get(id);
+      if (!el) continue;
+      map.set(id, el);
+      if (el.kind === 'wall') {
+        for (const o of this.openingsOf(id)) map.set(o.id, o);
+      }
+    }
+    return [...map.values()];
+  }
+
+  /** 평면 변환을 요소 집합에 적용해 복사 생성. 벽의 개구부는 새 벽으로 재호스트 */
+  private transformCopy(
+    ids: Id[],
+    xform: (p: Pt) => [number, number],
+    flipOpenings: boolean,
+  ): Id[] {
+    const els = this.withHostedOpenings(ids);
+    const created: Id[] = [];
+    const wallIdMap = new Map<Id, Id>(); // 원본 벽 → 새 벽
+    this.transact(() => {
+      for (const el of els) {
+        if (el.kind === 'wall') {
+          const newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
+          wallIdMap.set(el.id, newId);
+          created.push(newId);
+        } else if (el.kind === 'slab') {
+          created.push(this.writeNew({ ...el, boundary: el.boundary.map((p) => q2(xform(p))) }));
+        } else if (el.kind === 'grid') {
+          // 라벨은 자동 재발급 (중복 방지)
+          const a = q2(xform(el.a));
+          const b = q2(xform(el.b));
+          created.push(this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) }));
+        }
+      }
+      // 개구부는 벽 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
+      for (const el of els) {
+        if (el.kind !== 'opening') continue;
+        const newHost = wallIdMap.get(el.hostId);
+        if (!newHost) continue; // 호스트가 복사 대상이 아니면 개구부 단독 복사 안 함
+        created.push(
+          this.writeNew({
+            ...el,
+            hostId: newHost,
+            ...(flipOpenings ? { flip: !el.flip } : {}),
+          }),
+        );
+      }
+    });
+    return created;
+  }
+
+  /** 제자리 이동 (벽의 개구부는 자동 추종 — hostId+offset 상대 좌표) */
+  moveElements(ids: Id[], delta: Pt): void {
+    const els = ids.map((id) => this.elements.get(id)).filter((e): e is Element => !!e);
+    this.transact(() => {
+      for (const el of els) {
+        const ymap = this.yElements.get(el.id);
+        if (!(ymap instanceof Y.Map)) continue;
+        if (el.kind === 'wall' || el.kind === 'grid') {
+          ymap.set('a', q2([el.a[0] + delta[0], el.a[1] + delta[1]]));
+          ymap.set('b', q2([el.b[0] + delta[0], el.b[1] + delta[1]]));
+        } else if (el.kind === 'slab') {
+          ymap.set(
+            'boundary',
+            el.boundary.map((p) => q2([p[0] + delta[0], p[1] + delta[1]])),
+          );
+        }
+        // opening 단독 이동은 SelectTool 드래그(offset)로
+      }
+    });
+  }
+
+  /** 복사 (delta 간격) — 생성된 id 반환 */
+  duplicateElements(ids: Id[], delta: Pt): Id[] {
+    return this.transformCopy(ids, (p) => [p[0] + delta[0], p[1] + delta[1]], false);
+  }
+
+  /** 배열 복사 — count개, 누적 delta */
+  arrayElements(ids: Id[], delta: Pt, count: number): Id[] {
+    const created: Id[] = [];
+    this.transact(() => {
+      for (let i = 1; i <= count; i++) {
+        created.push(
+          ...this.transformCopy(ids, (p) => [p[0] + delta[0] * i, p[1] + delta[1] * i], false),
+        );
+      }
+    });
+    return created;
+  }
+
+  /** 대칭 복사 (axisA→axisB 축) — 개구부 flip 토글 */
+  mirrorElements(ids: Id[], axisA: Pt, axisB: Pt): Id[] {
+    return this.transformCopy(ids, (p) => reflectPoint(p, axisA, axisB), true);
+  }
+
+  /** 제자리 회전 (center, 라디안) */
+  rotateElements(ids: Id[], center: Pt, angleRad: number): void {
+    const els = ids.map((id) => this.elements.get(id)).filter((e): e is Element => !!e);
+    this.transact(() => {
+      for (const el of els) {
+        const ymap = this.yElements.get(el.id);
+        if (!(ymap instanceof Y.Map)) continue;
+        if (el.kind === 'wall' || el.kind === 'grid') {
+          ymap.set('a', q2(rotatePoint(el.a, center, angleRad)));
+          ymap.set('b', q2(rotatePoint(el.b, center, angleRad)));
+        } else if (el.kind === 'slab') {
+          ymap.set(
+            'boundary',
+            el.boundary.map((p) => q2(rotatePoint(p, center, angleRad))),
+          );
+        }
+      }
+    });
+  }
+
+  /**
+   * 벽 분할 — point의 중심선 투영 지점에서 두 벽으로.
+   * 개구부는 중심이 속한 쪽으로 재호스트 (뒤쪽 벽은 offset 재계산).
+   * 분할점이 끝에서 100mm 이내면 거부(null).
+   */
+  splitWall(id: Id, point: Pt): [Id, Id] | null {
+    const wall = this.elements.get(id);
+    if (wall?.kind !== 'wall') return null;
+    const len = Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]);
+    if (len < 200) return null;
+    const dir = [(wall.b[0] - wall.a[0]) / len, (wall.b[1] - wall.a[1]) / len] as const;
+    const s = Math.round(
+      (point[0] - wall.a[0]) * dir[0] + (point[1] - wall.a[1]) * dir[1],
+    );
+    if (s < 100 || s > len - 100) return null;
+    const p: Pt = [
+      quantize(wall.a[0] + dir[0] * s),
+      quantize(wall.a[1] + dir[1] * s),
+    ];
+    const openings = this.openingsOf(id);
+    let id1 = '' as Id;
+    let id2 = '' as Id;
+    this.transact(() => {
+      id1 = this.writeNew({ ...wall, a: wall.a, b: p });
+      id2 = this.writeNew({ ...wall, a: p, b: wall.b });
+      for (const o of openings) {
+        if (o.offset <= s) {
+          this.writeNew({ ...o, hostId: id1 });
+        } else {
+          this.writeNew({ ...o, hostId: id2, offset: o.offset - s });
+        }
+      }
+      for (const o of openings) this.yElements.delete(o.id);
+      this.yElements.delete(id);
+    });
+    return [id1, id2];
+  }
+
+  /**
+   * 연장/자르기 — end 끝을 target 벽의 무한 중심선과의 교차점으로 이동.
+   * 평행이면 false. a끝 이동 시 개구부 offset 보정 (offset은 a 기준).
+   */
+  trimExtendWall(id: Id, end: 'a' | 'b', target: { a: Pt; b: Pt }): boolean {
+    const wall = this.elements.get(id);
+    if (wall?.kind !== 'wall') return false;
+    const hit = infiniteLineIntersect(wall.a, wall.b, target.a, target.b);
+    if (!hit) return false;
+    const newEnd = q2(hit);
+    const other = end === 'a' ? wall.b : wall.a;
+    if (Math.hypot(newEnd[0] - other[0], newEnd[1] - other[1]) < 50) return false; // 퇴화
+    this.transact(() => {
+      const ymap = this.yElements.get(id);
+      if (!(ymap instanceof Y.Map)) return;
+      if (end === 'a') {
+        // offset 기준점(a)이 이동 — 새 a에서 본 거리로 보정
+        const len = Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]);
+        if (len > 0) {
+          const dir = [(wall.b[0] - wall.a[0]) / len, (wall.b[1] - wall.a[1]) / len] as const;
+          const shift =
+            (wall.a[0] - newEnd[0]) * dir[0] + (wall.a[1] - newEnd[1]) * dir[1];
+          for (const o of this.openingsOf(id)) {
+            const oMap = this.yElements.get(o.id);
+            if (oMap instanceof Y.Map) oMap.set('offset', quantize(o.offset + shift));
+          }
+        }
+        ymap.set('a', newEnd);
+      } else {
+        ymap.set('b', newEnd);
+      }
+    });
+    return true;
   }
 
   /** 사용자별 undo — 이 클라이언트(LOCAL_ORIGIN)의 변경만 되돌린다 (Figma 의미론) */

@@ -5,6 +5,7 @@ export type ToolName = 'select' | 'wall' | 'door' | 'window' | 'slab' | 'grid';
 export type TypeKind = 'wall' | 'door' | 'window' | 'slab';
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
+export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
 
 /**
  * UI 상태 전용 (불변 규칙 3: 문서 상태는 DocStore, 여기는 도구/선택/뷰 모드만).
@@ -19,8 +20,15 @@ interface UiState {
   activeLevelId: Id | null;
   connection: ConnectionState;
   peerCount: number;
+  /** 선택 후 무장된 편집 액션 (펫팔레트 경량판) */
+  editAction: EditAction | null;
+  arrayCount: number;
+  rotateAngle: number; // 도(°), CCW+
   setTool: (t: ToolName) => void;
   setSelection: (id: Id | null) => void;
+  setEditAction: (a: EditAction | null) => void;
+  setArrayCount: (n: number) => void;
+  setRotateAngle: (deg: number) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
@@ -36,8 +44,15 @@ export const useUiStore = create<UiState>((set) => ({
   activeLevelId: null,
   connection: 'connecting',
   peerCount: 0,
-  setTool: (activeTool) => set({ activeTool, selection: null }),
-  setSelection: (selection) => set({ selection }),
+  editAction: null,
+  arrayCount: 3,
+  rotateAngle: 90,
+  setTool: (activeTool) => set({ activeTool, selection: null, editAction: null }),
+  setSelection: (selection) =>
+    set((s) => ({ selection, editAction: selection ? s.editAction : null })),
+  setEditAction: (editAction) => set({ editAction }),
+  setArrayCount: (arrayCount) => set({ arrayCount: Math.max(1, Math.min(50, arrayCount)) }),
+  setRotateAngle: (rotateAngle) => set({ rotateAngle }),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveType: (kind, id) =>
     set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),

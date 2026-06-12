@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  infiniteLineIntersect,
   resolveOpening,
   snapPoint,
   type OpeningType,
@@ -8,7 +9,7 @@ import {
   type WallType,
 } from '@figcad/core';
 import { pickElement } from '../engine/Picker';
-import { useUiStore } from '../state/uiStore';
+import { useUiStore, type EditAction } from '../state/uiStore';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 
@@ -36,13 +37,21 @@ export class SelectTool implements Tool {
   private handleB: THREE.Mesh;
   private lastWrite = 0;
   private pendingWrite: (() => void) | null = null;
+  // 편집 액션 상태머신 (이동/복사/배열/대칭의 수집된 점)
+  private actionPoints: Pt[] = [];
+  private rubber: THREE.Line;
 
   constructor(private ctx: EditorContext) {
     const mat = new THREE.MeshBasicMaterial({ color: 0x0a84ff });
     this.handleA = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat);
     this.handleB = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat.clone());
     this.handleA.visible = this.handleB.visible = false;
-    ctx.engine.scene.add(this.handleA, this.handleB);
+    this.rubber = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x0a84ff }),
+    );
+    this.rubber.visible = false;
+    ctx.engine.scene.add(this.handleA, this.handleB, this.rubber);
 
     useUiStore.subscribe(() => this.refreshHandles());
     ctx.store.observe(() => this.refreshHandles());
@@ -51,6 +60,13 @@ export class SelectTool implements Tool {
   down(info: ToolPointerInfo): void {
     if (!info.doc) return;
     const ui = useUiStore.getState();
+
+    // 편집 액션 무장 상태 — 클릭 = 액션 점 수집/실행 (선택/드래그 안 함)
+    if (ui.editAction && ui.selection) {
+      this.handleAction(ui.editAction, ui.selection, info);
+      return;
+    }
+
     const selectedWall = this.selectedWall();
 
     // 1. 끝점 핸들 픽킹 (선택된 벽이 있을 때)
@@ -93,6 +109,11 @@ export class SelectTool implements Tool {
 
   move(info: ToolPointerInfo): void {
     if (!info.doc) return;
+    const ui = useUiStore.getState();
+    if (ui.editAction) {
+      this.updateActionPreview(info);
+      return;
+    }
     if (this.drag.kind === 'wall') {
       const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
       const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;
@@ -170,6 +191,7 @@ export class SelectTool implements Tool {
   }
 
   up(): void {
+    if (useUiStore.getState().editAction) return; // 액션 모드 — down에서 처리
     this.flushWrite(); // 마지막 정확값 1회 기록
     if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
     this.drag = { kind: 'none' };
@@ -177,12 +199,170 @@ export class SelectTool implements Tool {
   }
 
   cancel(): void {
+    const ui = useUiStore.getState();
+    if (ui.editAction) {
+      // Esc 1단계: 액션만 해제, 선택 유지
+      this.clearActionState();
+      ui.setEditAction(null);
+      return;
+    }
     this.flushWrite();
     if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
     this.drag = { kind: 'none' };
-    useUiStore.getState().setSelection(null);
+    ui.setSelection(null);
     this.ctx.scene.setSelected(null);
     this.ctx.hud.hideDimension();
+  }
+
+  /** RMB 클릭 = Enter — 진행 중 액션 종료 (copy 반복 종료 등) */
+  enter(): void {
+    const ui = useUiStore.getState();
+    if (ui.editAction) {
+      this.clearActionState();
+      ui.setEditAction(null);
+    }
+  }
+
+  // ===== 편집 액션 상태머신 =====
+
+  private handleAction(action: EditAction, selId: string, info: ToolPointerInfo): void {
+    const el = this.ctx.store.getElement(selId);
+    if (!el) {
+      this.finishAction();
+      return;
+    }
+    if (this.refuseIfLocked(selId)) return;
+    const p = this.snapActionPoint(info);
+
+    switch (action) {
+      case 'move': {
+        if (!this.actionPoints.length) {
+          this.actionPoints.push(p);
+        } else {
+          const base = this.actionPoints[0]!;
+          this.ctx.store.moveElements([selId], [p[0] - base[0], p[1] - base[1]]);
+          this.finishAction();
+        }
+        break;
+      }
+      case 'copy': {
+        if (!this.actionPoints.length) {
+          this.actionPoints.push(p);
+        } else {
+          const base = this.actionPoints[0]!;
+          this.ctx.store.duplicateElements([selId], [p[0] - base[0], p[1] - base[1]]);
+          // 무장 유지 — 같은 기준점으로 반복 복사 (Esc/우클릭으로 종료)
+        }
+        break;
+      }
+      case 'array': {
+        if (!this.actionPoints.length) {
+          this.actionPoints.push(p);
+        } else {
+          const base = this.actionPoints[0]!;
+          this.ctx.store.arrayElements(
+            [selId],
+            [p[0] - base[0], p[1] - base[1]],
+            useUiStore.getState().arrayCount,
+          );
+          this.finishAction();
+        }
+        break;
+      }
+      case 'mirror': {
+        this.actionPoints.push(p);
+        if (this.actionPoints.length === 2) {
+          this.ctx.store.mirrorElements([selId], this.actionPoints[0]!, this.actionPoints[1]!);
+          this.finishAction();
+        }
+        break;
+      }
+      case 'split': {
+        const result = this.ctx.store.splitWall(selId, p);
+        if (result) {
+          useUiStore.getState().setSelection(result[0]);
+          this.ctx.scene.setSelected(result[0]);
+        } else {
+          this.ctx.hud.toast('끝에서 너무 가까워 분할할 수 없습니다');
+        }
+        this.finishAction();
+        break;
+      }
+      case 'trim': {
+        const hit = pickElement(
+          info.clientX,
+          info.clientY,
+          this.ctx.rig.active,
+          this.ctx.scene.pickables,
+        );
+        const target = hit && hit !== selId ? this.ctx.store.getElement(hit) : undefined;
+        if (target?.kind !== 'wall' || el.kind !== 'wall') {
+          this.ctx.hud.toast('기준이 될 다른 벽을 클릭하세요');
+          break;
+        }
+        const cross = infiniteLineIntersect(el.a, el.b, target.a, target.b);
+        if (!cross) {
+          this.ctx.hud.toast('평행한 벽으로는 연장/자르기 불가');
+          this.finishAction();
+          break;
+        }
+        const dA = Math.hypot(cross[0] - el.a[0], cross[1] - el.a[1]);
+        const dB = Math.hypot(cross[0] - el.b[0], cross[1] - el.b[1]);
+        const ok = this.ctx.store.trimExtendWall(selId, dA < dB ? 'a' : 'b', target);
+        if (!ok) this.ctx.hud.toast('연장/자르기 결과가 유효하지 않습니다');
+        this.finishAction();
+        break;
+      }
+      case 'rotate': {
+        const deg = useUiStore.getState().rotateAngle;
+        this.ctx.store.rotateElements([selId], p, (deg * Math.PI) / 180);
+        this.finishAction();
+        break;
+      }
+    }
+    this.ctx.engine.requestRender();
+  }
+
+  private snapActionPoint(info: ToolPointerInfo): Pt {
+    return snapPoint([info.doc![0], info.doc![1]], {
+      endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
+      endpointTolerance: SNAP_PX * info.mmPerPixel,
+      grid: GRID_MM,
+      ...(this.actionPoints.length
+        ? { axisFrom: this.actionPoints[this.actionPoints.length - 1]! }
+        : {}),
+    }).point;
+  }
+
+  private updateActionPreview(info: ToolPointerInfo): void {
+    if (!this.actionPoints.length || !info.doc) return;
+    const base = this.actionPoints[this.actionPoints.length - 1]!;
+    const p = this.snapActionPoint(info);
+    const elev = (this.ctx.store.getLevel(this.ctx.levelId())?.elevation ?? 0) / 1000;
+    this.rubber.geometry.setFromPoints([
+      new THREE.Vector3(base[0] / 1000, elev + 0.03, base[1] / 1000),
+      new THREE.Vector3(p[0] / 1000, elev + 0.03, p[1] / 1000),
+    ]);
+    this.rubber.visible = true;
+    const lenMm = Math.hypot(p[0] - base[0], p[1] - base[1]);
+    this.ctx.hud.showDimension(
+      new THREE.Vector3((base[0] + p[0]) / 2000, elev + 0.03, (base[1] + p[1]) / 2000),
+      lenMm,
+      this.ctx.rig.active,
+    );
+    this.ctx.engine.requestRender();
+  }
+
+  private clearActionState(): void {
+    this.actionPoints = [];
+    this.rubber.visible = false;
+    this.ctx.hud.hideDimension();
+    this.ctx.engine.requestRender();
+  }
+
+  private finishAction(): void {
+    this.clearActionState();
+    useUiStore.getState().setEditAction(null);
   }
 
   /** 타인이 편집 중이면 토스트 + true */
