@@ -1,0 +1,13 @@
+{
+  "name": "figcad",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.6.0",
+  "scripts": {
+    "dev": "pnpm --filter @figcad/web dev",
+    "build": "pnpm --filter @figcad/web build",
+    "test": "pnpm --filter @figcad/core test",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "deploy": "pnpm --filter @figcad/web build && pnpm --filter @figcad/server deploy"
+  }
+}
