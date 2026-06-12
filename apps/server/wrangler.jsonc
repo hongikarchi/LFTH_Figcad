@@ -15,9 +15,16 @@
     "binding": "ASSETS"
   },
   "durable_objects": {
-    "bindings": [{ "name": "Doc", "class_name": "Doc" }]
+    "bindings": [
+      { "name": "Doc", "class_name": "Doc" },
+      // AI 에이전트 실행용 — 미국 고정(locationHint wnam)으로 Anthropic 지역 차단 회피
+      { "name": "AgentRunner", "class_name": "AgentRunner" }
+    ]
   },
   // 무료 플랜은 SQLite 기반 DO만 지원
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Doc"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Doc"] },
+    { "tag": "v2", "new_sqlite_classes": ["AgentRunner"] }
+  ],
   "observability": { "enabled": true }
 }

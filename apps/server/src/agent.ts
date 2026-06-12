@@ -121,11 +121,13 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
     content: `<현재_문서_상태>\n${JSON.stringify(body.snapshot)}\n</현재_문서_상태>\n\n${last.text}`,
   });
 
+  // strict:true 미사용 — 도구 16종 합산 시 "compiled grammar is too large" 400.
+  // 어차피 executeOp가 zod+런타임 검증을 전부 하고 실패는 tool_result로 모델에
+  // 돌아가 재시도되므로 스키마 강제 없이도 안전하다.
   const tools: Anthropic.ToolUnion[] = AI_TOOLS.map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.input_schema as Anthropic.Tool.InputSchema,
-    strict: true,
   }));
 
   const opLog: OpLogEntry[] = [];

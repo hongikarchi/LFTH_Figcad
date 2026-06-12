@@ -1,3 +1,4 @@
+import { DurableObject } from 'cloudflare:workers';
 import { routePartykitRequest, type Connection, type ConnectionContext } from 'partyserver';
 import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
@@ -5,6 +6,7 @@ import { handleAgentRequest } from './agent';
 
 interface Env {
   Doc: DurableObjectNamespace;
+  AgentRunner: DurableObjectNamespace;
   ASSETS: Fetcher;
   ROOM_KEY?: string;
   ANTHROPIC_API_KEY?: string;
@@ -68,10 +70,34 @@ export class Doc extends YServer<Env> {
   }
 }
 
+/**
+ * AI 에이전트 실행 전용 DO — 미국(wnam)에 위치 고정.
+ *
+ * 워커 fetch 핸들러는 사용자 근접 PoP에서 실행되는데, 아시아에서는 egress가
+ * 홍콩으로 잡히는 경우가 있고 Anthropic은 미지원 지역 요청을 403
+ * "Request not allowed"로 차단한다 (직접 호출은 정상인데 워커만 403이던 원인).
+ * DO의 서브리퀘스트는 DO가 떠 있는 콜로에서 나가므로, 지원 지역에 고정된
+ * 이 DO를 경유하면 결정적으로 회피된다 (Smart Placement는 휴리스틱이라 비채택).
+ */
+export class AgentRunner extends DurableObject<Env> {
+  override async fetch(request: Request): Promise<Response> {
+    return handleAgentRequest(request, this.env);
+  }
+}
+
+/** 단일 인스턴스 — 자연스러운 직렬화 지점 (추후 레이트리밋 자리) */
+function agentRunnerStub(env: Env): { fetch: (req: Request) => Promise<Response> } {
+  const id = env.AgentRunner.idFromName('global');
+  // locationHint는 최초 생성 시에만 적용 — 이후엔 그 콜로에 상주
+  return env.AgentRunner.get(id, { locationHint: 'wnam' }) as unknown as {
+    fetch: (req: Request) => Promise<Response>;
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (new URL(request.url).pathname === '/api/agent') {
-      return handleAgentRequest(request, env);
+      return agentRunnerStub(env).fetch(request);
     }
     const party = await routePartykitRequest(request, env as unknown as Record<string, unknown>);
     if (party) return party;

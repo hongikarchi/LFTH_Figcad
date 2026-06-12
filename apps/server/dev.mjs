@@ -32,7 +32,10 @@ const mf = new Miniflare({
   compatibilityDate: '2026-04-01',
   // partyserver는 ArrayBuffer 가정 — Blob 기본값 플래그 비활성 (wrangler.jsonc와 동일)
   compatibilityFlags: ['no_websocket_standard_binary_type', 'nodejs_compat'],
-  durableObjects: { Doc: { className: 'Doc', useSQLite: true } },
+  durableObjects: {
+    Doc: { className: 'Doc', useSQLite: true },
+    AgentRunner: { className: 'AgentRunner', useSQLite: true },
+  },
   // AI 모드 로컬 테스트: 셸에서 ANTHROPIC_API_KEY 설정 후 실행 (없으면 /api/agent 503)
   bindings: process.env.ANTHROPIC_API_KEY
     ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY }

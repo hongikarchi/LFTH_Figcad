@@ -1,14 +1,15 @@
 /**
- * AI 패널 스모크 — miniflare(빌드된 dist) 페이지에서 AI 토글 → 메시지 전송 →
- * 서버 응답(키 미설정 503 또는 실제 계획)이 패널에 표면화되는지 확인.
- * 사전 조건: apps/server에서 `node dev.mjs` 구동 중 (PORT 기본 8787).
- * 사용: node scripts/ai-panel-smoke.mjs [port]
+ * AI 패널 스모크 — AI 토글 → 메시지 전송 → 응답 표면화 → (키 있으면) 계획 승인까지.
+ * 사용: node scripts/ai-panel-smoke.mjs [포트 | 전체 origin URL]
+ *   로컬: node scripts/ai-panel-smoke.mjs 8787   (사전: apps/server에서 node dev.mjs)
+ *   프로덕션: node scripts/ai-panel-smoke.mjs https://figcad.archivibe.workers.dev
  */
 import puppeteer from 'puppeteer-core';
 
-const port = process.argv[2] ?? '8787';
+const target = process.argv[2] ?? '8787';
+const origin = target.startsWith('http') ? target : `http://localhost:${target}`;
 const room = `e2e-ai-${Math.random().toString(36).slice(2, 8)}`;
-const url = `http://localhost:${port}/?p=${room}`;
+const url = `${origin}/?p=${room}`;
 
 const browser = await puppeteer.launch({
   executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -47,18 +48,34 @@ try {
   console.log('PASS  서버 응답이 패널에 표면화:');
   for (const s of surfaced) console.log('      ' + s);
 
-  // 계획 카드까지 왔으면 (키 설정 시) 승인 → 요소 생성 확인
+  // 실행 완료 대기 — running 동안 입력이 disabled, 끝나면 풀림
+  await page.waitForSelector('.ai-input input:not([disabled])', { timeout: 180000 });
+
+  // 계획 카드까지 왔으면 (키 설정 시) 승인 → 적용 확인
+  // 프로덕션 빌드엔 window.__figcad 없음(데브 전용) → '✓ N개 작업 적용됨' notice로 검증
   const hasPlan = await page.$('.ai-plan');
   if (hasPlan) {
-    const before = await page.evaluate(() => window.__figcad?.store.listElements().length ?? -1);
+    const planItems = await page.evaluate(
+      () => document.querySelectorAll('.ai-plan ol li').length,
+    );
+    console.log(`PASS  계획 카드 표시 — 작업 ${planItems}개`);
     await page.click('.ai-approve');
     await page.waitForFunction(
-      (n) => (window.__figcad?.store.listElements().length ?? -1) > n,
-      { timeout: 5000 },
-      before,
+      () =>
+        [...document.querySelectorAll('.ai-msg.notice')].some((m) =>
+          m.textContent.includes('적용됨'),
+        ),
+      { timeout: 10000 },
     );
-    const after = await page.evaluate(() => window.__figcad.store.listElements().length);
-    console.log(`PASS  계획 승인 → 문서 요소 ${before} → ${after}개`);
+    const notice = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('.ai-msg.notice')].find((m) =>
+          m.textContent.includes('적용됨'),
+        )?.textContent,
+    );
+    console.log(`PASS  승인 → ${notice}`);
+    const devCount = await page.evaluate(() => window.__figcad?.store.listElements().length);
+    if (devCount !== undefined) console.log(`PASS  문서 요소 ${devCount}개 (데브 빌드 확인)`);
   } else {
     console.log('SKIP  계획 카드 없음 (API 키 미설정이면 정상 — 오류 표면화까지가 이 스모크의 범위)');
   }
