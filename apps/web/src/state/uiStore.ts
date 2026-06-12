@@ -24,11 +24,14 @@ interface UiState {
   editAction: EditAction | null;
   arrayCount: number;
   rotateAngle: number; // 도(°), CCW+
+  /** AI 모드 패널 표시 (M4) */
+  aiOpen: boolean;
   setTool: (t: ToolName) => void;
   setSelection: (id: Id | null) => void;
   setEditAction: (a: EditAction | null) => void;
   setArrayCount: (n: number) => void;
   setRotateAngle: (deg: number) => void;
+  setAiOpen: (open: boolean) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
@@ -47,12 +50,14 @@ export const useUiStore = create<UiState>((set) => ({
   editAction: null,
   arrayCount: 3,
   rotateAngle: 90,
+  aiOpen: false,
   setTool: (activeTool) => set({ activeTool, selection: null, editAction: null }),
   setSelection: (selection) =>
     set((s) => ({ selection, editAction: selection ? s.editAction : null })),
   setEditAction: (editAction) => set({ editAction }),
   setArrayCount: (arrayCount) => set({ arrayCount: Math.max(1, Math.min(50, arrayCount)) }),
   setRotateAngle: (rotateAngle) => set({ rotateAngle }),
+  setAiOpen: (aiOpen) => set({ aiOpen }),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveType: (kind, id) =>
     set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),

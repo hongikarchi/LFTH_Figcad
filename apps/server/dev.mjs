@@ -19,7 +19,9 @@ const built = await esbuild.build({
   bundle: true,
   format: 'esm',
   write: false,
-  external: ['cloudflare:*'],
+  // node:* — @anthropic-ai/sdk의 credential chain이 동적 import (apiKey 명시라 미실행).
+  // workerd nodejs_compat가 런타임 제공.
+  external: ['cloudflare:*', 'node:*'],
   conditions: ['workerd', 'worker', 'browser'],
 });
 
@@ -29,8 +31,12 @@ const mf = new Miniflare({
   scriptPath: 'server.js',
   compatibilityDate: '2026-04-01',
   // partyserver는 ArrayBuffer 가정 — Blob 기본값 플래그 비활성 (wrangler.jsonc와 동일)
-  compatibilityFlags: ['no_websocket_standard_binary_type'],
+  compatibilityFlags: ['no_websocket_standard_binary_type', 'nodejs_compat'],
   durableObjects: { Doc: { className: 'Doc', useSQLite: true } },
+  // AI 모드 로컬 테스트: 셸에서 ANTHROPIC_API_KEY 설정 후 실행 (없으면 /api/agent 503)
+  bindings: process.env.ANTHROPIC_API_KEY
+    ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY }
+    : {},
   // DO storage를 디스크에 영속화 — 데브 재시작에도 문서 유지
   durableObjectsPersist: path.join(here, '.mf-do'),
   assets: {

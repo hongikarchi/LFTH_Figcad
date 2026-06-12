@@ -105,6 +105,14 @@ export interface DocChange {
   removed: Id[];
 }
 
+/** 문서 전체 plain JSON — AI 드라이런·백업·export 공용 */
+export interface DocSnapshot {
+  meta: DocMeta;
+  levels: Level[];
+  types: ElemType[];
+  elements: Element[];
+}
+
 export type DocObserver = (change: DocChange) => void;
 
 /** addType 입력 — 유니온 분배 (Omit<유니온>은 공통 키만 남아서 사용 불가) */
@@ -721,6 +729,37 @@ export class DocStore {
       }
     });
     return true;
+  }
+
+  // --- 스냅샷 (AI 드라이런 + JSON export/import 공용) ---
+
+  /** 문서 전체를 plain JSON으로 — 파라미터가 전부라 이게 완전한 백업이다 */
+  snapshot(): DocSnapshot {
+    return {
+      meta: this.meta,
+      levels: [...this.levels.values()],
+      types: [...this.types.values()],
+      elements: [...this.elements.values()],
+    };
+  }
+
+  /** 스냅샷에서 독립 스토어 재구성 — id 보존 (AI 드라이런용 인메모리 사본) */
+  static fromSnapshot(snap: DocSnapshot): DocStore {
+    const store = new DocStore();
+    store.ydoc.transact(() => {
+      store.yMeta.set('schemaVersion', snap.meta.schemaVersion);
+      store.yMeta.set('projectName', snap.meta.projectName);
+      store.yMeta.set('units', snap.meta.units);
+      for (const lv of snap.levels) store.yLevels.set(lv.id, LevelSchema.parse(lv));
+      for (const t of snap.types) store.yTypes.set(t.id, ElemTypeSchema.parse(t));
+      for (const el of snap.elements) {
+        const parsed = ElementSchema.parse(el) as unknown as Record<string, unknown>;
+        const ymap = new Y.Map<unknown>();
+        for (const [k, v] of Object.entries(parsed)) ymap.set(k, v);
+        store.yElements.set(el.id, ymap);
+      }
+    }, LOCAL_ORIGIN);
+    return store;
   }
 
   /** 사용자별 undo — 이 클라이언트(LOCAL_ORIGIN)의 변경만 되돌린다 (Figma 의미론) */

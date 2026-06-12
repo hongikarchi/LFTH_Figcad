@@ -1,11 +1,13 @@
 import { routePartykitRequest, type Connection, type ConnectionContext } from 'partyserver';
 import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
+import { handleAgentRequest } from './agent';
 
 interface Env {
   Doc: DurableObjectNamespace;
   ASSETS: Fetcher;
   ROOM_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
 }
 
 // SQLite DO storage 값 크기 한계(2MB) 대비 — 안전한 청크 크기
@@ -68,6 +70,9 @@ export class Doc extends YServer<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (new URL(request.url).pathname === '/api/agent') {
+      return handleAgentRequest(request, env);
+    }
     const party = await routePartykitRequest(request, env as unknown as Record<string, unknown>);
     if (party) return party;
     return env.ASSETS.fetch(request);

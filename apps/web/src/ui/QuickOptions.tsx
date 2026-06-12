@@ -23,6 +23,7 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
   const activeLevelId = useUiStore((s) => s.activeLevelId);
   const connection = useUiStore((s) => s.connection);
   const peerCount = useUiStore((s) => s.peerCount);
+  const aiOpen = useUiStore((s) => s.aiOpen);
 
   const level = activeLevelId ? store.getLevel(activeLevelId) : undefined;
   const viewName = viewMode === '3d' ? '3D · 일반 원근' : `평면 · ${level?.name ?? '—'}`;
@@ -44,6 +45,14 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
       </button>
       <button onClick={actions.zoomIn} title="줌인 (PageUp)">
         +
+      </button>
+      <span className="qo-sep" />
+      <button
+        className={`qo-ai ${aiOpen ? 'active' : ''}`}
+        title="AI 모드 — 자연어로 모델링 (계획 승인 방식)"
+        onClick={() => useUiStore.getState().setAiOpen(!aiOpen)}
+      >
+        AI
       </button>
     </div>
   );

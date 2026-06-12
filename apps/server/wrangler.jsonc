@@ -6,7 +6,9 @@
   // 2026 compat부터 서버측 WebSocket binary가 웹 표준(Blob)으로 바뀌는데
   // partyserver는 ArrayBuffer 가정 → new Uint8Array(Blob) = 0바이트로 조용히 깨짐.
   // partyserver가 Blob을 지원할 때까지 구 동작 고정 (로컬/프로덕션 동일 증상이었음)
-  "compatibility_flags": ["no_websocket_standard_binary_type"],
+  // nodejs_compat: @anthropic-ai/sdk가 node:fs 등을 동적 import (M4 AI 모드,
+  // apiKey 명시 사용이라 실제 실행 안 됨 — 번들/로드 통과용)
+  "compatibility_flags": ["no_websocket_standard_binary_type", "nodejs_compat"],
   // 빌드된 Vite 앱을 같은 Worker가 서빙 — 배포 1회, URL 1개
   "assets": {
     "directory": "../web/dist",

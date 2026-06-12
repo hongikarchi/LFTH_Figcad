@@ -1,0 +1,94 @@
+import type { DocSnapshot, OpLogEntry } from '@figcad/core';
+
+/**
+ * /api/agent SSE 클라이언트 — 서버가 드라이런으로 만든 계획(opLog)을 받아온다.
+ * 키는 서버 secret — 브라우저는 절대 Anthropic을 직접 호출하지 않는다.
+ */
+
+export interface TranscriptTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface AgentResult {
+  opLog: OpLogEntry[];
+  stopReason: string;
+  note?: string;
+}
+
+function agentUrl(): string {
+  // vite dev(5173) → 같은 머신의 데브 서버(8787, miniflare 경로만 /api/agent 지원).
+  // 배포 = 같은 호스트. provider.ts의 hostname 규칙과 동일 (LAN iPad 포함).
+  const base = import.meta.env.DEV
+    ? `${location.protocol}//${location.hostname}:8787`
+    : '';
+  const key = new URL(location.href).searchParams.get('key');
+  return `${base}/api/agent${key ? `?key=${encodeURIComponent(key)}` : ''}`;
+}
+
+export async function runAgent(opts: {
+  snapshot: DocSnapshot;
+  transcript: TranscriptTurn[];
+  onText: (delta: string) => void;
+  onOp: (summary: string) => void;
+  signal?: AbortSignal;
+}): Promise<AgentResult> {
+  const res = await fetch(agentUrl(), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ snapshot: opts.snapshot, transcript: opts.transcript }),
+    signal: opts.signal,
+  });
+  if (!res.ok || !res.body) {
+    let msg = `요청 실패 (${res.status})`;
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j.error) msg = j.error;
+    } catch {
+      /* JSON 아님 — 상태 코드 메시지 유지 */
+    }
+    throw new Error(msg);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let result: AgentResult | null = null;
+
+  const handle = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const ev = JSON.parse(line.slice(6)) as Record<string, unknown>;
+    switch (ev['type']) {
+      case 'text':
+        opts.onText(String(ev['text'] ?? ''));
+        break;
+      case 'op':
+        opts.onOp(String(ev['summary'] ?? ev['op'] ?? ''));
+        break;
+      case 'done':
+        result = {
+          opLog: (ev['opLog'] as OpLogEntry[]) ?? [],
+          stopReason: String(ev['stopReason'] ?? 'end_turn'),
+          ...(ev['note'] ? { note: String(ev['note']) } : {}),
+        };
+        break;
+      case 'error':
+        throw new Error(String(ev['error'] ?? 'agent error'));
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      handle(buf.slice(0, idx).trim());
+      buf = buf.slice(idx + 2);
+    }
+  }
+  if (buf.trim()) handle(buf.trim());
+
+  if (!result) throw new Error('스트림이 완료 이벤트 없이 종료됨');
+  return result;
+}
