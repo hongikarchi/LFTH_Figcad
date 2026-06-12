@@ -1,4 +1,9 @@
-// @figcad/core — 문서 스키마 + ops + 지오메트리 파생 (M1에서 구현)
-// 불변 규칙: 지오메트리는 문서에 저장하지 않는다. 모든 변경은 ops를 경유한다.
+// @figcad/core — 문서 스키마 + 스토어(ops) + 지오메트리 파생 + 스냅.
+// 불변 규칙:
+//   1. 지오메트리는 문서에 저장·동기화하지 않는다 — 파라미터에서 순수 함수로 파생.
+//   2. 모든 문서 변경은 DocStore의 ops 메서드를 경유한다.
 
-export const CORE_SCHEMA_VERSION = 1;
+export * from './schema';
+export * from './store';
+export * from './geometry';
+export * from './snap';

@@ -10,7 +10,13 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/earcut": "^3.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "earcut": "^3.0.2",
+    "nanoid": "^5.1.11",
+    "zod": "^4.4.3"
   }
 }

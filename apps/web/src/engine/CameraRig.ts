@@ -40,6 +40,11 @@ export class CameraRig {
     );
   }
 
+  /** 화면 스케일 환산용 (px → 월드) */
+  get viewDistance(): number {
+    return this.distance;
+  }
+
   get active(): THREE.Camera {
     // 트윈 중에는 원근 카메라로 내려다보다가 완료 시 직교로 스냅
     if (this.mode === 'plan' && this.tweenT >= 1) return this.ortho;
