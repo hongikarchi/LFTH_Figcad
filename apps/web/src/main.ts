@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
+import * as Y from 'yjs';
 import { DocStore, seedDocument } from '@figcad/core';
 import { Engine } from './engine/Engine';
 import { CameraRig } from './engine/CameraRig';
@@ -10,13 +11,16 @@ import { HudLayer } from './hud/HudLayer';
 import { ToolController } from './tools/ToolController';
 import { WallTool } from './tools/WallTool';
 import { SelectTool } from './tools/SelectTool';
+import { setupCollab } from './collab/provider';
+import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
 import { App } from './ui/App';
 import type { EditorContext } from './tools/context';
 
-// --- 문서 (M1: 로컬 메모리. M2: Yjs + 서버 동기화로 내부 스왑) ---
-const store = new DocStore();
-const seed = seedDocument(store);
+// --- 문서: Y.Doc 하나 = 프로젝트 하나 (URL ?p=) ---
+const ydoc = new Y.Doc();
+const store = new DocStore(ydoc);
+const seed = seedDocument(store); // 고정 id 시드 — 동시 시드해도 수렴
 useUiStore.getState().setActiveWallType(seed.wallTypeIds[0]!);
 useUiStore.getState().setActiveLevel(seed.levelId);
 
@@ -28,7 +32,6 @@ engine.addTicker((dt) => rig.tick(dt));
 buildScene(engine.scene);
 const sceneManager = new SceneManager(store, engine);
 const hud = new HudLayer();
-// 렌더되는 프레임마다 칩 재투영 (카메라 이동 추적) — 루프 유지는 안 함
 engine.addTicker(() => {
   hud.reproject(rig.active);
   return false;
@@ -43,11 +46,34 @@ const ctx: EditorContext = {
   hud,
   levelId: () => useUiStore.getState().activeLevelId ?? seed.levelId,
   wallTypeId: () => useUiStore.getState().activeWallTypeId ?? seed.wallTypeIds[0]!,
+  collab: NOOP_COLLAB,
 };
 const tools = new ToolController();
 tools.register('wall', new WallTool(ctx));
 tools.register('select', new SelectTool(ctx));
 tools.setActive(useUiStore.getState().activeTool);
+
+// --- 협업: 프로바이더 + presence + 사용자별 undo ---
+const { provider } = setupCollab(ydoc);
+const presence = new Presence(provider.awareness, engine, sceneManager, hud, (n) =>
+  useUiStore.getState().setPeerCount(n),
+);
+ctx.collab = presence;
+
+provider.on('status', (e: { status: string }) => {
+  const map = { connected: 'connected', connecting: 'connecting', disconnected: 'offline' } as const;
+  useUiStore.getState().setConnection(map[e.status as keyof typeof map] ?? 'offline');
+});
+
+const undoMgr = store.createUndoManager();
+const doUndo = () => {
+  undoMgr.undo();
+  engine.requestRender();
+};
+const doRedo = () => {
+  undoMgr.redo();
+  engine.requestRender();
+};
 
 new InputManager(
   canvas,
@@ -55,9 +81,15 @@ new InputManager(
   tools,
   () => (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000,
   () => engine.requestRender(),
+  {
+    onCursor: (doc) =>
+      presence.setCursor(doc, (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000),
+    onTwoFingerTap: doUndo,
+    onThreeFingerTap: doRedo,
+  },
 );
 
-// --- UI 상태 → 엔진/도구 동기화 (React는 uiStore만 쓴다) ---
+// --- UI 상태 → 엔진/도구/awareness 동기화 (React는 uiStore만 쓴다) ---
 useUiStore.subscribe((state, prev) => {
   if (state.activeTool !== prev.activeTool) {
     tools.setActive(state.activeTool);
@@ -70,13 +102,25 @@ useUiStore.subscribe((state, prev) => {
   }
   if (state.selection !== prev.selection) {
     sceneManager.setSelected(state.selection);
+    presence.setSelection(state.selection ? [state.selection] : []);
   }
 });
 
-// --- 키보드 (PageUp/Down 줌, 화살표 팬 — Rhino shortcuts.htm) ---
+// --- 키보드 (PageUp/Down 줌, 화살표 팬 — Rhino shortcuts.htm / Ctrl+Z undo) ---
 const ARROW_PAN_PX = 40;
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) doRedo();
+    else doUndo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    doRedo();
+    return;
+  }
   switch (e.key) {
     case 'Escape':
       tools.cancel();
@@ -134,3 +178,8 @@ createRoot(document.getElementById('ui-root')!).render(
 );
 
 engine.requestRender();
+
+// 데브 전용: E2E 테스트가 실제 브라우저 경로(프로바이더 포함)로 문서를 조작할 수 있게 노출
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>)['__figcad'] = { store, ydoc, seed };
+}

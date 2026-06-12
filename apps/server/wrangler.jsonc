@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "figcad",
   "main": "src/server.ts",
-  "compatibility_date": "2026-06-01",
+  "compatibility_date": "2026-04-01",
   // 빌드된 Vite 앱을 같은 Worker가 서빙 — 배포 1회, URL 1개
   "assets": {
     "directory": "../web/dist",

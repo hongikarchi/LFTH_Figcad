@@ -1,7 +1,13 @@
+import type { Pt } from '@figcad/core';
 import type { CameraRig } from '../engine/CameraRig';
 import { screenToDoc } from '../engine/Picker';
-import { TouchGestures } from './gestures';
+import { TouchGestures, type TapCallbacks } from './gestures';
 import type { ToolController, ToolPointerInfo } from '../tools/ToolController';
+
+export interface InputOptions extends TapCallbacks {
+  /** 포인터의 지면 위치 발행 (presence 커서) — null = 화면 밖/교차 없음 */
+  onCursor?: (doc: Pt | null) => void;
+}
 
 /**
  * 모든 포인터 이벤트의 단일 진입점 (불변 규칙 4: 펜=도구, 터치=카메라).
@@ -28,8 +34,9 @@ export class InputManager {
     private tools: ToolController,
     private getElevationM: () => number,
     private onChange: () => void,
+    private opts: InputOptions = {},
   ) {
-    this.touch = new TouchGestures(rig, onChange);
+    this.touch = new TouchGestures(rig, onChange, opts);
 
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -113,7 +120,9 @@ export class InputManager {
       }
     }
     // 호버 포함 — 도구가 고스트/스냅 마커를 그린다
-    this.tools.active?.move(this.info(e));
+    const info = this.info(e);
+    this.opts.onCursor?.(info.doc);
+    this.tools.active?.move(info);
   };
 
   private onUp = (e: PointerEvent): void => {
@@ -163,6 +172,7 @@ export class InputManager {
 
   private onLeave = (e: PointerEvent): void => {
     if (e.pointerType === 'pen') this.penActive = false;
+    this.opts.onCursor?.(null);
   };
 
   private onWheel = (e: WheelEvent): void => {

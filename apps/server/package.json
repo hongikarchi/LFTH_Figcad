@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "node dev-node.mjs",
+    "dev:workerd": "node dev.mjs",
+    "dev:wrangler": "wrangler dev",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
@@ -14,7 +16,12 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260611.1",
+    "esbuild": "^0.28.0",
+    "lib0": "^0.2.117",
+    "miniflare": "^4.20260609.0",
     "typescript": "^6.0.3",
-    "wrangler": "^4.99.0"
+    "wrangler": "^4.99.0",
+    "ws": "^8.21.0",
+    "y-protocols": "^1.0.7"
   }
 }

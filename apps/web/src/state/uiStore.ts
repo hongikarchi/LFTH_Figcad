@@ -3,6 +3,7 @@ import type { Id } from '@figcad/core';
 
 export type ToolName = 'select' | 'wall';
 export type ViewModeUi = '3d' | 'plan';
+export type ConnectionState = 'connecting' | 'connected' | 'offline';
 
 /**
  * UI 상태 전용 (불변 규칙 3: 문서 상태는 DocStore, 여기는 도구/선택/뷰 모드만).
@@ -14,11 +15,15 @@ interface UiState {
   viewMode: ViewModeUi;
   activeWallTypeId: Id | null;
   activeLevelId: Id | null;
+  connection: ConnectionState;
+  peerCount: number;
   setTool: (t: ToolName) => void;
   setSelection: (id: Id | null) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveWallType: (id: Id) => void;
   setActiveLevel: (id: Id) => void;
+  setConnection: (c: ConnectionState) => void;
+  setPeerCount: (n: number) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -27,9 +32,13 @@ export const useUiStore = create<UiState>((set) => ({
   viewMode: '3d',
   activeWallTypeId: null,
   activeLevelId: null,
+  connection: 'connecting',
+  peerCount: 0,
   setTool: (activeTool) => set({ activeTool, selection: null }),
   setSelection: (selection) => set({ selection }),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveWallType: (activeWallTypeId) => set({ activeWallTypeId }),
   setActiveLevel: (activeLevelId) => set({ activeLevelId }),
+  setConnection: (connection) => set({ connection }),
+  setPeerCount: (peerCount) => set({ peerCount }),
 }));

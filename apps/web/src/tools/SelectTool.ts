@@ -8,6 +8,7 @@ import type { Tool, ToolPointerInfo } from './ToolController';
 const HANDLE_PX = 14; // 끝점 핸들 픽킹 반경 (화면 px)
 const SNAP_PX = 12;
 const GRID_MM = 100;
+const WRITE_THROTTLE_MS = 33; // 드래그 중 문서 쓰기 ~30Hz (Yjs 문서 비대화 방지)
 
 type DragMode =
   | { kind: 'none' }
@@ -17,11 +18,14 @@ type DragMode =
 /**
  * 선택/이동: 클릭 픽킹 → 선택, 선택된 벽 드래그 = 평행 이동,
  * 끝점 핸들 드래그 = 단일 끝점 이동(스냅 적용). Delete는 main의 키 핸들러가 처리.
+ * 드래그 시작 시 awareness editing 발행(소프트 락), 타인 락 대상은 드래그 거부.
  */
 export class SelectTool implements Tool {
   private drag: DragMode = { kind: 'none' };
   private handleA: THREE.Mesh;
   private handleB: THREE.Mesh;
+  private lastWrite = 0;
+  private pendingWrite: (() => void) | null = null;
 
   constructor(private ctx: EditorContext) {
     const mat = new THREE.MeshBasicMaterial({ color: 0x0a84ff });
@@ -30,7 +34,6 @@ export class SelectTool implements Tool {
     this.handleA.visible = this.handleB.visible = false;
     ctx.engine.scene.add(this.handleA, this.handleB);
 
-    // 선택 변경/문서 변경 시 핸들 위치 갱신
     useUiStore.subscribe(() => this.refreshHandles());
     ctx.store.observe(() => this.refreshHandles());
   }
@@ -46,11 +49,13 @@ export class SelectTool implements Tool {
       const dA = Math.hypot(info.doc[0] - selectedWall.a[0], info.doc[1] - selectedWall.a[1]);
       const dB = Math.hypot(info.doc[0] - selectedWall.b[0], info.doc[1] - selectedWall.b[1]);
       if (dA <= tolMm || dB <= tolMm) {
+        if (this.refuseIfLocked(selectedWall.id)) return;
         this.drag = {
           kind: 'endpoint',
           id: selectedWall.id,
           which: dA <= dB ? 'a' : 'b',
         };
+        this.ctx.collab.setEditing(selectedWall.id);
         return;
       }
     }
@@ -62,7 +67,9 @@ export class SelectTool implements Tool {
     if (hit) {
       const el = this.ctx.store.getElement(hit);
       if (el?.kind === 'wall') {
+        if (this.refuseIfLocked(hit)) return; // 선택은 허용, 드래그만 거부
         this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
+        this.ctx.collab.setEditing(hit);
       }
     }
   }
@@ -70,18 +77,21 @@ export class SelectTool implements Tool {
   move(info: ToolPointerInfo): void {
     if (!info.doc) return;
     if (this.drag.kind === 'wall') {
-      // 평행 이동 — 델타를 그리드에 스냅
       const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
       const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;
-      this.ctx.store.updateElement(this.drag.id, {
-        a: [this.drag.origA[0] + dx, this.drag.origA[1] + dy],
-        b: [this.drag.origB[0] + dx, this.drag.origB[1] + dy],
-      });
+      const drag = this.drag;
+      this.throttledWrite(() =>
+        this.ctx.store.updateElement(drag.id, {
+          a: [drag.origA[0] + dx, drag.origA[1] + dy],
+          b: [drag.origB[0] + dx, drag.origB[1] + dy],
+        }),
+      );
       this.showLength(this.drag.id);
     } else if (this.drag.kind === 'endpoint') {
       const el = this.ctx.store.getElement(this.drag.id);
       if (el?.kind !== 'wall') return;
-      const other = this.drag.which === 'a' ? el.b : el.a;
+      const which = this.drag.which;
+      const other = which === 'a' ? el.b : el.a;
       const snap = snapPoint([info.doc[0], info.doc[1]], {
         endpoints: this.ctx.store.wallEndpoints(el.levelId, el.id),
         endpointTolerance: SNAP_PX * info.mmPerPixel,
@@ -90,21 +100,54 @@ export class SelectTool implements Tool {
       });
       // 0길이 붕괴 방지 — WallTool과 동일한 50mm 최소 길이
       if (Math.hypot(snap.point[0] - other[0], snap.point[1] - other[1]) < 50) return;
-      this.ctx.store.updateElement(this.drag.id, { [this.drag.which]: snap.point });
+      const id = this.drag.id;
+      this.throttledWrite(() => this.ctx.store.updateElement(id, { [which]: snap.point }));
       this.showLength(this.drag.id);
     }
   }
 
   up(): void {
+    this.flushWrite(); // 마지막 정확값 1회 기록
+    if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
     this.drag = { kind: 'none' };
     this.ctx.hud.hideDimension();
   }
 
   cancel(): void {
+    this.flushWrite();
+    if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
     this.drag = { kind: 'none' };
     useUiStore.getState().setSelection(null);
     this.ctx.scene.setSelected(null);
     this.ctx.hud.hideDimension();
+  }
+
+  /** 타인이 편집 중이면 토스트 + true */
+  private refuseIfLocked(id: string): boolean {
+    const owner = this.ctx.collab.lockOwner(id);
+    if (owner) {
+      this.ctx.hud.toast(`✏ ${owner} 님이 편집 중입니다`);
+      return true;
+    }
+    return false;
+  }
+
+  private throttledWrite(write: () => void): void {
+    const now = performance.now();
+    if (now - this.lastWrite >= WRITE_THROTTLE_MS) {
+      this.lastWrite = now;
+      this.pendingWrite = null;
+      write();
+    } else {
+      this.pendingWrite = write;
+    }
+  }
+
+  private flushWrite(): void {
+    if (this.pendingWrite) {
+      this.pendingWrite();
+      this.pendingWrite = null;
+    }
   }
 
   private selectedWall(): WallElement | null {

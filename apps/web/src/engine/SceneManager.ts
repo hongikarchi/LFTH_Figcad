@@ -30,6 +30,7 @@ export class SceneManager {
     opacity: 0.15,
   });
   private selected: Id | null = null;
+  private remoteHighlights = new Map<Id, string>(); // 원격 사용자 선택 (id → 사용자 색)
   private viewMode: '3d' | 'plan' = '3d';
   private activeLevelId: Id | null = null;
 
@@ -50,20 +51,38 @@ export class SceneManager {
   }
 
   setSelected(id: Id | null): void {
-    if (this.selected && this.entries.has(this.selected)) {
-      const prev = this.entries.get(this.selected)!;
-      (prev.mesh.material as THREE.MeshLambertMaterial).emissive.setHex(0x000000);
-    }
+    const prev = this.selected;
     this.selected = id;
-    if (id) {
-      const entry = this.entries.get(id);
-      if (entry) {
-        const mat = entry.mesh.material as THREE.MeshLambertMaterial;
-        mat.emissive.setHex(SELECT_EMISSIVE);
-        mat.emissiveIntensity = 0.3;
+    if (prev) this.applyHighlight(prev);
+    if (id) this.applyHighlight(id);
+    this.engine.requestRender();
+  }
+
+  /** 원격 사용자 선택/편집 표시 — awareness 변경 시 호출 */
+  setRemoteHighlights(highlights: Map<Id, string>): void {
+    const affected = new Set([...this.remoteHighlights.keys(), ...highlights.keys()]);
+    this.remoteHighlights = highlights;
+    for (const id of affected) this.applyHighlight(id);
+    this.engine.requestRender();
+  }
+
+  /** 우선순위: 내 선택 > 원격 하이라이트 > 없음 */
+  private applyHighlight(id: Id): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    const mat = entry.mesh.material as THREE.MeshLambertMaterial;
+    if (this.selected === id) {
+      mat.emissive.setHex(SELECT_EMISSIVE);
+      mat.emissiveIntensity = 0.3;
+    } else {
+      const remote = this.remoteHighlights.get(id);
+      if (remote) {
+        mat.emissive.set(remote);
+        mat.emissiveIntensity = 0.25;
+      } else {
+        mat.emissive.setHex(0x000000);
       }
     }
-    this.engine.requestRender();
   }
 
   /** 평면 모드에서 비활성 레벨 고스팅 (15% — ArchiCAD 고스트 스토리 식) */
@@ -123,11 +142,7 @@ export class SceneManager {
       entry.lastGeo = geo;
     }
 
-    if (this.selected === id) {
-      const mat = entry.mesh.material as THREE.MeshLambertMaterial;
-      mat.emissive.setHex(SELECT_EMISSIVE);
-      mat.emissiveIntensity = 0.3;
-    }
+    this.applyHighlight(id);
   }
 
   private remove(id: Id): void {

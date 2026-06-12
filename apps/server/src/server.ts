@@ -1,5 +1,6 @@
 import { routePartykitRequest, type Connection, type ConnectionContext } from 'partyserver';
 import { YServer } from 'y-partyserver';
+import * as Y from 'yjs';
 
 interface Env {
   Doc: DurableObjectNamespace;
@@ -7,9 +8,14 @@ interface Env {
   ROOM_KEY?: string;
 }
 
+// SQLite DO storage 값 크기 한계(2MB) 대비 — 안전한 청크 크기
+const CHUNK_SIZE = 128 * 1024;
+const CHUNK_PREFIX = 'doc:';
+
 /**
  * 프로젝트(문서)당 Durable Object 룸 하나. y-partyserver가 Yjs sync + awareness
- * 프로토콜을 처리한다. M0은 스텁 — M2에서 DO storage 영속화(onLoad/onSave) 추가.
+ * 프로토콜을 처리하고, onLoad/onSave 훅으로 DO storage에 문서를 영속화한다
+ * (YServer는 자동 영속화 없음 — 훅 구현 필수).
  *
  * 접속: wss://<host>/parties/doc/<projectId>?key=<ROOM_KEY>
  */
@@ -24,6 +30,39 @@ export class Doc extends YServer<Env> {
       }
     }
     await super.onConnect(conn, ctx);
+  }
+
+  override async onLoad(): Promise<void> {
+    const stored = await this.ctx.storage.list<Uint8Array>({ prefix: CHUNK_PREFIX });
+    if (stored.size === 0) return;
+    // doc:0, doc:1, ... 순서로 이어붙여 복원
+    const chunks: Uint8Array[] = [];
+    for (let i = 0; i < stored.size; i++) {
+      const c = stored.get(`${CHUNK_PREFIX}${i}`);
+      if (!c) break;
+      chunks.push(c);
+    }
+    const total = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let off = 0;
+    for (const c of chunks) {
+      total.set(c, off);
+      off += c.length;
+    }
+    Y.applyUpdate(this.document, total);
+  }
+
+  override async onSave(): Promise<void> {
+    const update = Y.encodeStateAsUpdate(this.document);
+    const writes: Record<string, Uint8Array> = {};
+    let count = 0;
+    for (let off = 0; off < update.length; off += CHUNK_SIZE) {
+      writes[`${CHUNK_PREFIX}${count++}`] = update.slice(off, off + CHUNK_SIZE);
+    }
+    // 문서가 줄어 청크 수가 감소했을 때 잔여 키 정리
+    const existing = await this.ctx.storage.list<Uint8Array>({ prefix: CHUNK_PREFIX });
+    const stale = [...existing.keys()].filter((k) => !(k in writes));
+    if (stale.length) await this.ctx.storage.delete(stale);
+    if (count > 0) await this.ctx.storage.put(writes);
   }
 }
 
