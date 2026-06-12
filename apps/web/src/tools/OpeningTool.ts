@@ -49,6 +49,14 @@ export class OpeningTool implements Tool {
   cancel(): void {
     this.hover = null;
     this.ghost.visible = false;
+    this.ctx.hud.hideDimension();
+    this.ctx.engine.requestRender();
+  }
+
+  private clearHover(): void {
+    this.hover = null;
+    this.ghost.visible = false;
+    this.ctx.hud.hideDimension();
     this.ctx.engine.requestRender();
   }
 
@@ -56,9 +64,7 @@ export class OpeningTool implements Tool {
     const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
     const el = hit ? this.ctx.store.getElement(hit) : undefined;
     if (el?.kind !== 'wall' || !info.doc) {
-      this.hover = null;
-      this.ghost.visible = false;
-      this.ctx.engine.requestRender();
+      this.clearHover();
       return;
     }
     const wall = el as WallElement;
@@ -84,9 +90,7 @@ export class OpeningTool implements Tool {
       H,
     );
     if (!r) {
-      this.hover = null;
-      this.ghost.visible = false;
-      this.ctx.engine.requestRender();
+      this.clearHover();
       return;
     }
     this.hover = { wallId: wall.id, offset: r.offset };

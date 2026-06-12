@@ -1,48 +1,12 @@
-import { useEffect, useState } from 'react';
 import type { DocStore, Id, OpeningType } from '@figcad/core';
 import { useUiStore, type TypeKind } from '../state/uiStore';
 import { useDocVersion } from './App';
+import { NumField, TextField } from './fields';
 
 /**
  * ArchiCAD Info Box의 웹 경량판 — 상단 가로 도킹, 컨텍스트 민감:
  * "활성 도구 또는 선택 요소의 현재 설정을 표시" (help.graphisoft.com).
  */
-
-/** 숫자 입력 드래프트 — blur/Enter에만 커밋 */
-function NumField({
-  label,
-  value,
-  min,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  min?: number;
-  onCommit: (v: number) => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  useEffect(() => setDraft(null), [value]);
-  return (
-    <span className="infobox-field">
-      <label>{label}</label>
-      <input
-        type="number"
-        step={100}
-        value={draft ?? String(value)}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          if (draft === null) return;
-          const v = Math.round(Number(draft));
-          if (Number.isFinite(v) && v >= (min ?? 0)) onCommit(v);
-          setDraft(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        }}
-      />
-    </span>
-  );
-}
 
 function TypeSelect({
   store,
@@ -206,15 +170,13 @@ export function InfoBox({ store }: { store: DocStore }) {
     return (
       <div className="infobox">
         <span className="infobox-title">그리드</span>
-        <span className="infobox-field">
-          <label>라벨</label>
-          <input
-            type="text"
-            style={{ width: 48 }}
-            value={el.label}
-            onChange={(e) => store.updateElement(el.id, { label: e.target.value.slice(0, 4) })}
-          />
-        </span>
+        <TextField
+          label="라벨"
+          value={el.label}
+          maxLength={4}
+          width={48}
+          onCommit={(v) => store.updateElement(el.id, { label: v })}
+        />
         {deleteBtn(el.id)}
       </div>
     );

@@ -57,13 +57,43 @@ export function deriveWall(input: WallDeriveInput): DerivedGeometry {
   const SW = (s: number, sigma: number, z: number): [number, number, number] =>
     W(axMm + dir[0] * s + n[0] * sigma * (tw / 2), ayMm + dir[1] * s + n[1] * sigma * (tw / 2), z);
 
-  const sOf = (p: [number, number]) => (p[0] - axMm) * dir[0] + (p[1] - ayMm) * dir[1];
+  // 측면 두 면의 s-범위 (마이터로 면마다 다름) — 개구부는 양면 교집합 안에만
+  const sideRange = (sigma: 1 | -1) => {
+    const c0 = sigma === 1 ? corners.aPlus : corners.aMinus;
+    const c1 = sigma === 1 ? corners.bPlus : corners.bMinus;
+    const s0 = (c0[0] - axMm) * dir[0] + (c0[1] - ayMm) * dir[1];
+    const s1 = (c1[0] - axMm) * dir[0] + (c1[1] - ayMm) * dir[1];
+    return [Math.min(s0, s1), Math.max(s0, s1)] as const;
+  };
+  const rangePlus = sideRange(1);
+  const rangeMinus = sideRange(-1);
+  const usableLo = Math.max(rangePlus[0], rangeMinus[0]) + 10;
+  const usableHi = Math.min(rangePlus[1], rangeMinus[1]) - 10;
 
-  // 유효 개구부 (클램프 + 측면 s 범위 안으로 제한)
-  const resolved = (openings ?? [])
-    .map((o) => resolveOpening(o.el, o.type, wall, H))
-    .filter((r): r is NonNullable<typeof r> => r !== null)
-    .sort((p, q) => p.offset - q.offset);
+  // 유효 개구부: 클램프 → 양면 공통 범위로 제한 → 2D 겹침 스킵 (earcut은
+  // 겹치는 구멍을 처리 못 함 — Yjs 병합으로 겹침 상태가 문서에 올 수 있어
+  // derive가 방어해야 함). 스킵된 개구부는 구멍·리빌 둘 다 생성 안 함.
+  interface OpeningRect {
+    s0: number;
+    s1: number;
+    z0: number;
+    z1: number;
+  }
+  const rects: OpeningRect[] = [];
+  for (const o of openings ?? []) {
+    const r = resolveOpening(o.el, o.type, wall, H);
+    if (!r) continue;
+    const s0 = Math.max(r.offset - r.width / 2, usableLo);
+    const s1 = Math.min(r.offset + r.width / 2, usableHi);
+    if (s1 - s0 < 30) continue; // 마이터에 먹힌 개구부 — 통째 스킵 (양면+리빌 일관)
+    const rect: OpeningRect = { s0, s1, z0: r.sill, z1: r.sill + r.height };
+    const overlaps = rects.some(
+      (p) => rect.s0 < p.s1 + 10 && rect.s1 > p.s0 - 10 && rect.z0 < p.z1 && rect.z1 > p.z0,
+    );
+    if (overlaps) continue; // 겹침 — 뒤에 온 개구부 스킵 (메시 파손 방지)
+    rects.push(rect);
+  }
+  rects.sort((p, q) => p.s0 - q.s0);
 
   const faces: FaceSpec[] = [];
   const footprint: [number, number][] = [
@@ -78,26 +108,15 @@ export function deriveWall(input: WallDeriveInput): DerivedGeometry {
   faces.push({ profile: planProfile, map: (u, v) => W(u, -v, H), edges: true });
   faces.push({ profile: planProfile, map: (u, v) => W(u, -v, 0), flip: true, edges: true });
 
-  // 측면 2개 — (s, z) 공간, 개구부 구멍
+  // 측면 2개 — (s, z) 공간, 양면 동일한 구멍 사각형 (rects)
   for (const sigma of [1, -1] as const) {
-    const c0 = sigma === 1 ? corners.aPlus : corners.aMinus;
-    const c1 = sigma === 1 ? corners.bPlus : corners.bMinus;
-    const s0 = sOf(c0);
-    const s1 = sOf(c1);
-    const lo = Math.min(s0, s1);
-    const hi = Math.max(s0, s1);
-    const holes: [number, number][][] = [];
-    for (const r of resolved) {
-      const hs0 = Math.max(r.offset - r.width / 2, lo + 10);
-      const hs1 = Math.min(r.offset + r.width / 2, hi - 10);
-      if (hs1 - hs0 < 30) continue;
-      holes.push([
-        [hs0, r.sill],
-        [hs1, r.sill],
-        [hs1, r.sill + r.height],
-        [hs0, r.sill + r.height],
-      ]);
-    }
+    const [lo, hi] = sigma === 1 ? rangePlus : rangeMinus;
+    const holes: [number, number][][] = rects.map((r) => [
+      [r.s0, r.z0],
+      [r.s1, r.z0],
+      [r.s1, r.z1],
+      [r.s0, r.z1],
+    ]);
     faces.push({
       profile: {
         outer: [
@@ -138,12 +157,12 @@ export function deriveWall(input: WallDeriveInput): DerivedGeometry {
   faces.push(cap(corners.aMinus, corners.aPlus, false));
   faces.push(cap(corners.bPlus, corners.bMinus, false));
 
-  // 리빌(개구부 안쪽 면) — 개구부당 좌/우 잼 + 하부(실) + 상부(헤드)
-  for (const r of resolved) {
-    const sL = r.offset - r.width / 2;
-    const sR = r.offset + r.width / 2;
-    const z0 = r.sill;
-    const z1 = r.sill + r.height;
+  // 리빌(개구부 안쪽 면) — 구멍과 동일한 rects 사용 (좌/우 잼 + 실 + 헤드)
+  for (const r of rects) {
+    const sL = r.s0;
+    const sR = r.s1;
+    const z0 = r.z0;
+    const z1 = r.z1;
     const quad = (
       p: (q: number, t: number) => [number, number, number],
       qLen: number,

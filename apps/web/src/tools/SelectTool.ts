@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { snapPoint, type Pt, type WallElement } from '@figcad/core';
+import {
+  resolveOpening,
+  snapPoint,
+  type OpeningType,
+  type Pt,
+  type WallElement,
+  type WallType,
+} from '@figcad/core';
 import { pickElement } from '../engine/Picker';
 import { useUiStore } from '../state/uiStore';
 import type { EditorContext } from './context';
@@ -114,19 +121,32 @@ export class SelectTool implements Tool {
       this.throttledWrite(() => this.ctx.store.updateElement(id, { [which]: snap.point }));
       this.showLength(this.drag.id);
     } else if (this.drag.kind === 'opening') {
-      // 호스트 중심선에 투영 → offset 슬라이드
+      // 호스트 중심선에 투영 → resolveOpening으로 클램프된 offset만 기록
+      // (OpeningTool 배치와 동일 — 문서값과 렌더값이 벌어지지 않게)
       const el = this.ctx.store.getElement(this.drag.id);
       if (el?.kind !== 'opening') return;
       const host = this.ctx.store.getElement(el.hostId);
       if (host?.kind !== 'wall') return;
-      const len = Math.hypot(host.b[0] - host.a[0], host.b[1] - host.a[1]);
+      const type = this.ctx.store.getType(el.typeId) as OpeningType | undefined;
+      const hostWall = host as WallElement;
+      const level = this.ctx.store.getLevel(hostWall.levelId);
+      const hostType = this.ctx.store.getType(hostWall.typeId) as WallType | undefined;
+      if (!type || type.kind !== 'opening' || !level || !hostType) return;
+      const len = Math.hypot(hostWall.b[0] - hostWall.a[0], hostWall.b[1] - hostWall.a[1]);
       if (len === 0) return;
-      const dir = [(host.b[0] - host.a[0]) / len, (host.b[1] - host.a[1]) / len] as const;
-      const offset = Math.round(
-        (info.doc[0] - host.a[0]) * dir[0] + (info.doc[1] - host.a[1]) * dir[1],
+      const dir = [(hostWall.b[0] - hostWall.a[0]) / len, (hostWall.b[1] - hostWall.a[1]) / len] as const;
+      const projected = Math.round(
+        (info.doc[0] - hostWall.a[0]) * dir[0] + (info.doc[1] - hostWall.a[1]) * dir[1],
       );
+      const r = resolveOpening(
+        { ...el, offset: projected },
+        type,
+        hostWall,
+        hostWall.height ?? level.height,
+      );
+      if (!r) return;
       const id = this.drag.id;
-      this.throttledWrite(() => this.ctx.store.updateElement(id, { offset }));
+      this.throttledWrite(() => this.ctx.store.updateElement(id, { offset: r.offset }));
     } else if (this.drag.kind === 'slab') {
       const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
       const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;

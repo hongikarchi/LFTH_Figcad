@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
+import { NumField, TextField } from './fields';
 
 /**
  * ArchiCAD Navigator(Project Map)의 웹 경량판 — 우측 도킹.
@@ -70,38 +71,24 @@ export function Navigator({ store }: { store: DocStore }) {
           </div>
           {editing === l.id && (
             <div className="nav-editor">
-              <label>
-                이름
-                <input
-                  type="text"
-                  value={l.name}
-                  onChange={(e) => store.updateLevel(l.id, { name: e.target.value })}
-                />
-              </label>
-              <label>
-                레벨(mm)
-                <input
-                  type="number"
-                  step={100}
-                  defaultValue={l.elevation}
-                  onBlur={(e) => {
-                    const v = Math.round(Number(e.target.value));
-                    if (Number.isFinite(v)) store.updateLevel(l.id, { elevation: v });
-                  }}
-                />
-              </label>
-              <label>
-                층고(mm)
-                <input
-                  type="number"
-                  step={100}
-                  defaultValue={l.height}
-                  onBlur={(e) => {
-                    const v = Math.round(Number(e.target.value));
-                    if (Number.isFinite(v) && v >= 1000) store.updateLevel(l.id, { height: v });
-                  }}
-                />
-              </label>
+              <TextField
+                label="이름"
+                value={l.name}
+                maxLength={20}
+                onCommit={(v) => store.updateLevel(l.id, { name: v })}
+              />
+              <NumField
+                label="레벨(mm)"
+                value={l.elevation}
+                min={-100000}
+                onCommit={(v) => store.updateLevel(l.id, { elevation: v })}
+              />
+              <NumField
+                label="층고(mm)"
+                value={l.height}
+                min={1000}
+                onCommit={(v) => store.updateLevel(l.id, { height: v })}
+              />
               {levels.length > 1 && (
                 <button className="nav-delete" onClick={() => removeStory(l.id, l.name)}>
                   스토리 삭제

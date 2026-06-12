@@ -53,6 +53,12 @@ export class SlabTool implements Tool {
       }
     }
 
+    // 퇴화 가드: 기존 꼭짓점과 같거나 마지막 점에서 50mm 미만이면 무시
+    // (자기 점이 스냅 후보라 정확히 같은 좌표가 쉽게 나옴 — 0면적 슬라브 방지)
+    if (this.points.some(([x, y]) => x === snap[0] && y === snap[1])) return;
+    const last = this.points[this.points.length - 1];
+    if (last && Math.hypot(snap[0] - last[0], snap[1] - last[1]) < 50) return;
+
     this.points.push(snap); // 자가교차는 commit 시 isSimplePolygon으로 최종 검증
   }
 

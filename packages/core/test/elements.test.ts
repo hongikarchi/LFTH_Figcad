@@ -26,6 +26,65 @@ describe('시드 v2', () => {
   });
 });
 
+/** non-indexed 메시의 부호 부피 (다이버전스 정리) — 솔리드 정합성 검증 */
+function signedVolume(positions: Float32Array): number {
+  let v = 0;
+  for (let i = 0; i < positions.length; i += 9) {
+    const ax = positions[i]!,
+      ay = positions[i + 1]!,
+      az = positions[i + 2]!;
+    const bx = positions[i + 3]!,
+      by = positions[i + 4]!,
+      bz = positions[i + 5]!;
+    const cx = positions[i + 6]!,
+      cy = positions[i + 7]!,
+      cz = positions[i + 8]!;
+    v += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
+  }
+  return v / 6;
+}
+
+describe('개구부 — 메시 정합성 (리뷰 회귀)', () => {
+  it('겹치는 개구부 — 뒤 개구부 스킵, 부피 = 문 1개와 동일', () => {
+    const { store, seed } = setup();
+    const wall = store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [6000, 0],
+    });
+    const cache = new DeriveCache();
+    store.createOpening({ hostId: wall, typeId: seed.doorTypeId, offset: 3000 });
+    const oneDoor = signedVolume(cache.derive(store, wall)!.positions);
+    store.createOpening({ hostId: wall, typeId: seed.doorTypeId, offset: 3300 }); // 겹침
+    const overlapped = signedVolume(cache.derive(store, wall)!.positions);
+    expect(Math.abs(overlapped)).toBeCloseTo(Math.abs(oneDoor), 6);
+  });
+
+  it('L-마이터 끝의 문 — 양면 일관 클램프 (부피 = 벽 − 클램프된 구멍)', () => {
+    const { store, seed } = setup();
+    const wall = store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [3000, 0],
+    });
+    store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [0, 3000],
+    }); // 직각 이웃 → a끝 마이터 (내측 면 s=+100부터)
+    const cache = new DeriveCache();
+    const solid = signedVolume(cache.derive(store, wall)!.positions);
+    store.createOpening({ hostId: wall, typeId: seed.doorTypeId, offset: 0 }); // 최소로 클램프(500)
+    const withDoor = signedVolume(cache.derive(store, wall)!.positions);
+    // 클램프: sL=50 → usableLo=110, sR=950 → 제거 부피 = 0.84m × 2.1m × 0.2m
+    const expectedRemoved = 0.84 * 2.1 * 0.2;
+    expect(Math.abs(solid) - Math.abs(withDoor)).toBeCloseTo(expectedRemoved, 4);
+  });
+});
+
 describe('개구부', () => {
   it('벽에 문 생성 → 벽 메시에 구멍 (삼각형 수 증가) + 패널 메시 존재', () => {
     const { store, seed } = setup();
