@@ -27,6 +27,8 @@ export const LevelSchema = z.object({
 });
 export type Level = z.infer<typeof LevelSchema>;
 
+// --- 타입 (패밀리/타입의 씨앗 — 정의 1회 저장, 인스턴스는 참조) ---
+
 export const WallTypeSchema = z.object({
   id: z.string(),
   kind: z.literal('wall'),
@@ -37,8 +39,37 @@ export const WallTypeSchema = z.object({
 });
 export type WallType = z.infer<typeof WallTypeSchema>;
 
-export const ElemTypeSchema = z.discriminatedUnion('kind', [WallTypeSchema]);
+export const OpeningTypeSchema = z.object({
+  id: z.string(),
+  kind: z.literal('opening'),
+  name: z.string(),
+  color: z.string(),
+  opening: z.object({
+    kind: z.enum(['door', 'window']),
+    width: mm,
+    height: mm,
+    sillHeight: mm, // 문 = 0
+  }),
+});
+export type OpeningType = z.infer<typeof OpeningTypeSchema>;
+
+export const SlabTypeSchema = z.object({
+  id: z.string(),
+  kind: z.literal('slab'),
+  name: z.string(),
+  thickness: mm,
+  color: z.string(),
+});
+export type SlabType = z.infer<typeof SlabTypeSchema>;
+
+export const ElemTypeSchema = z.discriminatedUnion('kind', [
+  WallTypeSchema,
+  OpeningTypeSchema,
+  SlabTypeSchema,
+]);
 export type ElemType = z.infer<typeof ElemTypeSchema>;
+
+// --- 요소 ---
 
 export const WallElementSchema = z.object({
   id: z.string(),
@@ -53,7 +84,46 @@ export const WallElementSchema = z.object({
 });
 export type WallElement = z.infer<typeof WallElementSchema>;
 
-export const ElementSchema = z.discriminatedUnion('kind', [WallElementSchema]);
+/** 개구부 — 벽에 호스트. 위치는 호스트 중심선 기준 (벽이 움직이면 따라감) */
+export const OpeningElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('opening'),
+  typeId: z.string(),
+  hostId: z.string(), // 벽 id — 벽 삭제 시 연쇄 삭제
+  offset: mm, // wall.a부터 개구부 중심까지 mm (파생 시 클램프)
+  widthOverride: mm.optional(),
+  heightOverride: mm.optional(),
+  sillOverride: mm.optional(),
+  flip: z.boolean().optional(), // 문 스윙 방향 (2D 도면 단계에서 사용)
+});
+export type OpeningElement = z.infer<typeof OpeningElementSchema>;
+
+export const SlabElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('slab'),
+  levelId: z.string(),
+  typeId: z.string(),
+  boundary: z.array(Pt).min(3), // 단순 폴리곤 (자가교차 금지 — ops에서 검증)
+  thicknessOverride: mm.optional(),
+});
+export type SlabElement = z.infer<typeof SlabElementSchema>;
+
+/** 구조 그리드 축선 — 레벨 무관(전 층 공통), 평면에서 표시+스냅 */
+export const GridLineSchema = z.object({
+  id: z.string(),
+  kind: z.literal('grid'),
+  label: z.string(), // 'A', 'B'… / '1', '2'…
+  a: Pt,
+  b: Pt,
+});
+export type GridLine = z.infer<typeof GridLineSchema>;
+
+export const ElementSchema = z.discriminatedUnion('kind', [
+  WallElementSchema,
+  OpeningElementSchema,
+  SlabElementSchema,
+  GridLineSchema,
+]);
 export type Element = z.infer<typeof ElementSchema>;
 
 export interface DocMeta {
@@ -62,7 +132,8 @@ export interface DocMeta {
   units: 'mm';
 }
 
-/** 파생 입력의 스냅샷 — derive 함수는 이것만 본다 (순수성 보장) */
+// --- 파생 입력 스냅샷 (derive 순수성 보장) ---
+
 export interface WallDeriveInput {
   wall: WallElement;
   type: WallType;
@@ -72,4 +143,39 @@ export interface WallDeriveInput {
     a: import('./geometry/joins').JoinInfo | null;
     b: import('./geometry/joins').JoinInfo | null;
   };
+  /** 이 벽에 호스트된 개구부들 (구멍 + 리빌 생성) */
+  openings?: { el: OpeningElement; type: OpeningType }[];
+}
+
+export interface OpeningDeriveInput {
+  opening: OpeningElement;
+  type: OpeningType;
+  host: WallElement;
+  hostType: WallType;
+  level: Level;
+}
+
+export interface SlabDeriveInput {
+  slab: SlabElement;
+  type: SlabType;
+  level: Level;
+}
+
+/** 개구부 유효 치수 (오버라이드 적용 + 호스트 안 클램프) — derive와 ops가 공유 */
+export function resolveOpening(
+  el: OpeningElement,
+  type: OpeningType,
+  host: WallElement,
+  hostHeight: number,
+): { offset: number; width: number; height: number; sill: number; hostLen: number } | null {
+  const hostLen = Math.hypot(host.b[0] - host.a[0], host.b[1] - host.a[1]);
+  const width = Math.min(el.widthOverride ?? type.opening.width, Math.max(hostLen - 100, 0));
+  if (width < 50) return null;
+  const sill = Math.max(el.sillOverride ?? type.opening.sillHeight, 0);
+  const height = Math.min(el.heightOverride ?? type.opening.height, Math.max(hostHeight - sill - 50, 0));
+  if (height < 50) return null;
+  // 중심 offset을 벽 안쪽으로 클램프 (양끝 50mm 여유)
+  const half = width / 2;
+  const offset = Math.min(Math.max(el.offset, half + 50), Math.max(hostLen - half - 50, half + 50));
+  return { offset, width, height, sill, hostLen };
 }

@@ -19,9 +19,10 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
     title: '디자인',
     items: [
       { label: '벽', tool: 'wall' },
-      { label: '문', planned: 'M3' },
-      { label: '창', planned: 'M3' },
-      { label: '슬라브', planned: 'M3' },
+      { label: '문', tool: 'door' },
+      { label: '창', tool: 'window' },
+      { label: '슬라브', tool: 'slab' },
+      { label: '그리드', tool: 'grid' },
       { label: '기둥', planned: '추후' },
       { label: '보', planned: '추후' },
       { label: '지붕', planned: '추후' },

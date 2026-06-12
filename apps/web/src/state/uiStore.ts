@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import type { Id } from '@figcad/core';
 
-export type ToolName = 'select' | 'wall';
+export type ToolName = 'select' | 'wall' | 'door' | 'window' | 'slab' | 'grid';
+export type TypeKind = 'wall' | 'door' | 'window' | 'slab';
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 
@@ -13,14 +14,15 @@ interface UiState {
   activeTool: ToolName;
   selection: Id | null;
   viewMode: ViewModeUi;
-  activeWallTypeId: Id | null;
+  /** 도구별 활성 타입 (벽/문/창/슬라브) */
+  activeTypes: Record<TypeKind, Id | null>;
   activeLevelId: Id | null;
   connection: ConnectionState;
   peerCount: number;
   setTool: (t: ToolName) => void;
   setSelection: (id: Id | null) => void;
   setViewMode: (m: ViewModeUi) => void;
-  setActiveWallType: (id: Id) => void;
+  setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
   setConnection: (c: ConnectionState) => void;
   setPeerCount: (n: number) => void;
@@ -30,14 +32,15 @@ export const useUiStore = create<UiState>((set) => ({
   activeTool: 'wall',
   selection: null,
   viewMode: '3d',
-  activeWallTypeId: null,
+  activeTypes: { wall: null, door: null, window: null, slab: null },
   activeLevelId: null,
   connection: 'connecting',
   peerCount: 0,
   setTool: (activeTool) => set({ activeTool, selection: null }),
   setSelection: (selection) => set({ selection }),
   setViewMode: (viewMode) => set({ viewMode }),
-  setActiveWallType: (activeWallTypeId) => set({ activeWallTypeId }),
+  setActiveType: (kind, id) =>
+    set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),
   setActiveLevel: (activeLevelId) => set({ activeLevelId }),
   setConnection: (connection) => set({ connection }),
   setPeerCount: (peerCount) => set({ peerCount }),

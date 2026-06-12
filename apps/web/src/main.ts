@@ -11,6 +11,9 @@ import { HudLayer } from './hud/HudLayer';
 import { ToolController } from './tools/ToolController';
 import { WallTool } from './tools/WallTool';
 import { SelectTool } from './tools/SelectTool';
+import { OpeningTool } from './tools/OpeningTool';
+import { SlabTool } from './tools/SlabTool';
+import { GridTool } from './tools/GridTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
@@ -21,8 +24,14 @@ import type { EditorContext } from './tools/context';
 const ydoc = new Y.Doc();
 const store = new DocStore(ydoc);
 const seed = seedDocument(store); // 고정 id 시드 — 동시 시드해도 수렴
-useUiStore.getState().setActiveWallType(seed.wallTypeIds[0]!);
-useUiStore.getState().setActiveLevel(seed.levelId);
+{
+  const ui = useUiStore.getState();
+  ui.setActiveType('wall', seed.wallTypeIds[0]!);
+  ui.setActiveType('door', seed.doorTypeId);
+  ui.setActiveType('window', seed.windowTypeId);
+  ui.setActiveType('slab', seed.slabTypeId);
+  ui.setActiveLevel(seed.levelId);
+}
 
 // --- 렌더 ---
 const canvas = document.getElementById('viewport') as HTMLCanvasElement;
@@ -38,6 +47,12 @@ engine.addTicker(() => {
 });
 
 // --- 도구 ---
+const seedTypeByKind = {
+  wall: seed.wallTypeIds[0]!,
+  door: seed.doorTypeId,
+  window: seed.windowTypeId,
+  slab: seed.slabTypeId,
+} as const;
 const ctx: EditorContext = {
   store,
   engine,
@@ -45,12 +60,17 @@ const ctx: EditorContext = {
   scene: sceneManager,
   hud,
   levelId: () => useUiStore.getState().activeLevelId ?? seed.levelId,
-  wallTypeId: () => useUiStore.getState().activeWallTypeId ?? seed.wallTypeIds[0]!,
+  typeId: (kind) => useUiStore.getState().activeTypes[kind] ?? seedTypeByKind[kind],
+  wallTypeId: () => useUiStore.getState().activeTypes.wall ?? seedTypeByKind.wall,
   collab: NOOP_COLLAB,
 };
 const tools = new ToolController();
 tools.register('wall', new WallTool(ctx));
 tools.register('select', new SelectTool(ctx));
+tools.register('door', new OpeningTool(ctx, 'door'));
+tools.register('window', new OpeningTool(ctx, 'window'));
+tools.register('slab', new SlabTool(ctx));
+tools.register('grid', new GridTool(ctx));
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---

@@ -13,7 +13,10 @@ const WRITE_THROTTLE_MS = 33; // 드래그 중 문서 쓰기 ~30Hz (Yjs 문서 �
 type DragMode =
   | { kind: 'none' }
   | { kind: 'wall'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
-  | { kind: 'endpoint'; id: string; which: 'a' | 'b' };
+  | { kind: 'endpoint'; id: string; which: 'a' | 'b' }
+  | { kind: 'opening'; id: string }
+  | { kind: 'slab'; id: string; startDoc: Pt; origBoundary: Pt[] }
+  | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt };
 
 /**
  * 선택/이동: 클릭 픽킹 → 선택, 선택된 벽 드래그 = 평행 이동,
@@ -60,17 +63,24 @@ export class SelectTool implements Tool {
       }
     }
 
-    // 2. 요소 픽킹
+    // 2. 요소 픽킹 — 종류별 드래그 준비
     const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
     ui.setSelection(hit);
     this.ctx.scene.setSelected(hit);
     if (hit) {
       const el = this.ctx.store.getElement(hit);
-      if (el?.kind === 'wall') {
-        if (this.refuseIfLocked(hit)) return; // 선택은 허용, 드래그만 거부
+      if (!el) return;
+      if (this.refuseIfLocked(hit)) return; // 선택은 허용, 드래그만 거부
+      if (el.kind === 'wall') {
         this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
-        this.ctx.collab.setEditing(hit);
+      } else if (el.kind === 'opening') {
+        this.drag = { kind: 'opening', id: hit };
+      } else if (el.kind === 'slab') {
+        this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
+      } else if (el.kind === 'grid') {
+        this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
       }
+      if (this.drag.kind !== 'none') this.ctx.collab.setEditing(hit);
     }
   }
 
@@ -103,6 +113,39 @@ export class SelectTool implements Tool {
       const id = this.drag.id;
       this.throttledWrite(() => this.ctx.store.updateElement(id, { [which]: snap.point }));
       this.showLength(this.drag.id);
+    } else if (this.drag.kind === 'opening') {
+      // 호스트 중심선에 투영 → offset 슬라이드
+      const el = this.ctx.store.getElement(this.drag.id);
+      if (el?.kind !== 'opening') return;
+      const host = this.ctx.store.getElement(el.hostId);
+      if (host?.kind !== 'wall') return;
+      const len = Math.hypot(host.b[0] - host.a[0], host.b[1] - host.a[1]);
+      if (len === 0) return;
+      const dir = [(host.b[0] - host.a[0]) / len, (host.b[1] - host.a[1]) / len] as const;
+      const offset = Math.round(
+        (info.doc[0] - host.a[0]) * dir[0] + (info.doc[1] - host.a[1]) * dir[1],
+      );
+      const id = this.drag.id;
+      this.throttledWrite(() => this.ctx.store.updateElement(id, { offset }));
+    } else if (this.drag.kind === 'slab') {
+      const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
+      const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;
+      const drag = this.drag;
+      this.throttledWrite(() =>
+        this.ctx.store.updateElement(drag.id, {
+          boundary: drag.origBoundary.map(([x, y]) => [x + dx, y + dy]),
+        }),
+      );
+    } else if (this.drag.kind === 'grid') {
+      const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
+      const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;
+      const drag = this.drag;
+      this.throttledWrite(() =>
+        this.ctx.store.updateElement(drag.id, {
+          a: [drag.origA[0] + dx, drag.origA[1] + dy],
+          b: [drag.origB[0] + dx, drag.origB[1] + dy],
+        }),
+      );
     }
   }
 

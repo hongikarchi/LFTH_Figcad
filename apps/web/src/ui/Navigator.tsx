@@ -1,17 +1,18 @@
+import { useState } from 'react';
 import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
 
 /**
  * ArchiCAD Navigator(Project Map)의 웹 경량판 — 우측 도킹.
- * 트리: 스토리 / 3D / (단면·입면은 post-MVP 자리만).
- * 항목 클릭 = 해당 뷰 활성 (ArchiCAD는 더블클릭, 웹은 단일 클릭으로 단순화).
+ * 스토리: 클릭 = 평면 열기, ✎ = 인라인 편집(이름/레벨/층고/삭제).
  */
 export function Navigator({ store }: { store: DocStore }) {
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
   const { setViewMode, setActiveLevel } = useUiStore.getState();
+  const [editing, setEditing] = useState<string | null>(null);
 
   const levels = store.listLevels();
 
@@ -28,6 +29,18 @@ export function Navigator({ store }: { store: DocStore }) {
     setViewMode('plan');
   };
 
+  const removeStory = (id: string, name: string) => {
+    const count = store.listElements().filter((e) => 'levelId' in e && e.levelId === id).length;
+    const msg = count
+      ? `'${name}'와 그 층의 요소 ${count}개를 삭제합니다. 계속할까요?`
+      : `'${name}'를 삭제합니다.`;
+    if (!window.confirm(msg)) return;
+    store.deleteLevel(id);
+    setEditing(null);
+    const remaining = store.listLevels();
+    if (remaining.length && activeLevelId === id) setActiveLevel(remaining[0]!.id);
+  };
+
   return (
     <div className="navigator">
       <div className="nav-title">내비게이터</div>
@@ -35,17 +48,68 @@ export function Navigator({ store }: { store: DocStore }) {
 
       <div className="nav-subsection">스토리</div>
       {levels.map((l) => (
-        <button
-          key={l.id}
-          className={`nav-item indent ${viewMode === 'plan' && activeLevelId === l.id ? 'active' : ''}`}
-          onClick={() => {
-            setActiveLevel(l.id);
-            setViewMode('plan');
-          }}
-        >
-          {l.name}
-          <span className="nav-meta">{(l.elevation / 1000).toFixed(1)}m</span>
-        </button>
+        <div key={l.id}>
+          <div className="nav-row">
+            <button
+              className={`nav-item indent ${viewMode === 'plan' && activeLevelId === l.id ? 'active' : ''}`}
+              onClick={() => {
+                setActiveLevel(l.id);
+                setViewMode('plan');
+              }}
+            >
+              {l.name}
+              <span className="nav-meta">{(l.elevation / 1000).toFixed(1)}m</span>
+            </button>
+            <button
+              className="nav-edit"
+              title="스토리 설정"
+              onClick={() => setEditing(editing === l.id ? null : l.id)}
+            >
+              ✎
+            </button>
+          </div>
+          {editing === l.id && (
+            <div className="nav-editor">
+              <label>
+                이름
+                <input
+                  type="text"
+                  value={l.name}
+                  onChange={(e) => store.updateLevel(l.id, { name: e.target.value })}
+                />
+              </label>
+              <label>
+                레벨(mm)
+                <input
+                  type="number"
+                  step={100}
+                  defaultValue={l.elevation}
+                  onBlur={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (Number.isFinite(v)) store.updateLevel(l.id, { elevation: v });
+                  }}
+                />
+              </label>
+              <label>
+                층고(mm)
+                <input
+                  type="number"
+                  step={100}
+                  defaultValue={l.height}
+                  onBlur={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (Number.isFinite(v) && v >= 1000) store.updateLevel(l.id, { height: v });
+                  }}
+                />
+              </label>
+              {levels.length > 1 && (
+                <button className="nav-delete" onClick={() => removeStory(l.id, l.name)}>
+                  스토리 삭제
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       ))}
       <button className="nav-item indent add" onClick={addStory}>
         + 스토리 추가

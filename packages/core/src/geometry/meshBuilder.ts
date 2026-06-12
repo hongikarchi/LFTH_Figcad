@@ -107,6 +107,83 @@ export function extrudeProfile(rawProfile: Profile, depth: number, map: MapToWor
   };
 }
 
+/**
+ * 면 단위 빌더 — 하이브리드 메시의 기본 단위.
+ * 각 면 = 2D 프로필(구멍 가능) + (u,v)→월드 매핑. 마이터 풋프린트 프리즘의
+ * 측면에 개구부 구멍을 뚫는 벽 파생이 주 사용처.
+ * 와인딩 규약: enforceWinding 후 CCW 프로필의 법선 = e_u × e_v 방향.
+ * flip=true면 반전.
+ */
+export interface FaceSpec {
+  profile: Profile;
+  map: (u: number, v: number) => [number, number, number];
+  flip?: boolean;
+  /** 링 외곽선을 피처 엣지로 출력 (기본 false) */
+  edges?: boolean;
+}
+
+export function buildFaces(faces: FaceSpec[]): MeshData {
+  const positions: number[] = [];
+  const edges: number[] = [];
+
+  for (const face of faces) {
+    const profile = enforceWinding(face.profile);
+    const rings = [profile.outer, ...profile.holes];
+
+    const coords: number[] = [];
+    const holeIndices: number[] = [];
+    for (let r = 0; r < rings.length; r++) {
+      if (r > 0) holeIndices.push(coords.length / 2);
+      for (const [u, v] of rings[r]!) coords.push(u, v);
+    }
+    const tris = earcut(coords, holeIndices.length ? holeIndices : undefined);
+    const at = (i: number): [number, number, number] =>
+      face.map(coords[i * 2]!, coords[i * 2 + 1]!);
+
+    for (let t = 0; t < tris.length; t += 3) {
+      const p1 = at(tris[t]!);
+      const p2 = at(tris[t + 1]!);
+      const p3 = at(tris[t + 2]!);
+      if (face.flip) positions.push(...p1, ...p3, ...p2);
+      else positions.push(...p1, ...p2, ...p3);
+    }
+
+    if (face.edges) {
+      for (const ring of rings) {
+        for (let i = 0; i < ring.length; i++) {
+          const [u1, v1] = ring[i]!;
+          const [u2, v2] = ring[(i + 1) % ring.length]!;
+          edges.push(...face.map(u1, v1), ...face.map(u2, v2));
+        }
+      }
+    }
+  }
+
+  const posArr = new Float32Array(positions);
+  return {
+    positions: posArr,
+    normals: computeFlatNormals(posArr),
+    edges: new Float32Array(edges),
+  };
+}
+
+/** 두 MeshData 합치기 */
+export function mergeMeshData(parts: MeshData[]): MeshData {
+  const pos = new Float32Array(parts.reduce((n, p) => n + p.positions.length, 0));
+  const nor = new Float32Array(pos.length);
+  const edg = new Float32Array(parts.reduce((n, p) => n + p.edges.length, 0));
+  let po = 0;
+  let eo = 0;
+  for (const p of parts) {
+    pos.set(p.positions, po);
+    nor.set(p.normals, po);
+    edg.set(p.edges, eo);
+    po += p.positions.length;
+    eo += p.edges.length;
+  }
+  return { positions: pos, normals: nor, edges: edg };
+}
+
 /** non-indexed 삼각형 배열의 면 법선 (플랫 셰이딩) */
 export function computeFlatNormals(positions: Float32Array): Float32Array {
   const normals = new Float32Array(positions.length);

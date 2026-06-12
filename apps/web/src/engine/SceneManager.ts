@@ -4,6 +4,7 @@ import type { Engine } from './Engine';
 import type { DerivedGeometry } from '@figcad/core';
 
 const EDGE_COLOR = 0x2a2a2e;
+const GRID_COLOR = 0xc0392b;
 const SELECT_EMISSIVE = 0x0a84ff; // Apple blue
 const GHOST_OPACITY = 0.12;
 
@@ -11,8 +12,37 @@ interface SceneEntry {
   mesh: THREE.Mesh;
   edges: THREE.LineSegments;
   baseColor: string;
-  levelId: Id;
+  kind: string;
+  levelId: Id | null; // 그리드 = null (전 층 공통, 고스팅 제외)
+  labelText: string | null; // 그리드 버블 텍스트
+  sprites: THREE.Sprite[];
   lastGeo: DerivedGeometry | null;
+}
+
+/** 그리드 버블 — 원 + 라벨 텍스트 스프라이트 */
+function makeLabelSprite(text: string): THREE.Sprite {
+  const size = 96;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d')!;
+  g.beginPath();
+  g.arc(size / 2, size / 2, size / 2 - 4, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.fill();
+  g.lineWidth = 4;
+  g.strokeStyle = '#c0392b';
+  g.stroke();
+  g.fillStyle = '#1d1d1f';
+  g.font = `bold ${size * 0.42}px -apple-system, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, size / 2, size / 2 + 2);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }),
+  );
+  sprite.scale.setScalar(0.5);
+  sprite.renderOrder = 5;
+  return sprite;
 }
 
 /**
@@ -24,6 +54,7 @@ export class SceneManager {
   private entries = new Map<Id, SceneEntry>();
   private derive = new DeriveCache();
   private edgeMat = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
+  private gridEdgeMat = new THREE.LineBasicMaterial({ color: GRID_COLOR });
   private ghostEdgeMat = new THREE.LineBasicMaterial({
     color: EDGE_COLOR,
     transparent: true,
@@ -94,13 +125,16 @@ export class SceneManager {
   }
 
   private applyGhosting(entry: SceneEntry): void {
+    if (entry.kind === 'grid') return; // 그리드는 전 층 공통 — 고스팅 제외
     const ghosted =
       this.viewMode === 'plan' &&
       this.activeLevelId !== null &&
+      entry.levelId !== null &&
       entry.levelId !== this.activeLevelId;
     const mat = entry.mesh.material as THREE.MeshLambertMaterial;
-    mat.transparent = ghosted;
-    mat.opacity = ghosted ? GHOST_OPACITY : 1;
+    const baseOpacity = entry.kind === 'opening:window' ? 0.55 : 1;
+    mat.transparent = ghosted || baseOpacity < 1;
+    mat.opacity = ghosted ? GHOST_OPACITY : baseOpacity;
     mat.needsUpdate = true;
     entry.edges.material = ghosted ? this.ghostEdgeMat : this.edgeMat;
   }
@@ -113,17 +147,49 @@ export class SceneManager {
     }
     const el = this.store.getElement(id);
     if (!el) return;
-    const type = this.store.getType(el.typeId);
-    const color = type && 'color' in type ? type.color : '#cccccc';
+
+    // 종류별 시각 속성
+    const elType = 'typeId' in el ? this.store.getType(el.typeId) : undefined;
+    const color =
+      el.kind === 'grid' ? '#c0392b' : elType && 'color' in elType ? elType.color : '#cccccc';
+    const kind =
+      el.kind === 'opening' && elType?.kind === 'opening'
+        ? `opening:${elType.opening.kind}`
+        : el.kind;
+    // 개구부의 레벨 = 호스트 벽의 레벨 (고스팅용)
+    let levelId: Id | null = null;
+    if ('levelId' in el) levelId = el.levelId;
+    else if (el.kind === 'opening') {
+      const host = this.store.getElement(el.hostId);
+      levelId = host && 'levelId' in host ? host.levelId : null;
+    }
 
     let entry = this.entries.get(id);
     if (!entry) {
       const mat = new THREE.MeshLambertMaterial({ color });
+      if (el.kind === 'grid') {
+        // 그리드 리본 = 픽킹 전용 (거의 안 보이게)
+        mat.transparent = true;
+        mat.opacity = 0.04;
+        mat.depthWrite = false;
+      }
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.userData['elementId'] = id;
-      const edges = new THREE.LineSegments(new THREE.BufferGeometry(), this.edgeMat);
+      const edges = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        el.kind === 'grid' ? this.gridEdgeMat : this.edgeMat,
+      );
       this.engine.scene.add(mesh, edges);
-      entry = { mesh, edges, baseColor: color, levelId: el.levelId, lastGeo: null };
+      entry = {
+        mesh,
+        edges,
+        baseColor: color,
+        kind,
+        levelId,
+        labelText: null,
+        sprites: [],
+        lastGeo: null,
+      };
       this.entries.set(id, entry);
       this.applyGhosting(entry);
     }
@@ -131,8 +197,9 @@ export class SceneManager {
       (entry.mesh.material as THREE.MeshLambertMaterial).color.set(color);
       entry.baseColor = color;
     }
-    if (entry.levelId !== el.levelId) {
-      entry.levelId = el.levelId;
+    if (entry.levelId !== levelId || entry.kind !== kind) {
+      entry.levelId = levelId;
+      entry.kind = kind;
       this.applyGhosting(entry);
     }
 
@@ -140,18 +207,43 @@ export class SceneManager {
       setBufferGeometry(entry.mesh.geometry, geo.positions, geo.normals);
       setLineGeometry(entry.edges.geometry, geo.edges);
       entry.lastGeo = geo;
+      this.updateGridBubbles(entry, el, geo);
+    } else if (el.kind === 'grid' && entry.labelText !== el.label) {
+      this.updateGridBubbles(entry, el, geo);
     }
 
     this.applyHighlight(id);
   }
 
+  /** 그리드 양끝 버블 스프라이트 (라벨 변경/이동 시 재생성·재배치) */
+  private updateGridBubbles(entry: SceneEntry, el: { kind: string }, geo: DerivedGeometry): void {
+    if (el.kind !== 'grid') return;
+    const grid = el as { kind: 'grid'; label: string };
+    if (entry.labelText !== grid.label) {
+      for (const s of entry.sprites) {
+        this.engine.scene.remove(s);
+        s.material.map?.dispose();
+        s.material.dispose();
+      }
+      entry.sprites = [makeLabelSprite(grid.label), makeLabelSprite(grid.label)];
+      for (const s of entry.sprites) this.engine.scene.add(s);
+      entry.labelText = grid.label;
+    }
+    entry.sprites[0]?.position.set(...geo.anchors.a);
+    entry.sprites[1]?.position.set(...geo.anchors.b);
+  }
+
   private remove(id: Id): void {
     const entry = this.entries.get(id);
     if (!entry) return;
-    this.engine.scene.remove(entry.mesh, entry.edges);
+    this.engine.scene.remove(entry.mesh, entry.edges, ...entry.sprites);
     entry.mesh.geometry.dispose();
     entry.edges.geometry.dispose();
     (entry.mesh.material as THREE.Material).dispose();
+    for (const s of entry.sprites) {
+      s.material.map?.dispose();
+      s.material.dispose();
+    }
     this.entries.delete(id);
     this.derive.evict(id);
     if (this.selected === id) this.selected = null;

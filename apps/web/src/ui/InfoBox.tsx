@@ -1,41 +1,101 @@
 import { useEffect, useState } from 'react';
-import type { DocStore } from '@figcad/core';
-import { useUiStore } from '../state/uiStore';
+import type { DocStore, Id, OpeningType } from '@figcad/core';
+import { useUiStore, type TypeKind } from '../state/uiStore';
 import { useDocVersion } from './App';
 
 /**
  * ArchiCAD Info Box의 웹 경량판 — 상단 가로 도킹, 컨텍스트 민감:
  * "활성 도구 또는 선택 요소의 현재 설정을 표시" (help.graphisoft.com).
- * 선택이 있으면 선택 요소 설정, 없으면 활성 도구 설정.
  */
+
+/** 숫자 입력 드래프트 — blur/Enter에만 커밋 */
+function NumField({
+  label,
+  value,
+  min,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  onCommit: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => setDraft(null), [value]);
+  return (
+    <span className="infobox-field">
+      <label>{label}</label>
+      <input
+        type="number"
+        step={100}
+        value={draft ?? String(value)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft === null) return;
+          const v = Math.round(Number(draft));
+          if (Number.isFinite(v) && v >= (min ?? 0)) onCommit(v);
+          setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+      />
+    </span>
+  );
+}
+
+function TypeSelect({
+  store,
+  value,
+  filter,
+  onChange,
+}: {
+  store: DocStore;
+  value: Id;
+  filter: (t: { kind: string; opening?: { kind: string } }) => boolean;
+  onChange: (id: Id) => void;
+}) {
+  const types = store.listTypes().filter(filter);
+  return (
+    <span className="infobox-field">
+      <label>타입</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {types.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
 export function InfoBox({ store }: { store: DocStore }) {
   useDocVersion(store);
   const activeTool = useUiStore((s) => s.activeTool);
   const selection = useUiStore((s) => s.selection);
   const setSelection = useUiStore((s) => s.setSelection);
-  const activeWallTypeId = useUiStore((s) => s.activeWallTypeId);
-  const setActiveWallType = useUiStore((s) => s.setActiveWallType);
+  const activeTypes = useUiStore((s) => s.activeTypes);
+  const setActiveType = useUiStore((s) => s.setActiveType);
 
-  // 높이 입력 드래프트 — blur/Enter에만 커밋
-  const [heightDraft, setHeightDraft] = useState<string | null>(null);
-  useEffect(() => setHeightDraft(null), [selection]);
-
-  const wallTypes = store.listTypes('wall');
   const el = selection ? store.getElement(selection) : undefined;
 
-  // --- 선택된 벽: 요소 설정 ---
+  const deleteBtn = (id: Id) => (
+    <button
+      className="danger"
+      onClick={() => {
+        store.deleteElements([id]);
+        setSelection(null);
+      }}
+    >
+      삭제
+    </button>
+  );
+
+  // ---- 선택 요소 컨텍스트 ----
   if (el?.kind === 'wall') {
     const level = store.getLevel(el.levelId);
     const lengthMm = Math.round(Math.hypot(el.b[0] - el.a[0], el.b[1] - el.a[1]));
-    const effHeight = el.height ?? level?.height ?? 0;
-
-    const commitHeight = () => {
-      if (heightDraft === null) return;
-      const v = Math.round(Number(heightDraft));
-      if (Number.isFinite(v) && v >= 100) store.updateElement(el.id, { height: v });
-      setHeightDraft(null);
-    };
-
     return (
       <div className="infobox">
         <span className="infobox-title">벽</span>
@@ -43,88 +103,180 @@ export function InfoBox({ store }: { store: DocStore }) {
           <label>길이</label>
           <span className="ro">{lengthMm.toLocaleString('ko-KR')}</span>
         </span>
-        <span className="infobox-field">
-          <label>높이</label>
-          <input
-            type="number"
-            step={100}
-            value={heightDraft ?? String(effHeight)}
-            onChange={(e) => setHeightDraft(e.target.value)}
-            onBlur={commitHeight}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-            }}
-          />
-        </span>
-        <span className="infobox-field">
-          <label>타입</label>
-          <select
-            value={el.typeId}
-            onChange={(e) => store.updateElement(el.id, { typeId: e.target.value })}
-          >
-            {wallTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </span>
+        <NumField
+          label="높이"
+          value={el.height ?? level?.height ?? 0}
+          min={100}
+          onCommit={(v) => store.updateElement(el.id, { height: v })}
+        />
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'wall'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
         <span className="infobox-field">
           <label>홈 스토리</label>
           <span className="ro">{level?.name ?? '—'}</span>
         </span>
-        <button
-          className="danger"
-          onClick={() => {
-            store.deleteElements([el.id]);
-            setSelection(null);
-          }}
-        >
-          삭제
-        </button>
+        {deleteBtn(el.id)}
       </div>
     );
   }
 
-  // --- 벽 도구: 도구 기본 설정 ---
-  if (activeTool === 'wall') {
+  if (el?.kind === 'opening') {
+    const type = store.getType(el.typeId) as OpeningType | undefined;
+    if (!type || type.kind !== 'opening') return null;
+    const isDoor = type.opening.kind === 'door';
     return (
       <div className="infobox">
-        <span className="infobox-title">벽 도구</span>
-        <span className="infobox-field">
-          <label>타입</label>
-          <select
-            value={activeWallTypeId ?? ''}
-            onChange={(e) => setActiveWallType(e.target.value)}
-          >
-            {wallTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </span>
-        <span className="infobox-field">
-          <label>지오메트리</label>
-          <span className="ro">체인</span>
-        </span>
-        <span className="infobox-field">
-          <label>참조선</label>
-          <span className="ro">중심선</span>
-        </span>
-        <span className="infobox-field">
-          <label>높이</label>
-          <span className="ro">스토리 층고</span>
-        </span>
+        <span className="infobox-title">{isDoor ? '문' : '창'}</span>
+        <NumField
+          label="위치"
+          value={el.offset}
+          onCommit={(v) => store.updateElement(el.id, { offset: v })}
+        />
+        <NumField
+          label="폭"
+          value={el.widthOverride ?? type.opening.width}
+          min={100}
+          onCommit={(v) => store.updateElement(el.id, { widthOverride: v })}
+        />
+        <NumField
+          label="높이"
+          value={el.heightOverride ?? type.opening.height}
+          min={100}
+          onCommit={(v) => store.updateElement(el.id, { heightOverride: v })}
+        />
+        {!isDoor && (
+          <NumField
+            label="씰 높이"
+            value={el.sillOverride ?? type.opening.sillHeight}
+            onCommit={(v) => store.updateElement(el.id, { sillOverride: v })}
+          />
+        )}
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'opening' && t.opening?.kind === type.opening.kind}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        {deleteBtn(el.id)}
       </div>
     );
   }
 
-  // --- 선택 도구, 선택 없음 ---
+  if (el?.kind === 'slab') {
+    const type = store.getType(el.typeId);
+    const thickness =
+      el.thicknessOverride ?? (type && 'thickness' in type ? type.thickness : 0) ?? 0;
+    // 면적 (슈레이스 공식)
+    const area =
+      Math.abs(
+        el.boundary.reduce((acc, [x, y], i) => {
+          const [nx, ny] = el.boundary[(i + 1) % el.boundary.length]!;
+          return acc + x * ny - nx * y;
+        }, 0),
+      ) / 2e6; // mm² → m²
+    return (
+      <div className="infobox">
+        <span className="infobox-title">슬라브</span>
+        <span className="infobox-field">
+          <label>면적</label>
+          <span className="ro">{area.toFixed(2)} m²</span>
+        </span>
+        <NumField
+          label="두께"
+          value={thickness}
+          min={50}
+          onCommit={(v) => store.updateElement(el.id, { thicknessOverride: v })}
+        />
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'slab'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  if (el?.kind === 'grid') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">그리드</span>
+        <span className="infobox-field">
+          <label>라벨</label>
+          <input
+            type="text"
+            style={{ width: 48 }}
+            value={el.label}
+            onChange={(e) => store.updateElement(el.id, { label: e.target.value.slice(0, 4) })}
+          />
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  // ---- 활성 도구 컨텍스트 ----
+  const toolTypeKind: Partial<Record<string, TypeKind>> = {
+    wall: 'wall',
+    door: 'door',
+    window: 'window',
+    slab: 'slab',
+  };
+  const kind = toolTypeKind[activeTool];
+  if (kind) {
+    const title = { wall: '벽 도구', door: '문 도구', window: '창 도구', slab: '슬라브 도구' }[kind];
+    const filter =
+      kind === 'wall'
+        ? (t: { kind: string }) => t.kind === 'wall'
+        : kind === 'slab'
+          ? (t: { kind: string }) => t.kind === 'slab'
+          : (t: { kind: string; opening?: { kind: string } }) =>
+              t.kind === 'opening' && t.opening?.kind === (kind === 'door' ? 'door' : 'window');
+    const current = activeTypes[kind] ?? store.listTypes().find(filter)?.id ?? '';
+    return (
+      <div className="infobox">
+        <span className="infobox-title">{title}</span>
+        <TypeSelect store={store} value={current} filter={filter} onChange={(id) => setActiveType(kind, id)} />
+        {kind === 'wall' && (
+          <>
+            <span className="infobox-field">
+              <label>지오메트리</label>
+              <span className="ro">체인</span>
+            </span>
+            <span className="infobox-field">
+              <label>참조선</label>
+              <span className="ro">중심선</span>
+            </span>
+          </>
+        )}
+        {(kind === 'door' || kind === 'window') && (
+          <span className="infobox-hint">벽을 클릭해 배치 · 드래그로 위치 이동</span>
+        )}
+        {kind === 'slab' && (
+          <span className="infobox-hint">꼭짓점 클릭 · 첫 점 클릭 또는 우클릭으로 닫기</span>
+        )}
+      </div>
+    );
+  }
+
+  if (activeTool === 'grid') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">그리드 도구</span>
+        <span className="infobox-hint">두 점 클릭 — 세로축은 숫자, 가로축은 알파벳 자동 라벨</span>
+      </div>
+    );
+  }
+
   return (
     <div className="infobox">
       <span className="infobox-title">선택</span>
-      <span className="infobox-hint">요소를 클릭해 선택 · 우클릭 = 확정/패닝 · 휠 = 줌</span>
+      <span className="infobox-hint">요소를 클릭해 선택 · 우클릭 = 확정/회전 · 휠 = 줌</span>
     </div>
   );
 }
