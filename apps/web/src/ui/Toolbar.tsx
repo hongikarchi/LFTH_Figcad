@@ -8,9 +8,8 @@ const TOOLS: { name: ToolName; label: string }[] = [
 
 export function Toolbar({ store }: { store: DocStore }) {
   const activeTool = useUiStore((s) => s.activeTool);
-  const viewMode = useUiStore((s) => s.viewMode);
   const activeWallTypeId = useUiStore((s) => s.activeWallTypeId);
-  const { setTool, setViewMode, setActiveWallType } = useUiStore.getState();
+  const { setTool, setActiveWallType } = useUiStore.getState();
 
   const wallTypes = store.listTypes('wall');
 
@@ -37,10 +36,6 @@ export function Toolbar({ store }: { store: DocStore }) {
           ))}
         </select>
       )}
-      <div className="spacer" />
-      <button onClick={() => setViewMode(viewMode === '3d' ? 'plan' : '3d')}>
-        {viewMode === '3d' ? '평면' : '3D'}
-      </button>
     </div>
   );
 }

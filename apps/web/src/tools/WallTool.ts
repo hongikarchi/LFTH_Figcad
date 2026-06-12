@@ -16,9 +16,9 @@ const GRID_MM = 100;
 const DRAG_COMMIT_PX = 8; // down→up 이동이 이보다 크면 펜 스트로크 커밋
 
 const MARKER_COLORS: Record<SnapResult['kind'], number> = {
-  endpoint: 0xff9f43,
-  grid: 0x5b9dff,
-  none: 0xffffff,
+  endpoint: 0xff9500, // Apple orange — 연결점
+  grid: 0x0a84ff,
+  none: 0x1d1d1f,
 };
 
 /**
@@ -38,11 +38,11 @@ export class WallTool implements Tool {
   constructor(private ctx: EditorContext) {
     this.ghostMesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      new THREE.MeshLambertMaterial({ color: 0xd8d2c4, transparent: true, opacity: 0.55 }),
+      new THREE.MeshLambertMaterial({ color: 0x9ec3ff, transparent: true, opacity: 0.45 }),
     );
     this.ghostEdges = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0x5b9dff }),
+      new THREE.LineBasicMaterial({ color: 0x0a84ff }),
     );
     this.marker = new THREE.Mesh(
       new THREE.SphereGeometry(1, 12, 8),
@@ -86,6 +86,7 @@ export class WallTool implements Tool {
       this.chainStart = null;
       this.ctx.hud.hideDimension();
       this.marker.visible = false;
+      this.ctx.engine.requestRender();
     }
     this.downClient = null;
   }
@@ -160,6 +161,7 @@ export class WallTool implements Tool {
   private hideGhost(): void {
     this.ghostMesh.visible = this.ghostEdges.visible = false;
     this.ctx.hud.hideDimension();
+    this.ctx.engine.requestRender(); // 50mm 미만 커밋 무산 경로에서도 고스트/마커 잔상 제거
   }
 
   private updateMarker(snap: SnapResult, mmPerPixel: number): void {

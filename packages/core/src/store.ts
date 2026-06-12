@@ -2,6 +2,8 @@ import { nanoid } from 'nanoid';
 import {
   CORE_SCHEMA_VERSION,
   ElementSchema,
+  ElemTypeSchema,
+  LevelSchema,
   quantize,
   type DocMeta,
   type Element,
@@ -72,13 +74,30 @@ export class DocStore {
 
   addLevel(level: Omit<Level, 'id'>): Id {
     const id = nanoid(12);
-    this.levels.set(id, { ...level, id });
+    this.levels.set(
+      id,
+      LevelSchema.parse({
+        ...level,
+        id,
+        elevation: quantize(level.elevation),
+        height: quantize(level.height),
+      }),
+    );
+    this.emit({ added: [id], updated: [], removed: [] });
     return id;
   }
 
   addType(type: Omit<ElemType, 'id'>): Id {
     const id = nanoid(12);
-    this.types.set(id, { ...type, id } as ElemType);
+    this.types.set(
+      id,
+      ElemTypeSchema.parse({
+        ...type,
+        id,
+        ...(type.thickness !== undefined ? { thickness: quantize(type.thickness) } : {}),
+      }),
+    );
+    this.emit({ added: [id], updated: [], removed: [] });
     return id;
   }
 
@@ -90,6 +109,12 @@ export class DocStore {
     height?: number;
     baseOffset?: number;
   }): Id {
+    if (
+      quantize(params.a[0]) === quantize(params.b[0]) &&
+      quantize(params.a[1]) === quantize(params.b[1])
+    ) {
+      throw new Error('zero-length wall');
+    }
     const id = nanoid(12);
     const wall: WallElement = ElementSchema.parse({
       id,
@@ -110,10 +135,11 @@ export class DocStore {
     const prev = this.elements.get(id);
     if (!prev) return;
     const next = { ...prev, ...patch } as Element;
-    // 좌표·치수 양자화
+    // 좌표·치수 양자화 + 퇴화(0길이) 거부
     if (next.kind === 'wall') {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
+      if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return; // 무시
       if (next.height !== undefined) next.height = quantize(next.height);
       if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
     }
@@ -149,13 +175,13 @@ export function seedDocument(store: DocStore): { levelId: Id; wallTypeIds: Id[] 
     kind: 'wall',
     name: '콘크리트벽 200',
     thickness: 200,
-    color: '#d8d2c4',
+    color: '#eceae5',
   });
   const w100 = store.addType({
     kind: 'wall',
     name: '칸막이벽 100',
     thickness: 100,
-    color: '#e8e4da',
+    color: '#f5f3ee',
   });
   return { levelId, wallTypeIds: [w200, w100] };
 }

@@ -18,6 +18,7 @@ import type { EditorContext } from './tools/context';
 const store = new DocStore();
 const seed = seedDocument(store);
 useUiStore.getState().setActiveWallType(seed.wallTypeIds[0]!);
+useUiStore.getState().setActiveLevel(seed.levelId);
 
 // --- 렌더 ---
 const canvas = document.getElementById('viewport') as HTMLCanvasElement;
@@ -27,6 +28,11 @@ engine.addTicker((dt) => rig.tick(dt));
 buildScene(engine.scene);
 const sceneManager = new SceneManager(store, engine);
 const hud = new HudLayer();
+// 렌더되는 프레임마다 칩 재투영 (카메라 이동 추적) — 루프 유지는 안 함
+engine.addTicker(() => {
+  hud.reproject(rig.active);
+  return false;
+});
 
 // --- 도구 ---
 const ctx: EditorContext = {
@@ -35,7 +41,7 @@ const ctx: EditorContext = {
   rig,
   scene: sceneManager,
   hud,
-  levelId: () => seed.levelId,
+  levelId: () => useUiStore.getState().activeLevelId ?? seed.levelId,
   wallTypeId: () => useUiStore.getState().activeWallTypeId ?? seed.wallTypeIds[0]!,
 };
 const tools = new ToolController();
@@ -47,7 +53,7 @@ new InputManager(
   canvas,
   rig,
   tools,
-  () => (store.getLevel(seed.levelId)?.elevation ?? 0) / 1000,
+  () => (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000,
   () => engine.requestRender(),
 );
 
@@ -57,8 +63,9 @@ useUiStore.subscribe((state, prev) => {
     tools.setActive(state.activeTool);
     sceneManager.setSelected(null);
   }
-  if (state.viewMode !== prev.viewMode) {
+  if (state.viewMode !== prev.viewMode || state.activeLevelId !== prev.activeLevelId) {
     rig.setMode(state.viewMode);
+    sceneManager.setViewContext(state.viewMode, state.activeLevelId);
     engine.requestRender();
   }
   if (state.selection !== prev.selection) {

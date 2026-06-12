@@ -13,10 +13,12 @@ interface UiState {
   selection: Id | null;
   viewMode: ViewModeUi;
   activeWallTypeId: Id | null;
+  activeLevelId: Id | null;
   setTool: (t: ToolName) => void;
   setSelection: (id: Id | null) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveWallType: (id: Id) => void;
+  setActiveLevel: (id: Id) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -24,8 +26,10 @@ export const useUiStore = create<UiState>((set) => ({
   selection: null,
   viewMode: '3d',
   activeWallTypeId: null,
+  activeLevelId: null,
   setTool: (activeTool) => set({ activeTool, selection: null }),
   setSelection: (selection) => set({ selection }),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveWallType: (activeWallTypeId) => set({ activeWallTypeId }),
+  setActiveLevel: (activeLevelId) => set({ activeLevelId }),
 }));

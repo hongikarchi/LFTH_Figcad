@@ -58,6 +58,12 @@ export class TouchGestures {
     this.resetReference();
   }
 
+  /** 팜 리젝션: 펜 활성 전환 시 추적 중인 터치를 모두 버린다 (스테일 점프 방지) */
+  reset(): void {
+    this.pointers.clear();
+    this.resetReference();
+  }
+
   get activeCount(): number {
     return this.pointers.size;
   }

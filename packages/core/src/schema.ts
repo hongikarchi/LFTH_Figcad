@@ -67,4 +67,9 @@ export interface WallDeriveInput {
   wall: WallElement;
   type: WallType;
   level: Level;
+  /** 끝점 공유 이웃 (L자 마이터용). null = 자유 끝(사각 캡) */
+  joins?: {
+    a: import('./geometry/joins').JoinInfo | null;
+    b: import('./geometry/joins').JoinInfo | null;
+  };
 }

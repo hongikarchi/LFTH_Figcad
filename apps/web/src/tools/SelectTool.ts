@@ -24,7 +24,7 @@ export class SelectTool implements Tool {
   private handleB: THREE.Mesh;
 
   constructor(private ctx: EditorContext) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x2266ff });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x0a84ff });
     this.handleA = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat);
     this.handleB = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat.clone());
     this.handleA.visible = this.handleB.visible = false;
@@ -88,6 +88,8 @@ export class SelectTool implements Tool {
         grid: GRID_MM,
         axisFrom: other,
       });
+      // 0길이 붕괴 방지 — WallTool과 동일한 50mm 최소 길이
+      if (Math.hypot(snap.point[0] - other[0], snap.point[1] - other[1]) < 50) return;
       this.ctx.store.updateElement(this.drag.id, { [this.drag.which]: snap.point });
       this.showLength(this.drag.id);
     }

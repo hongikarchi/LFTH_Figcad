@@ -69,14 +69,22 @@ export class CameraRig {
     }
   }
 
-  /** Engine ticker — 트윈 진행 중이면 true */
+  /** Engine ticker — 완료 프레임도 true 반환 (마지막 프레임 + 카메라 스왑이 렌더되도록) */
   tick(dt: number): boolean {
     if (this.tweenT >= 1) return false;
     this.tweenT = Math.min(this.tweenT + dt / TWEEN_DURATION, 1);
     const e = 1 - Math.pow(1 - this.tweenT, 3); // ease-out cubic
     this.phi = this.phiFrom + (this.phiTo - this.phiFrom) * e;
     this.apply();
-    return this.tweenT < 1;
+    return true;
+  }
+
+  /** 화면 1px당 월드 m (타깃 깊이 기준) — 스냅 톨러런스/팬 환산용 */
+  worldPerPixel(): number {
+    if (this.mode === 'plan' && this.tweenT >= 1) {
+      return this.distance / window.innerHeight; // ortho: 화면 높이 = distance
+    }
+    return (2 * Math.tan(((55 / 2) * Math.PI) / 180) * this.distance) / window.innerHeight;
   }
 
   orbit(dx: number, dy: number): void {
@@ -90,20 +98,20 @@ export class CameraRig {
   }
 
   pan(dx: number, dy: number): void {
-    // 화면 픽셀 → 월드 이동량 (현재 거리 기준)
-    const scale = this.distance / window.innerHeight;
+    // 카메라 기저에서 유도: right=(cos,0,-sin), 화면상향 u는 모드별 (리뷰 검증 공식).
+    // 콘텐츠가 커서를 정확히 따라오도록 worldPerPixel 사용.
+    const scale = this.worldPerPixel();
     const sin = Math.sin(this.theta);
     const cos = Math.cos(this.theta);
     if (this.mode === 'plan') {
-      this.target.x -= (dx * cos - dy * sin) * scale * 2;
-      this.target.z -= (dx * sin + dy * cos) * scale * 2;
+      this.target.x -= (dx * cos + dy * sin) * scale;
+      this.target.z += (dx * sin - dy * cos) * scale;
     } else {
-      // 카메라 우측/상향 벡터 기준 (지면 평면 위에서)
-      this.target.x -= (dx * cos) * scale * 2;
-      this.target.z -= (dx * sin) * scale * 2;
-      this.target.x += dy * sin * Math.cos(this.phi) * scale * 2;
-      this.target.z -= dy * cos * Math.cos(this.phi) * scale * -2;
-      this.target.y += dy * Math.sin(this.phi) * scale * 2;
+      const cosPhi = Math.cos(this.phi);
+      const sinPhi = Math.sin(this.phi);
+      this.target.x -= (dx * cos + dy * sin * cosPhi) * scale;
+      this.target.z += (dx * sin - dy * cos * cosPhi) * scale;
+      this.target.y += dy * sinPhi * scale;
     }
     this.apply();
   }

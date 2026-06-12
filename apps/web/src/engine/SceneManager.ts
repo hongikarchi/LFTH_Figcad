@@ -1,39 +1,50 @@
 import * as THREE from 'three';
 import { DeriveCache, type DocStore, type Id } from '@figcad/core';
 import type { Engine } from './Engine';
+import type { DerivedGeometry } from '@figcad/core';
 
-const EDGE_COLOR = 0x16181b;
-const SELECT_EMISSIVE = 0x2266ff;
+const EDGE_COLOR = 0x2a2a2e;
+const SELECT_EMISSIVE = 0x0a84ff; // Apple blue
+const GHOST_OPACITY = 0.12;
 
 interface SceneEntry {
   mesh: THREE.Mesh;
   edges: THREE.LineSegments;
   baseColor: string;
+  levelId: Id;
+  lastGeo: DerivedGeometry | null;
 }
 
 /**
- * 문서 → 씬 reconciler. 불변 규칙 1이 사는 곳:
- * 스토어 이벤트를 받아 파라미터에서 지오메트리를 파생(캐시 경유)해 씬을 패치한다.
- * 메시는 요소당 1개 (M1 규모에서 충분 — 배칭은 M6 최적화).
+ * 문서 → 씬 reconciler. 변경 시 모든 벽에 derive를 다시 요청한다 —
+ * 캐시 키에 조인 정보가 들어 있어 이웃이 움직인 벽만 실제 재파생되고,
+ * 나머지는 같은 geo 객체가 돌아와(lastGeo 비교) GPU 업로드를 스킵한다.
  */
 export class SceneManager {
   private entries = new Map<Id, SceneEntry>();
   private derive = new DeriveCache();
   private edgeMat = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
+  private ghostEdgeMat = new THREE.LineBasicMaterial({
+    color: EDGE_COLOR,
+    transparent: true,
+    opacity: 0.15,
+  });
   private selected: Id | null = null;
+  private viewMode: '3d' | 'plan' = '3d';
+  private activeLevelId: Id | null = null;
 
   constructor(
     private store: DocStore,
     private engine: Engine,
   ) {
     store.observe((change) => {
-      for (const id of [...change.added, ...change.updated]) this.upsert(id);
       for (const id of change.removed) this.remove(id);
+      // 조인 때문에 전체 벽 재요청 (캐시가 무변경을 걸러낸다)
+      for (const el of store.listElements()) this.upsert(el.id);
       engine.requestRender();
     });
   }
 
-  /** 픽킹 대상 메시 목록 */
   get pickables(): THREE.Object3D[] {
     return [...this.entries.values()].map((e) => e.mesh);
   }
@@ -49,10 +60,30 @@ export class SceneManager {
       if (entry) {
         const mat = entry.mesh.material as THREE.MeshLambertMaterial;
         mat.emissive.setHex(SELECT_EMISSIVE);
-        mat.emissiveIntensity = 0.35;
+        mat.emissiveIntensity = 0.3;
       }
     }
     this.engine.requestRender();
+  }
+
+  /** 평면 모드에서 비활성 레벨 고스팅 (15% — ArchiCAD 고스트 스토리 식) */
+  setViewContext(mode: '3d' | 'plan', activeLevelId: Id | null): void {
+    this.viewMode = mode;
+    this.activeLevelId = activeLevelId;
+    for (const entry of this.entries.values()) this.applyGhosting(entry);
+    this.engine.requestRender();
+  }
+
+  private applyGhosting(entry: SceneEntry): void {
+    const ghosted =
+      this.viewMode === 'plan' &&
+      this.activeLevelId !== null &&
+      entry.levelId !== this.activeLevelId;
+    const mat = entry.mesh.material as THREE.MeshLambertMaterial;
+    mat.transparent = ghosted;
+    mat.opacity = ghosted ? GHOST_OPACITY : 1;
+    mat.needsUpdate = true;
+    entry.edges.material = ghosted ? this.ghostEdgeMat : this.edgeMat;
   }
 
   private upsert(id: Id): void {
@@ -62,7 +93,8 @@ export class SceneManager {
       return;
     }
     const el = this.store.getElement(id);
-    const type = el ? this.store.getType(el.typeId) : undefined;
+    if (!el) return;
+    const type = this.store.getType(el.typeId);
     const color = type && 'color' in type ? type.color : '#cccccc';
 
     let entry = this.entries.get(id);
@@ -72,20 +104,29 @@ export class SceneManager {
       mesh.userData['elementId'] = id;
       const edges = new THREE.LineSegments(new THREE.BufferGeometry(), this.edgeMat);
       this.engine.scene.add(mesh, edges);
-      entry = { mesh, edges, baseColor: color };
+      entry = { mesh, edges, baseColor: color, levelId: el.levelId, lastGeo: null };
       this.entries.set(id, entry);
-    } else if (entry.baseColor !== color) {
+      this.applyGhosting(entry);
+    }
+    if (entry.baseColor !== color) {
       (entry.mesh.material as THREE.MeshLambertMaterial).color.set(color);
       entry.baseColor = color;
     }
+    if (entry.levelId !== el.levelId) {
+      entry.levelId = el.levelId;
+      this.applyGhosting(entry);
+    }
 
-    setBufferGeometry(entry.mesh.geometry, geo.positions, geo.normals);
-    setLineGeometry(entry.edges.geometry, geo.edges);
+    if (entry.lastGeo !== geo) {
+      setBufferGeometry(entry.mesh.geometry, geo.positions, geo.normals);
+      setLineGeometry(entry.edges.geometry, geo.edges);
+      entry.lastGeo = geo;
+    }
 
     if (this.selected === id) {
       const mat = entry.mesh.material as THREE.MeshLambertMaterial;
       mat.emissive.setHex(SELECT_EMISSIVE);
-      mat.emissiveIntensity = 0.35;
+      mat.emissiveIntensity = 0.3;
     }
   }
 
@@ -102,17 +143,32 @@ export class SceneManager {
   }
 }
 
+/**
+ * 어트리뷰트 갱신 — 길이가 같으면 기존 GL 버퍼에 복사(needsUpdate),
+ * 다를 때만 새 BufferAttribute (드래그 중 매 프레임 버퍼 재생성으로 인한
+ * GPU 메모리 churn 방지 — three는 교체된 어트리뷰트의 GL 버퍼를 GC까지 못 푼다).
+ */
+function updateAttr(geometry: THREE.BufferGeometry, name: string, array: Float32Array): void {
+  const attr = geometry.getAttribute(name) as THREE.BufferAttribute | undefined;
+  if (attr && attr.array.length === array.length) {
+    (attr.array as Float32Array).set(array);
+    attr.needsUpdate = true;
+  } else {
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, 3));
+  }
+}
+
 export function setBufferGeometry(
   geometry: THREE.BufferGeometry,
   positions: Float32Array,
   normals: Float32Array,
 ): void {
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  updateAttr(geometry, 'position', positions);
+  updateAttr(geometry, 'normal', normals);
   geometry.computeBoundingSphere();
 }
 
 export function setLineGeometry(geometry: THREE.BufferGeometry, positions: Float32Array): void {
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  updateAttr(geometry, 'position', positions);
   geometry.computeBoundingSphere();
 }
