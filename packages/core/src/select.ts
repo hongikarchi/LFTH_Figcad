@@ -111,6 +111,7 @@ export type Footprint =
 export function elementFootprint(el: Element, store: DocStore): Footprint {
   if (el.kind === 'wall' || el.kind === 'grid') return { kind: 'segment', a: el.a, b: el.b };
   if (el.kind === 'slab') return { kind: 'polygon', pts: el.boundary };
+  if (el.kind === 'column') return { kind: 'point', p: el.at };
   if (el.kind === 'opening') {
     const host = store.getElement(el.hostId);
     if (host?.kind !== 'wall') return null;

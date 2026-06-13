@@ -14,6 +14,7 @@ import { SelectTool } from './tools/SelectTool';
 import { OpeningTool } from './tools/OpeningTool';
 import { SlabTool } from './tools/SlabTool';
 import { GridTool } from './tools/GridTool';
+import { ColumnTool } from './tools/ColumnTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
@@ -30,6 +31,7 @@ const seed = seedDocument(store); // 고정 id 시드 — 동시 시드해도 �
   ui.setActiveType('door', seed.doorTypeId);
   ui.setActiveType('window', seed.windowTypeId);
   ui.setActiveType('slab', seed.slabTypeId);
+  ui.setActiveType('column', seed.columnTypeId);
   ui.setActiveLevel(seed.levelId);
 }
 
@@ -41,8 +43,8 @@ store.observe(() => {
     const first = store.listLevels()[0];
     if (first) ui.setActiveLevel(first.id);
   }
-  const typeKindOf = { wall: 'wall', door: 'opening', window: 'opening', slab: 'slab' } as const;
-  for (const k of ['wall', 'door', 'window', 'slab'] as const) {
+  const typeKindOf = { wall: 'wall', door: 'opening', window: 'opening', slab: 'slab', column: 'column' } as const;
+  for (const k of ['wall', 'door', 'window', 'slab', 'column'] as const) {
     const id = ui.activeTypes[k];
     if (id && !store.getType(id)) {
       const candidates = store.listTypes(typeKindOf[k]);
@@ -75,6 +77,7 @@ const seedTypeByKind = {
   door: seed.doorTypeId,
   window: seed.windowTypeId,
   slab: seed.slabTypeId,
+  column: seed.columnTypeId,
 } as const;
 const ctx: EditorContext = {
   store,
@@ -94,6 +97,7 @@ tools.register('door', new OpeningTool(ctx, 'door'));
 tools.register('window', new OpeningTool(ctx, 'window'));
 tools.register('slab', new SlabTool(ctx));
 tools.register('grid', new GridTool(ctx));
+tools.register('column', new ColumnTool(ctx));
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---

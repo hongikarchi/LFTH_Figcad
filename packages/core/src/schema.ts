@@ -18,6 +18,17 @@ export const quantize = (v: number): number => Math.round(v);
 export const Pt = z.tuple([mm, mm]); // [x, y] 레벨 로컬, mm
 export type Pt = z.infer<typeof Pt>;
 
+/**
+ * 단면 — 기둥/보 공유 (CAD/Revit/ArchiCAD 패밀리의 프로필 개념).
+ * rect = width(x)×depth(y), circle = 지름. 원은 derive에서 N각형 테셀레이션
+ * (extrudeProfile 단일 경로 — CSG 불필요, 설계 원칙).
+ */
+export const SectionSchema = z.discriminatedUnion('shape', [
+  z.object({ shape: z.literal('rect'), width: mm, depth: mm }),
+  z.object({ shape: z.literal('circle'), diameter: mm }),
+]);
+export type Section = z.infer<typeof SectionSchema>;
+
 export const LevelSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -62,10 +73,20 @@ export const SlabTypeSchema = z.object({
 });
 export type SlabType = z.infer<typeof SlabTypeSchema>;
 
+export const ColumnTypeSchema = z.object({
+  id: z.string(),
+  kind: z.literal('column'),
+  name: z.string(),
+  section: SectionSchema,
+  color: z.string(),
+});
+export type ColumnType = z.infer<typeof ColumnTypeSchema>;
+
 export const ElemTypeSchema = z.discriminatedUnion('kind', [
   WallTypeSchema,
   OpeningTypeSchema,
   SlabTypeSchema,
+  ColumnTypeSchema,
 ]);
 export type ElemType = z.infer<typeof ElemTypeSchema>;
 
@@ -118,11 +139,24 @@ export const GridLineSchema = z.object({
 });
 export type GridLine = z.infer<typeof GridLineSchema>;
 
+/** 기둥 — 평면 한 점(단면 중심)에서 수직 압출. 단면=타입, 위치·높이=인스턴스 */
+export const ColumnElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('column'),
+  levelId: z.string(),
+  typeId: z.string(),
+  at: Pt, // 단면 중심 (평면 mm)
+  height: mm.optional(), // 기본 = level.height
+  baseOffset: mm.optional(), // 기본 0
+});
+export type ColumnElement = z.infer<typeof ColumnElementSchema>;
+
 export const ElementSchema = z.discriminatedUnion('kind', [
   WallElementSchema,
   OpeningElementSchema,
   SlabElementSchema,
   GridLineSchema,
+  ColumnElementSchema,
 ]);
 export type Element = z.infer<typeof ElementSchema>;
 
@@ -158,6 +192,12 @@ export interface OpeningDeriveInput {
 export interface SlabDeriveInput {
   slab: SlabElement;
   type: SlabType;
+  level: Level;
+}
+
+export interface ColumnDeriveInput {
+  column: ColumnElement;
+  type: ColumnType;
   level: Level;
 }
 

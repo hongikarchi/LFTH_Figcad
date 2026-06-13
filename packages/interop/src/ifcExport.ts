@@ -1,5 +1,7 @@
 import * as WebIFC from 'web-ifc';
 import type {
+  ColumnElement,
+  ColumnType,
   DocSnapshot,
   OpeningElement,
   OpeningType,
@@ -83,6 +85,9 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
   const wallTypes = new Map(snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]));
   const openingTypes = new Map(
     snap.types.filter((t) => t.kind === 'opening').map((t) => [t.id, t as OpeningType]),
+  );
+  const columnTypes = new Map(
+    snap.types.filter((t) => t.kind === 'column').map((t) => [t.id, t as ColumnType]),
   );
 
   // 타입별 MaterialLayerSetUsage (벽 두께 — Revit/ArchiCAD가 레이어드 벽으로 인식) — 두께별 dedup
@@ -215,6 +220,46 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
         new I.IfcSlab(guid(`slab-${slab.id}`), null, label(`슬라브 ${slab.id}`), null, null, objPlace as never, shape as never, null, null),
       );
       contained.push(slabEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
+    }
+
+    // 기둥 — at 위치에 단면 압출 (IfcColumn). v1은 export 전용 (import는 v1.5)
+    const levelColumns = snap.elements.filter(
+      (e): e is ColumnElement => e.kind === 'column' && e.levelId === level.id,
+    );
+    for (const col of levelColumns) {
+      const ctype = columnTypes.get(col.typeId);
+      const section = ctype?.section ?? { shape: 'rect', width: 400, depth: 400 };
+      const height = col.height ?? level.height;
+      const baseOffset = col.baseOffset ?? 0;
+      const objPlace = local(storeyPlace, place3(pt3(col.at[0], col.at[1], baseOffset)));
+      const profile =
+        section.shape === 'circle'
+          ? w(
+              new I.IfcCircleProfileDef(
+                I.IfcProfileTypeEnum.AREA,
+                null,
+                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
+                (section.diameter / 2) as never,
+              ),
+            )
+          : w(
+              new I.IfcRectangleProfileDef(
+                I.IfcProfileTypeEnum.AREA,
+                null,
+                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
+                section.width as never,
+                section.depth as never,
+              ),
+            );
+      const solid = w(
+        new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, 1) as never, height as never),
+      );
+      const rep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
+      const shape = w(new I.IfcProductDefinitionShape(null, null, [rep as never]));
+      const colEntity = w(
+        new I.IfcColumn(guid(`col-${col.id}`), null, label(`기둥 ${col.id}`), null, null, objPlace as never, shape as never, null, null),
+      );
+      contained.push(colEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
     }
 
     if (contained.length) {

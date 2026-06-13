@@ -7,9 +7,11 @@ import {
   openingDeriveKey,
   slabDeriveKey,
 } from './deriveOthers';
+import { columnDeriveKey, deriveColumn } from './deriveStructure';
 import type { JoinInfo } from './joins';
 import type { DocStore } from '../store';
 import type {
+  ColumnType,
   Id,
   OpeningElement,
   OpeningType,
@@ -23,6 +25,7 @@ import type {
 export * from './meshBuilder';
 export * from './deriveWall';
 export * from './deriveOthers';
+export * from './deriveStructure';
 export * from './joins';
 
 interface CacheEntry {
@@ -174,6 +177,13 @@ export class DeriveCache {
     } else if (el.kind === 'grid') {
       key = `g:${gridDeriveKey(el)}`;
       compute = () => deriveGrid(el);
+    } else if (el.kind === 'column') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'column' || !level) return null;
+      const input = { column: el, type: type as ColumnType, level };
+      key = `c:${columnDeriveKey(input)}`;
+      compute = () => deriveColumn(input);
     }
 
     if (!key || !compute) return null;

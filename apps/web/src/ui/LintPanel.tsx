@@ -81,6 +81,9 @@ function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId
     const c = el.boundary.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
     return { x: c[0] / el.boundary.length, y: c[1] / el.boundary.length, levelId: el.levelId };
   }
+  if (el.kind === 'column') {
+    return { x: el.at[0], y: el.at[1], levelId: el.levelId };
+  }
   // opening — 호스트 중심선 위 offset 지점
   const host = store.getElement(el.hostId);
   if (host?.kind === 'wall') {

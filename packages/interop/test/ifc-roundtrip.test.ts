@@ -162,6 +162,23 @@ describe('IFC 라운드트립', () => {
     expect(snapshot.elements).toHaveLength(0);
   });
 
+  it('기둥 — IfcColumn으로 export (사각/원 단면)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createColumn({ levelId: SEED_IDS.level, typeId: SEED_IDS.column400, at: [1000, 1000] });
+    const circId = s.addType({
+      kind: 'column',
+      name: '원형 기둥 D500',
+      section: { shape: 'circle', diameter: 500 },
+      color: '#cccccc',
+    });
+    s.createColumn({ levelId: SEED_IDS.level, typeId: circId, at: [4000, 1000] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCCOLUMN).size()).toBe(2);
+    api.CloseModel(m);
+  });
+
   it('IFC 파일이 유효 (재오픈 가능)', () => {
     const s = sample();
     const { bytes } = roundtrip(s);

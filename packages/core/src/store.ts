@@ -6,6 +6,7 @@ import {
   ElemTypeSchema,
   LevelSchema,
   quantize,
+  type ColumnElement,
   type DocMeta,
   type Element,
   type ElemType,
@@ -23,6 +24,15 @@ const q2 = (p: readonly [number, number] | [number, number]): Pt => [
   quantize(p[0]),
   quantize(p[1]),
 ];
+
+/** 단면 치수 양자화 (rect=width/depth, circle=diameter) — 타입 ops 경계에서 */
+function quantizeSection(section: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...section };
+  for (const k of ['width', 'depth', 'diameter']) {
+    if (typeof out[k] === 'number') out[k] = quantize(out[k] as number);
+  }
+  return out;
+}
 
 /** 무한 직선 교차점 (평행이면 null) — trim/extend용 */
 export function infiniteLineIntersect(
@@ -344,6 +354,9 @@ export class DocStore {
     if ('thickness' in type && typeof type.thickness === 'number') {
       quantized['thickness'] = quantize(type.thickness);
     }
+    if ('section' in type && type.section && typeof type.section === 'object') {
+      quantized['section'] = quantizeSection(type.section as Record<string, unknown>);
+    }
     const parsed = ElemTypeSchema.parse(quantized);
     this.transact(() => this.yTypes.set(id, parsed));
     return id;
@@ -355,6 +368,8 @@ export class DocStore {
     if (!prev) return;
     const next: Record<string, unknown> = { ...prev, ...patch, id, kind: prev.kind };
     if (typeof next['thickness'] === 'number') next['thickness'] = quantize(next['thickness']);
+    if (next['section'] && typeof next['section'] === 'object')
+      next['section'] = quantizeSection(next['section'] as Record<string, unknown>);
     if (prev.kind === 'opening' && typeof next['opening'] === 'object' && next['opening']) {
       const o = next['opening'] as Record<string, unknown>;
       for (const k of ['width', 'height', 'sillHeight']) {
@@ -474,6 +489,27 @@ export class DocStore {
     return id;
   }
 
+  createColumn(params: {
+    levelId: Id;
+    typeId: Id;
+    at: Pt;
+    height?: number;
+    baseOffset?: number;
+  }): Id {
+    const id = nanoid(12);
+    const column = ElementSchema.parse({
+      id,
+      kind: 'column',
+      levelId: params.levelId,
+      typeId: params.typeId,
+      at: [quantize(params.at[0]), quantize(params.at[1])],
+      ...(params.height !== undefined ? { height: quantize(params.height) } : {}),
+      ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+    }) as ColumnElement;
+    this.setElement(id, column);
+    return id;
+  }
+
   /** 그리드 자동 라벨 — 세로축(상하 주행)은 숫자, 가로축은 알파벳 (한국 실무 관례) */
   private nextGridLabel(a: Pt, b: Pt): string {
     const vertical = Math.abs(b[1] - a[1]) >= Math.abs(b[0] - a[0]);
@@ -516,6 +552,10 @@ export class DocStore {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
       if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
+    } else if (next.kind === 'column') {
+      next.at = [quantize(next.at[0]), quantize(next.at[1])];
+      if (next.height !== undefined) next.height = quantize(next.height);
+      if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
     }
     const parsed = ElementSchema.parse(next) as unknown as Record<string, unknown>;
     const ymap = this.yElements.get(id);
@@ -602,6 +642,8 @@ export class DocStore {
           const a = q2(xform(el.a));
           const b = q2(xform(el.b));
           created.push(this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) }));
+        } else if (el.kind === 'column') {
+          created.push(this.writeNew({ ...el, at: q2(xform(el.at)) }));
         }
       }
       // 개구부는 벽 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
@@ -636,6 +678,8 @@ export class DocStore {
             'boundary',
             el.boundary.map((p) => q2([p[0] + delta[0], p[1] + delta[1]])),
           );
+        } else if (el.kind === 'column') {
+          ymap.set('at', q2([el.at[0] + delta[0], el.at[1] + delta[1]]));
         }
         // opening 단독 이동은 SelectTool 드래그(offset)로
       }
@@ -680,6 +724,8 @@ export class DocStore {
             'boundary',
             el.boundary.map((p) => q2(rotatePoint(p, center, angleRad))),
           );
+        } else if (el.kind === 'column') {
+          ymap.set('at', q2(rotatePoint(el.at, center, angleRad)));
         }
       }
     });
@@ -892,6 +938,7 @@ export const SEED_IDS = {
   door900: 'T-d900',
   window1200: 'T-win12',
   slab150: 'T-s150',
+  column400: 'T-c400',
 } as const;
 
 export interface SeedRefs {
@@ -900,6 +947,7 @@ export interface SeedRefs {
   doorTypeId: Id;
   windowTypeId: Id;
   slabTypeId: Id;
+  columnTypeId: Id;
 }
 
 export function seedDocument(store: DocStore): SeedRefs {
@@ -936,6 +984,15 @@ export function seedDocument(store: DocStore): SeedRefs {
         { kind: 'slab', name: '슬라브 150', thickness: 150, color: '#dcdad5' },
         SEED_IDS.slab150,
       );
+      store.addType(
+        {
+          kind: 'column',
+          name: 'RC 기둥 400×400',
+          section: { shape: 'rect', width: 400, depth: 400 },
+          color: '#d8d4cc',
+        },
+        SEED_IDS.column400,
+      );
     });
   } else {
     // 구버전 문서(M2 이전 시드)에 새 타입 보충 — 고정 id라 멱등
@@ -965,6 +1022,16 @@ export function seedDocument(store: DocStore): SeedRefs {
           { kind: 'slab', name: '슬라브 150', thickness: 150, color: '#dcdad5' },
           SEED_IDS.slab150,
         );
+      if (!store.getType(SEED_IDS.column400))
+        store.addType(
+          {
+            kind: 'column',
+            name: 'RC 기둥 400×400',
+            section: { shape: 'rect', width: 400, depth: 400 },
+            color: '#d8d4cc',
+          },
+          SEED_IDS.column400,
+        );
     });
   }
   return {
@@ -973,5 +1040,6 @@ export function seedDocument(store: DocStore): SeedRefs {
     doorTypeId: SEED_IDS.door900,
     windowTypeId: SEED_IDS.window1200,
     slabTypeId: SEED_IDS.slab150,
+    columnTypeId: SEED_IDS.column400,
   };
 }

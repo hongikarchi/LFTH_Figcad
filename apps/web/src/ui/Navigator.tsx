@@ -29,6 +29,15 @@ function TypeEditor({ store, type }: { store: DocStore; type: ElemType }) {
           <NumField label="창대(mm)" value={type.opening.sillHeight} min={0} onCommit={(v) => store.updateType(type.id, { opening: { sillHeight: v } })} />
         </>
       )}
+      {type.kind === 'column' && type.section.shape === 'rect' && (
+        <>
+          <NumField label="폭(mm)" value={type.section.width} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'rect', width: v, depth: (type.section as { depth: number }).depth } })} />
+          <NumField label="춤(mm)" value={type.section.depth} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'rect', width: (type.section as { width: number }).width, depth: v } })} />
+        </>
+      )}
+      {type.kind === 'column' && type.section.shape === 'circle' && (
+        <NumField label="지름(mm)" value={type.section.diameter} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'circle', diameter: v } })} />
+      )}
       <span className="infobox-field">
         <label>색</label>
         <input
@@ -66,7 +75,7 @@ export function Navigator({ store }: { store: DocStore }) {
   const levels = store.listLevels();
   const types = store.listTypes();
 
-  const KIND_ORDER = { wall: 0, opening: 1, slab: 2 } as const;
+  const KIND_ORDER = { wall: 0, opening: 1, slab: 2, column: 3 } as const;
   const sortedTypes = [...types].sort(
     (a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name, 'ko'),
   );
@@ -287,7 +296,13 @@ export function Navigator({ store }: { store: DocStore }) {
               {t.name}
               <span className="nav-meta">
                 <span className="type-swatch" style={{ background: t.color }} />
-                {'thickness' in t ? `${t.thickness}` : `${t.opening.width}×${t.opening.height}`}
+                {'thickness' in t
+                  ? `${t.thickness}`
+                  : t.kind === 'column'
+                    ? t.section.shape === 'circle'
+                      ? `Ø${t.section.diameter}`
+                      : `${t.section.width}×${t.section.depth}`
+                    : `${t.opening.width}×${t.opening.height}`}
               </span>
             </button>
             <button className="nav-edit" title="타입 설정" onClick={() => setEditingType(editingType === t.id ? null : t.id)}>

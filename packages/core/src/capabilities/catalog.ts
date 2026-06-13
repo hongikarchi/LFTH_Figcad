@@ -131,6 +131,35 @@ export const CAPABILITIES: Capability[] = [
       }),
     summary: (a) => `그리드 축 ${a['label'] ?? '자동'} ${fmtPt(a['a'])}→${fmtPt(a['b'])}`,
   },
+  {
+    id: 'create_column',
+    category: 'structure',
+    titleKo: '기둥',
+    icon: 'column',
+    descriptionKo:
+      '기둥 생성 — at(평면 중심점 mm)에 typeId 단면(사각/원)으로 수직 압출. 높이 생략 시 레벨 층고. 그리드 교차점에 배치하는 것이 일반적.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        typeId: { type: 'string', description: '기둥 타입 id (문서의 types에서 kind=column)' },
+        at: ptSchema('단면 중심점'),
+        height: { type: 'integer', description: '기둥 높이 mm (생략 시 레벨 층고)' },
+      },
+      required: ['levelId', 'typeId', 'at'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createColumn({
+        levelId: asStr(a['levelId'], 'levelId'),
+        typeId: asStr(a['typeId'], 'typeId'),
+        at: asPt(a['at']),
+        ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+      }),
+    summary: (a) => `기둥 생성 ${fmtPt(a['at'])}`,
+  },
 
   // ===== opening =====
   {
@@ -237,14 +266,15 @@ export const CAPABILITIES: Capability[] = [
     titleKo: '요소 수정',
     icon: 'pencil',
     descriptionKo:
-      '요소 필드 수정. kind에 맞는 필드만 사용: 벽=a/b/height/typeId, 개구부=offset/widthOverride/heightOverride/sillOverride, 슬라브=boundary/thicknessOverride, 그리드=a/b/label.',
+      '요소 필드 수정. kind에 맞는 필드만 사용: 벽=a/b/height/typeId, 개구부=offset/widthOverride/heightOverride/sillOverride, 슬라브=boundary/thicknessOverride, 그리드=a/b/label, 기둥=at/height/typeId.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: '요소 id' },
         a: ptSchema('시작점 (벽/그리드)'),
         b: ptSchema('끝점 (벽/그리드)'),
-        height: { type: 'integer', description: '벽 높이 mm' },
+        at: ptSchema('단면 중심점 (기둥)'),
+        height: { type: 'integer', description: '벽/기둥 높이 mm' },
         typeId: { type: 'string', description: '타입 교체' },
         offset: { type: 'integer', description: '개구부 중심 거리 mm' },
         widthOverride: { type: 'integer' },

@@ -15,7 +15,7 @@ export interface EditorContext {
   levelId: () => Id;
   wallTypeId: () => Id;
   /** 도구별 활성 타입 (uiStore activeTypes + 시드 폴백) */
-  typeId: (kind: 'wall' | 'door' | 'window' | 'slab') => Id;
+  typeId: (kind: 'wall' | 'door' | 'window' | 'slab' | 'column') => Id;
   /** 협업 브리지 — presence 초기화 후 main이 교체 (그 전엔 no-op) */
   collab: CollabBridge;
 }
