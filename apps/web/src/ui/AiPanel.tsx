@@ -173,7 +173,8 @@ export function AiPanel({ store }: { store: DocStore }) {
           disabled={running}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void send();
+            // isComposing 가드 — 한글 조합 확정 Enter가 전송을 쏘면 안 됨
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void send();
           }}
         />
         <button disabled={running || !input.trim()} onClick={() => void send()}>

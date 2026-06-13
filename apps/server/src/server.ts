@@ -58,14 +58,29 @@ export class Doc extends YServer<Env> {
     Y.applyUpdate(this.document, total);
   }
 
+  /**
+   * 커밋(log.json read-modify-write) 직렬화 — DO input gate는 storage 연산만
+   * 보호하고 R2 호출은 서브리퀘스트라 await 중 다른 이벤트(수동 커밋 + 자동
+   * 체크포인트 동시 발생 등)가 끼어들 수 있다. 인스턴스 프로미스 체인으로
+   * 커밋 경로 전체를 한 번에 하나만 실행.
+   */
+  private commitChain: Promise<unknown> = Promise.resolve();
+  private serializeCommit<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.commitChain.then(fn, fn);
+    this.commitChain = next.catch(() => {});
+    return next;
+  }
+
   /** M6 버전 관리 — 룸 HTTP: ?op=commit/log/show (Doc DO = 커밋 권위) */
   override async onRequest(request: Request): Promise<Response> {
-    return handleVersionRequest(
-      request,
-      this.name,
-      this.env.COMMITS,
-      () => DocStore.snapshotOf(this.document),
-      this.env.ROOM_KEY,
+    return this.serializeCommit(() =>
+      handleVersionRequest(
+        request,
+        this.name,
+        this.env.COMMITS,
+        () => DocStore.snapshotOf(this.document),
+        this.env.ROOM_KEY,
+      ),
     );
   }
 
@@ -80,13 +95,16 @@ export class Doc extends YServer<Env> {
     let remaining = 0;
     for (const _ of this.getConnections()) remaining++;
     if (remaining > 0 || !this.env.COMMITS || !isSafeRoom(this.name)) return;
+    const bucket = this.env.COMMITS;
     try {
-      await createCommit(
-        this.env.COMMITS,
-        this.name,
-        DocStore.snapshotOf(this.document),
-        '자동',
-        '자동 체크포인트 (세션 종료)',
+      await this.serializeCommit(() =>
+        createCommit(
+          bucket,
+          this.name,
+          DocStore.snapshotOf(this.document),
+          '자동',
+          '자동 체크포인트 (세션 종료)',
+        ),
       );
     } catch {
       // 체크포인트 실패가 연결 종료 처리를 막으면 안 됨

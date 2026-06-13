@@ -162,6 +162,13 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   let pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  // 버전/AI 라우트는 이 경량 서버에 없음 — SPA HTML 폴백 대신 명확한 JSON 503
+  // (miniflare 경로 안내; 없으면 클라이언트가 HTML을 JSON 파싱하다 혼란스러운 에러)
+  if (pathname.startsWith('/parties/') || pathname.startsWith('/api/')) {
+    res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' });
+    res.end(JSON.stringify({ error: '이 라우트는 dev.mjs(miniflare)에서만 — node dev.mjs로 실행하세요' }));
+    return;
+  }
   if (pathname === '/') pathname = '/index.html';
   const file = path.join(DIST, pathname);
   if (!file.startsWith(DIST) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {

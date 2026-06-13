@@ -23,7 +23,10 @@ export function VersionPanel({ store }: { store: DocStore }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [diffs, setDiffs] = useState<Record<string, string>>({}); // hash → 현재와의 diff 요약
+  const [diffs, setDiffs] = useState<Record<string, string>>({}); // 항목 키 → 현재와의 diff 요약
+
+  // 복원→재커밋이면 같은 해시가 타임라인에 두 번 등장할 수 있다 — ts와 합성해 유일화
+  const itemKey = (c: CommitMeta): string => `${c.hash}:${c.ts}`;
 
   // 성공 시 notice를 건드리지 않음 — 직전 커밋/스킵 안내가 즉시 지워지면 안 됨
   const refresh = async () => {
@@ -45,6 +48,8 @@ export function VersionPanel({ store }: { store: DocStore }) {
 
   if (!versionOpen) return null;
 
+  // 주의: 커밋은 서버가 보는 문서 상태 기준 — 방금 한 로컬 편집은 WS 전파(보통 ms)
+  // 후 반영된다. 오프라인 직후처럼 동기화가 안 끝났으면 직전 상태가 커밋될 수 있음.
   const doCommit = async () => {
     setBusy(true);
     try {
@@ -61,15 +66,16 @@ export function VersionPanel({ store }: { store: DocStore }) {
   };
 
   const showDiff = async (c: CommitMeta) => {
-    if (diffs[c.hash]) {
-      setDiffs(({ [c.hash]: _, ...rest }) => rest); // 토글 닫기
+    const key = itemKey(c);
+    if (diffs[key]) {
+      setDiffs(({ [key]: _, ...rest }) => rest); // 토글 닫기
       return;
     }
     try {
       const snap = await fetchCommit(c.hash);
       // 커밋 → 현재 방향: "그때 이후 무엇이 달라졌나"
       const summary = diffSummary(diffSnapshots(snap, store.snapshot()));
-      setDiffs((prev) => ({ ...prev, [c.hash]: summary }));
+      setDiffs((prev) => ({ ...prev, [key]: summary }));
     } catch (e) {
       setNotice(`비교 실패: ${e instanceof Error ? e.message : e}`);
     }
@@ -112,7 +118,8 @@ export function VersionPanel({ store }: { store: DocStore }) {
           disabled={busy}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void doCommit();
+            // isComposing 가드 — 한글 조합 확정 Enter(keyCode 229)가 커밋을 쏘면 안 됨
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void doCommit();
           }}
         />
         <button disabled={busy} onClick={() => void doCommit()}>
@@ -125,7 +132,7 @@ export function VersionPanel({ store }: { store: DocStore }) {
           <div className="lint-clean">아직 커밋이 없습니다 — 첫 커밋을 만들어 보세요</div>
         )}
         {commits.map((c) => (
-          <div key={c.hash} className="ver-item">
+          <div key={itemKey(c)} className="ver-item">
             <div className="ver-row1">
               <span className="ver-msg">{c.message}</span>
               <span className="ver-hash">{c.hash.slice(0, 7)}</span>
@@ -139,7 +146,7 @@ export function VersionPanel({ store }: { store: DocStore }) {
                 <button onClick={() => void restore(c)}>복원</button>
               </span>
             </div>
-            {diffs[c.hash] && <div className="ver-diff">이후 변경: {diffs[c.hash]}</div>}
+            {diffs[itemKey(c)] && <div className="ver-diff">이후 변경: {diffs[itemKey(c)]}</div>}
           </div>
         ))}
       </div>

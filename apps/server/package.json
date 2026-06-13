@@ -7,7 +7,8 @@
     "dev": "node dev-node.mjs",
     "dev:workerd": "node dev.mjs",
     "dev:wrangler": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.93.0",
@@ -22,6 +23,7 @@
     "lib0": "^0.2.117",
     "miniflare": "^4.20260609.0",
     "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
     "wrangler": "^4.99.0",
     "ws": "^8.21.0",
     "y-protocols": "^1.0.7"

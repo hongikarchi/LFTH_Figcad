@@ -26,7 +26,9 @@ export interface CommitLog {
 
 const MAX_MESSAGE = 200;
 const MAX_AUTHOR = 40;
-const MAX_LOG_COMMITS = 500; // log.json 비대화 방지 — 초과 시 오래된 메타부터 잘림 (blob은 유지)
+// log.json 비대화 방지 — 초과 시 오래된 메타부터 잘림.
+// TODO(M6.5): 잘려나간 메타가 참조하던 blob GC + 커밋 레이트리밋 (현재 blob은 영구 보존)
+const MAX_LOG_COMMITS = 500;
 
 /**
  * R2 키가 `projects/<room>/...` 템플릿이므로 room에 '/' 등이 들어오면
@@ -79,6 +81,9 @@ async function readLog(bucket: R2Bucket, room: string): Promise<CommitLog> {
   try {
     return (await obj.json()) as CommitLog;
   } catch {
+    // 깨진 log.json — 빈 로그로 재시작하면 기존 타임라인이 고아화되므로 흔적은 남긴다
+    // (blob들은 콘텐츠 주소라 그대로 보존 — 수동 복구 가능)
+    console.warn(`[version] corrupt log.json for room ${room} — 빈 로그로 재시작`);
     return { head: null, commits: [] };
   }
 }

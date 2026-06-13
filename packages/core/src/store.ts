@@ -773,8 +773,10 @@ export class DocStore {
   /**
    * 외부 Y.Doc을 observer 없이 1회 읽어 스냅샷 생성 — 서버(DO) 커밋처럼
    * 장수명 doc을 반복 읽는 곳용 (DocStore 인스턴스화는 해제 불가 observer를 남김).
-   * 스키마 위반 요소는 조용히 제외 — DocStore.snapshot()(미러도 safeParse만 채움)과
-   * 동일 동작. 즉 커밋/백업은 "렌더 가능한 문서"의 무손실 보존이다.
+   * 스키마 위반 요소는 조용히 제외 — 커밋/백업은 "렌더 가능한 문서"의 보존이다.
+   * 주의: snapshot()의 미러는 위반 *덮어쓰기* 시 직전 유효 버전을 유지하지만
+   * 여기는 현재 값 기준 제외 — 외부/비호환 클라이언트가 쓴 경우에만 갈라진다
+   * (DocStore ops 경로로는 위반 데이터가 생기지 않음).
    */
   static snapshotOf(ydoc: Y.Doc): DocSnapshot {
     const yMeta = ydoc.getMap('meta');
