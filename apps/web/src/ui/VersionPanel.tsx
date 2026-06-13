@@ -91,7 +91,13 @@ export function VersionPanel({ store }: { store: DocStore }) {
       localStorage.setItem(`figcad.fork:${newRoom}`, JSON.stringify(snap));
       const key = new URL(location.href).searchParams.get('key');
       const url = `${location.pathname}?p=${newRoom}${key ? `&key=${encodeURIComponent(key)}` : ''}`;
-      window.open(url, '_blank');
+      const w = window.open(url, '_blank');
+      if (!w) {
+        // 팝업 차단(Safari PWA 등) — 핸드오프 키 정리 후 안내
+        localStorage.removeItem(`figcad.fork:${newRoom}`);
+        setNotice('팝업이 차단되어 새 탭을 열 수 없습니다 — 팝업 허용 후 다시 시도하세요');
+        return;
+      }
       setNotice(`✓ '${c.message}' 시점에서 새 프로젝트(fork) — 새 탭에서 열림`);
     } catch (e) {
       setNotice(`fork 실패: ${e instanceof Error ? e.message : e}`);

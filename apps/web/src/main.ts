@@ -151,28 +151,6 @@ const presence = new Presence(provider.awareness, engine, sceneManager, hud, (n)
 );
 ctx.collab = presence;
 
-// fork(M6.5): VersionPanel이 한 버전 스냅샷을 localStorage에 두고 새 룸(?p=)을 연다.
-// 이 룸이 그 핸드오프 대상이면 sync 후 importSnapshot으로 새 프로젝트 콘텐츠를 채운다.
-// (서버 fork 불가 — 타겟 Doc DO storage는 인스턴스 격리라 클라가 채워야 함.)
-const forkKey = `figcad.fork:${projectId}`;
-const forkRaw = localStorage.getItem(forkKey);
-if (forkRaw) {
-  let imported = false;
-  const doImport = (): void => {
-    if (imported) return;
-    imported = true;
-    try {
-      store.importSnapshot(JSON.parse(forkRaw));
-      engine.requestRender();
-    } catch (e) {
-      console.warn('[fork] import 실패', e);
-    }
-    localStorage.removeItem(forkKey);
-  };
-  provider.on('synced', doImport); // y-partyserver sync 완료 시
-  setTimeout(doImport, 2500); // 이벤트 미발화 폴백 — 새 룸이라 안전
-}
-
 provider.on('status', (e: { status: string }) => {
   const map = { connected: 'connected', connecting: 'connecting', disconnected: 'offline' } as const;
   useUiStore.getState().setConnection(map[e.status as keyof typeof map] ?? 'offline');
@@ -187,6 +165,31 @@ const doRedo = () => {
   undoMgr.redo();
   engine.requestRender();
 };
+
+// fork(M6.5): VersionPanel이 한 버전 스냅샷을 localStorage에 두고 새 룸(?p=)을 연다.
+// 이 룸이 그 핸드오프 대상이면 sync 후 importSnapshot으로 새 프로젝트 콘텐츠를 채운다.
+// (서버 fork 불가 — 타겟 Doc DO storage는 인스턴스 격리라 클라가 채워야 함.)
+const forkKey = `figcad.fork:${projectId}`;
+if (localStorage.getItem(forkKey)) {
+  let imported = false;
+  const doImport = (): void => {
+    if (imported) return;
+    const raw = localStorage.getItem(forkKey);
+    if (!raw) return;
+    try {
+      store.importSnapshot(JSON.parse(raw));
+      imported = true;
+      localStorage.removeItem(forkKey); // 성공 시에만 소비 — 실패면 새로고침 재시도 가능
+      undoMgr.clear(); // fork = 룸 초기 콘텐츠 → 첫 undo가 전체를 되돌리지 않게
+      engine.requestRender();
+    } catch (e) {
+      console.warn('[fork] import 실패 — 새로고침으로 재시도 가능', e);
+      hud.toast('fork 콘텐츠 로드 실패 — 새로고침해 보세요');
+    }
+  };
+  provider.on('synced', doImport); // sync 완료 시
+  setTimeout(doImport, 2500); // 이벤트 미발화 폴백
+}
 
 new InputManager(
   canvas,

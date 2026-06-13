@@ -345,11 +345,17 @@ export function roofDeriveKey(input: RoofDeriveInput): string {
   ]);
 }
 
-/** 0..total을 spacing 간격으로 — 양끝(0,total) 테두리 포함 */
-function gridStops(total: number, spacing: number): number[] {
+/**
+ * 0..total을 spacing 간격으로 — 양끝(0,total) 테두리 포함. 0 스톱 항상 보존.
+ * 마지막 내부 스톱이 끝 테두리(total)와 minGap(멀리언 폭) 미만이면 겹침 방지로 제거.
+ */
+function gridStops(total: number, spacing: number, minGap: number): number[] {
   const s = Math.max(spacing, 50);
   const out: number[] = [];
-  for (let x = 0; x < total - 1; x += s) out.push(x);
+  for (let x = 0; x < total; x += s) out.push(x);
+  // 끝 스톱과 겹치는 마지막 내부 스톱 제거 (0 스톱은 최소 1개 유지)
+  const last = out[out.length - 1];
+  if (out.length > 1 && last !== undefined && total - last < minGap) out.pop();
   out.push(total);
   return out;
 }
@@ -377,12 +383,15 @@ export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometr
   const dir: [number, number] = [(bx - ax) / L, (by - ay) / L];
   const n: [number, number] = [dir[1], -dir[0]]; // 베이스라인 수직(평면)
   const ring = sectionRing(type.mullionSection);
+  // 멀리언 폭 — 끝 테두리와 겹치는 내부 스톱 제거 임계
+  const mullionW =
+    type.mullionSection.shape === 'rect' ? type.mullionSection.width : type.mullionSection.diameter;
   const meshes: MeshData[] = [];
 
   // 수직 멀리언 — 각 u 위치에서 단면을 수직 압출 (기둥식)
   const mh = H * MM;
   const centerY = baseY + mh / 2;
-  for (const u of gridStops(L, cw.uSpacing)) {
+  for (const u of gridStops(L, cw.uSpacing, mullionW)) {
     const px = ax + dir[0] * u;
     const py = ay + dir[1] * u;
     const profile: Profile = {
@@ -400,7 +409,7 @@ export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometr
   const mx = (ax + bx) / 2;
   const my = (ay + by) / 2;
   const nb: [number, number] = [dir[1], -dir[0]];
-  for (const v of gridStops(H, cw.vSpacing)) {
+  for (const v of gridStops(H, cw.vSpacing, mullionW)) {
     const axisZ = (baseE + v) * MM;
     const profile: Profile = { outer: ring, holes: [] };
     meshes.push(
