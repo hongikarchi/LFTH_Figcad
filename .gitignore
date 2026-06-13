@@ -13,3 +13,5 @@ Thumbs.db
 coverage/
 
 .wrangler-check/
+
+.git-commit-msg.txt
