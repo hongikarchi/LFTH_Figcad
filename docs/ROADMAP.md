@@ -41,13 +41,13 @@
 | Phase | 내용 | 상태 |
 |---|---|---|
 | **0** | 문서/컨텍스트 일관성(이 파일·rules·compact 지침) | ✅ |
-| **1** | 도면생성 평면+단면+입면 + 해치 (정체성 핵심) | ▶️ 1a 평면 완료, 1b 단면 다음 |
-| 2 | 요소: 커튼월·존·라벨 | ⬜ |
+| **1** | 도면생성 평면+단면+입면 + 해치 (정체성 핵심) | ✅ 배포 b9f0f98f |
+| **2** | 요소: 커튼월·존·라벨 | ▶️ 진행 중 |
 | 3 | M6.5 fork (스냅샷→새 룸) | ⬜ |
-| 4 | M10 connector (?op=apply + Rhino RhinoCommon 플러그인) | ⬜ |
-| 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ |
+| 4 | M10 connector (?op=apply + Rhino RhinoCommon 플러그인) | ⬜ goal prompt(.NET 환경 밖) |
+| 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
 
-**현재 위치: Phase 1b (단면).** 1a 평면 = derive 코어 + views 채널 + 캔버스 패널 + DXF, 멀티에이전트 리뷰(해치 even-odd major 1건 수정) 완료. **미배포**(프로덕션 배포는 사용자 승인 대기). 1b/1c는 GPU offscreen depth-buffer 은선제거 결정 필요(depth-sort는 HLR 아님 — advisor).
+**현재 위치: Phase 2 (요소 라이브러리).** Phase 1 완료·배포: 평면(절단/투영/해치 even-odd) + 단면(cut, (u,z)) + 입면(박스 매싱 painter HLR) + DXF 납품 + views 채널(schemaVersion 3). 멀티에이전트 리뷰 1건(해치) 수정. **Phase 4·5는 이 환경 밖**(Rhino .NET·416MB 파일) → 자율 run 종료 시 goal prompt로 작성.
 
 ### Phase 요지 (상세는 wondrous-hugging-pebble.md)
 - **1 도면생성**: 3사 공식 합의 = 단면=절단면∩지오메트리(굵은선+poché) + 투영(가는선) / 입면=정사영+은선제거. 우리는 edges/footprint 소유 → 절단면∩메시·정사영 직접 계산, 은선제거=depth-sort. `views` 맵(파생, 미저장) + `deriveDrawing` + `hatch`(라인패턴). 1a 평면+해치→1b 단면→1c 입면.
