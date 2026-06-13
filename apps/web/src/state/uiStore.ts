@@ -57,6 +57,10 @@ interface UiState {
   versionOpen: boolean;
   /** 협업 코멘트 패널 표시 (M9-B) */
   commentsOpen: boolean;
+  /** 도면 시트 패널 표시 (M11) */
+  drawingOpen: boolean;
+  /** 활성 도면 뷰 id */
+  activeViewId: Id | null;
   setTool: (t: ToolName) => void;
   setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
@@ -66,6 +70,8 @@ interface UiState {
   setLintOpen: (open: boolean) => void;
   setVersionOpen: (open: boolean) => void;
   setCommentsOpen: (open: boolean) => void;
+  setDrawingOpen: (open: boolean) => void;
+  setActiveViewId: (id: Id | null) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
@@ -98,6 +104,8 @@ export const useUiStore = create<UiState>((set) => ({
   lintOpen: false,
   versionOpen: false,
   commentsOpen: false,
+  drawingOpen: false,
+  activeViewId: null,
   setTool: (activeTool) =>
     set(
       activeTool === 'sketch'
@@ -118,6 +126,8 @@ export const useUiStore = create<UiState>((set) => ({
   setVersionOpen: (versionOpen) =>
     set((s) => ({ versionOpen, lintOpen: versionOpen ? false : s.lintOpen })),
   setCommentsOpen: (commentsOpen) => set({ commentsOpen }),
+  setDrawingOpen: (drawingOpen) => set({ drawingOpen }),
+  setActiveViewId: (activeViewId) => set({ activeViewId }),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveType: (kind, id) =>
     set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),

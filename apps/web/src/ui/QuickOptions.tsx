@@ -30,6 +30,7 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
   const aiOpen = useUiStore((s) => s.aiOpen);
   const lintOpen = useUiStore((s) => s.lintOpen);
   const versionOpen = useUiStore((s) => s.versionOpen);
+  const drawingOpen = useUiStore((s) => s.drawingOpen);
   const findings = useLint(store);
   const worst = findings[0]?.severity; // lint()는 심각도순 정렬
 
@@ -55,6 +56,14 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
         <Icon name="plus" size={15} />
       </button>
       <span className="qo-sep" />
+      <button
+        className={`qo-lint ${drawingOpen ? 'active' : ''}`}
+        title="도면 — 평면/단면/입면 2D 도면 생성"
+        onClick={() => useUiStore.getState().setDrawingOpen(!drawingOpen)}
+      >
+        <Icon name="slab" size={14} />
+        도면
+      </button>
       <button
         className={`qo-lint ${versionOpen ? 'active' : ''}`}
         title="버전 — 커밋 타임라인, 비교, 복원"

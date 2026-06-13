@@ -9,6 +9,7 @@ import { AiPanel } from './AiPanel';
 import { LintPanel } from './LintPanel';
 import { VersionPanel } from './VersionPanel';
 import { CommentPanel } from './CommentPanel';
+import { DrawingPanel } from './DrawingPanel';
 
 /** 문서 변경 시 리렌더 트리거 (React는 문서를 직접 안 들고 매 렌더 fresh 조회) */
 export function useDocVersion(store: DocStore): number {
@@ -34,6 +35,7 @@ export function App({ store, actions }: { store: DocStore; actions: ViewActions 
       <LintPanel store={store} actions={actions} />
       <VersionPanel store={store} />
       <CommentPanel store={store} actions={actions} />
+      <DrawingPanel store={store} />
     </>
   );
 }
