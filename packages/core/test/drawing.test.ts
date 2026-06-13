@@ -145,6 +145,24 @@ describe('hatchPolygon — even-odd 평행선 채움', () => {
     }
   });
 
+  it('오목(U자) 폴리곤 — 극값 정점 스캔선 전체 채움 (리뷰 회귀)', () => {
+    // 상단에 V노치 — 노치 정점 [1500,1000]이 스캔축 극값. 이전 버그: 비대칭 가드로
+    // 홀수 교차수 → 오른쪽 절반 누락. 수정 후 전 폭 채움.
+    const u: [number, number][] = [
+      [0, 0],
+      [3000, 0],
+      [3000, 2000],
+      [2000, 2000],
+      [1500, 1000],
+      [1000, 2000],
+      [0, 2000],
+    ];
+    const segs = hatchPolygon(u, { angle: 0, spacing: 200 });
+    const atApex = segs.filter(([p0]) => Math.abs(p0[1] - 1000) < 1e-6);
+    const covered = atApex.reduce((acc, [p0, p1]) => acc + Math.abs(p1[0] - p0[0]), 0);
+    expect(covered).toBeCloseTo(3000, 3); // [0..1500]+[1500..3000] = 전 폭
+  });
+
   it('45° 콘크리트 패턴 → 폴리곤 bbox 내 선분', () => {
     const sq: [number, number][] = [
       [0, 0],

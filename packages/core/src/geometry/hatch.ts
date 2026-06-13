@@ -40,7 +40,8 @@ export function hatchPolygon(boundary: Pt[], pattern: HatchPattern): Seg2D[] {
   if (!isFinite(tMin) || tMax - tMin < sp) return [];
 
   const out: Seg2D[] = [];
-  const start = Math.ceil(tMin / sp) * sp;
+  let start = Math.ceil(tMin / sp) * sp;
+  if (start <= tMin) start += sp; // 경계(tMin)에 정확히 놓인 스캔선 제외 — 절단 윤곽 위 중복선 방지
   for (let t = start; t < tMax; t += sp) {
     // 스캔선 = { p : dot(p,nrm) = t }. 각 경계 변과의 교차 파라미터(선 방향 u)를 수집.
     const us: number[] = [];
@@ -49,10 +50,14 @@ export function hatchPolygon(boundary: Pt[], pattern: HatchPattern): Seg2D[] {
       const b = boundary[(i + 1) % boundary.length]!;
       const ta = a[0] * nrm[0] + a[1] * nrm[1];
       const tb = b[0] * nrm[0] + b[1] * nrm[1];
-      // 변이 스캔값 t를 가로지르나 (한쪽 끝 == t는 한 번만 세도록 [ta,tb) 반개구간)
-      if (ta === tb) continue;
+      // 스캔값 t가 변의 [min, max) 반개구간에 드나 — 진행 방향 무관하게 항상 t-최대
+      // 끝점을 제외해야 극값 정점에서 인접 두 변이 정확히 상쇄(짝수 교차)한다.
+      // (반대로 진행순 끝점 s>=1을 빼면 하강 변에서 관습이 뒤집혀 오목 폴리곤 오채움.)
+      // ta===tb(수평 변)는 lo===hi → t>=hi로 자동 스킵.
+      const lo = Math.min(ta, tb);
+      const hi = Math.max(ta, tb);
+      if (t < lo || t >= hi) continue;
       const s = (t - ta) / (tb - ta);
-      if (s < 0 || s >= 1) continue;
       const x = a[0] + (b[0] - a[0]) * s;
       const y = a[1] + (b[1] - a[1]) * s;
       us.push(x * d[0] + y * d[1]);
