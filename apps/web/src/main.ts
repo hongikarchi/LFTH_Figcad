@@ -202,6 +202,10 @@ const viewActions = {
     rig.zoom(1.25);
     engine.requestRender();
   },
+  focusWorld: (x: number, y: number, z: number) => {
+    rig.focusOn(x, y, z);
+    engine.requestRender();
+  },
 };
 createRoot(document.getElementById('ui-root')!).render(
   createElement(App, { store, actions: viewActions }),

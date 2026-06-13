@@ -6,6 +6,7 @@ import { Navigator } from './Navigator';
 import { EditActions } from './EditActions';
 import { QuickOptions, type ViewActions } from './QuickOptions';
 import { AiPanel } from './AiPanel';
+import { LintPanel } from './LintPanel';
 
 /** 문서 변경 시 리렌더 트리거 (React는 문서를 직접 안 들고 매 렌더 fresh 조회) */
 export function useDocVersion(store: DocStore): number {
@@ -28,6 +29,7 @@ export function App({ store, actions }: { store: DocStore; actions: ViewActions 
       <Navigator store={store} />
       <QuickOptions store={store} actions={actions} />
       <AiPanel store={store} />
+      <LintPanel store={store} actions={actions} />
     </>
   );
 }

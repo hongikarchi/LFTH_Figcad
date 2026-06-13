@@ -141,6 +141,12 @@ export class CameraRig {
     this.apply();
   }
 
+  /** 타깃을 월드 좌표(m)로 이동 — 요소 점프용. 각도·거리는 유지 */
+  focusOn(x: number, y: number, z: number): void {
+    this.target.set(x, y, z);
+    this.apply();
+  }
+
   private updateFrustum(aspect: number): void {
     this.persp.aspect = aspect;
     this.persp.updateProjectionMatrix();

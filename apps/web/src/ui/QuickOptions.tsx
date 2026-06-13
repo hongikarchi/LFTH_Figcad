@@ -1,10 +1,13 @@
 import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
+import { useLint } from './LintPanel';
 
 export interface ViewActions {
   zoomIn: () => void;
   zoomOut: () => void;
+  /** 카메라 타깃 이동 (월드 m) — lint 요소 점프용 */
+  focusWorld: (x: number, y: number, z: number) => void;
 }
 
 /**
@@ -24,6 +27,9 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
   const connection = useUiStore((s) => s.connection);
   const peerCount = useUiStore((s) => s.peerCount);
   const aiOpen = useUiStore((s) => s.aiOpen);
+  const lintOpen = useUiStore((s) => s.lintOpen);
+  const findings = useLint(store);
+  const worst = findings[0]?.severity; // lint()는 심각도순 정렬
 
   const level = activeLevelId ? store.getLevel(activeLevelId) : undefined;
   const viewName = viewMode === '3d' ? '3D · 일반 원근' : `평면 · ${level?.name ?? '—'}`;
@@ -47,6 +53,13 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
         +
       </button>
       <span className="qo-sep" />
+      <button
+        className={`qo-lint ${lintOpen ? 'active' : ''} ${worst ?? ''}`}
+        title="데이터 위생 검사 — 겹침·미접합·중복·고아 요소"
+        onClick={() => useUiStore.getState().setLintOpen(!lintOpen)}
+      >
+        검사{findings.length > 0 ? ` ${findings.length}` : ''}
+      </button>
       <button
         className={`qo-ai ${aiOpen ? 'active' : ''}`}
         title="AI 모드 — 자연어로 모델링 (계획 승인 방식)"

@@ -444,6 +444,95 @@
         color: #fff;
         border-color: var(--ink);
       }
+      .quick-options button.qo-lint {
+        width: auto;
+        padding: 0 10px;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      .quick-options button.qo-lint.error {
+        color: #d70015;
+        border-color: rgba(215, 0, 21, 0.4);
+      }
+      .quick-options button.qo-lint.warning {
+        color: #b25000;
+        border-color: rgba(178, 80, 0, 0.4);
+      }
+      .quick-options button.qo-lint.active {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
+      }
+
+      /* ---- 검사(lint) 패널 (좌하단, M5) ---- */
+      .lint-panel {
+        position: fixed;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+        left: calc(env(safe-area-inset-left, 0px) + 14px);
+        width: 320px;
+        max-height: min(440px, calc(100vh - 200px));
+        display: flex;
+        flex-direction: column;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        z-index: 30;
+        overflow: hidden;
+      }
+      .lint-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .lint-clean {
+        padding: 14px 10px;
+        font-size: 12px;
+        color: var(--ink-soft);
+      }
+      .lint-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 7px;
+        padding: 7px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      .lint-item:hover {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .lint-icon {
+        font-size: 11px;
+        line-height: 1.5;
+        flex-shrink: 0;
+      }
+      .lint-msg {
+        flex: 1;
+        font-size: 11.5px;
+        line-height: 1.45;
+        word-break: keep-all;
+      }
+      .lint-fix {
+        flex-shrink: 0;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #d70015;
+        font-size: 10.5px;
+        font-weight: 600;
+        padding: 3px 7px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .lint-fix:hover {
+        background: rgba(215, 0, 21, 0.08);
+      }
 
       /* ---- AI 모드 패널 (우하단) ---- */
       .ai-panel {
