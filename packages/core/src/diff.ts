@@ -99,6 +99,7 @@ const KIND_LABEL: Record<Element['kind'], string> = {
   slab: '슬라브',
   grid: '그리드',
   column: '기둥',
+  beam: '보',
 };
 
 const countByKind = (els: Element[]): string =>

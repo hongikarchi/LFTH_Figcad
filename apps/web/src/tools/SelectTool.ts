@@ -34,6 +34,7 @@ type DragMode =
   | { kind: 'slab'; id: string; startDoc: Pt; origBoundary: Pt[] }
   | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
   | { kind: 'column'; id: string; startDoc: Pt; origAt: Pt }
+  | { kind: 'beam'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
   | { kind: 'box'; startX: number; startY: number; armed: boolean };
 
 /**
@@ -117,6 +118,8 @@ export class SelectTool implements Tool {
       this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     } else if (el.kind === 'column') {
       this.drag = { kind: 'column', id: hit, startDoc: info.doc, origAt: el.at };
+    } else if (el.kind === 'beam') {
+      this.drag = { kind: 'beam', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     }
     if (this.drag.kind !== 'none') this.ctx.collab.setEditing(hit);
   }
@@ -225,6 +228,16 @@ export class SelectTool implements Tool {
       this.throttledWrite(() =>
         this.ctx.store.updateElement(drag.id, {
           at: [drag.origAt[0] + dx, drag.origAt[1] + dy],
+        }),
+      );
+    } else if (this.drag.kind === 'beam') {
+      const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
+      const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;
+      const drag = this.drag;
+      this.throttledWrite(() =>
+        this.ctx.store.updateElement(drag.id, {
+          a: [drag.origA[0] + dx, drag.origA[1] + dy],
+          b: [drag.origB[0] + dx, drag.origB[1] + dy],
         }),
       );
     }

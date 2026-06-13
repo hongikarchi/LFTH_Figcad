@@ -6,6 +6,7 @@ import {
   ElemTypeSchema,
   LevelSchema,
   quantize,
+  type BeamElement,
   type ColumnElement,
   type DocMeta,
   type Element,
@@ -510,6 +511,27 @@ export class DocStore {
     return id;
   }
 
+  createBeam(params: { levelId: Id; typeId: Id; a: Pt; b: Pt; zOffset?: number }): Id {
+    if (
+      quantize(params.a[0]) === quantize(params.b[0]) &&
+      quantize(params.a[1]) === quantize(params.b[1])
+    ) {
+      throw new Error('zero-length beam');
+    }
+    const id = nanoid(12);
+    const beam = ElementSchema.parse({
+      id,
+      kind: 'beam',
+      levelId: params.levelId,
+      typeId: params.typeId,
+      a: [quantize(params.a[0]), quantize(params.a[1])],
+      b: [quantize(params.b[0]), quantize(params.b[1])],
+      ...(params.zOffset !== undefined ? { zOffset: quantize(params.zOffset) } : {}),
+    }) as BeamElement;
+    this.setElement(id, beam);
+    return id;
+  }
+
   /** 그리드 자동 라벨 — 세로축(상하 주행)은 숫자, 가로축은 알파벳 (한국 실무 관례) */
   private nextGridLabel(a: Pt, b: Pt): string {
     const vertical = Math.abs(b[1] - a[1]) >= Math.abs(b[0] - a[0]);
@@ -556,6 +578,11 @@ export class DocStore {
       next.at = [quantize(next.at[0]), quantize(next.at[1])];
       if (next.height !== undefined) next.height = quantize(next.height);
       if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
+    } else if (next.kind === 'beam') {
+      next.a = [quantize(next.a[0]), quantize(next.a[1])];
+      next.b = [quantize(next.b[0]), quantize(next.b[1])];
+      if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
+      if (next.zOffset !== undefined) next.zOffset = quantize(next.zOffset);
     }
     const parsed = ElementSchema.parse(next) as unknown as Record<string, unknown>;
     const ymap = this.yElements.get(id);
@@ -644,6 +671,8 @@ export class DocStore {
           created.push(this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) }));
         } else if (el.kind === 'column') {
           created.push(this.writeNew({ ...el, at: q2(xform(el.at)) }));
+        } else if (el.kind === 'beam') {
+          created.push(this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) }));
         }
       }
       // 개구부는 벽 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
@@ -670,7 +699,7 @@ export class DocStore {
       for (const el of els) {
         const ymap = this.yElements.get(el.id);
         if (!(ymap instanceof Y.Map)) continue;
-        if (el.kind === 'wall' || el.kind === 'grid') {
+        if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam') {
           ymap.set('a', q2([el.a[0] + delta[0], el.a[1] + delta[1]]));
           ymap.set('b', q2([el.b[0] + delta[0], el.b[1] + delta[1]]));
         } else if (el.kind === 'slab') {
@@ -716,7 +745,7 @@ export class DocStore {
       for (const el of els) {
         const ymap = this.yElements.get(el.id);
         if (!(ymap instanceof Y.Map)) continue;
-        if (el.kind === 'wall' || el.kind === 'grid') {
+        if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam') {
           ymap.set('a', q2(rotatePoint(el.a, center, angleRad)));
           ymap.set('b', q2(rotatePoint(el.b, center, angleRad)));
         } else if (el.kind === 'slab') {
@@ -939,6 +968,7 @@ export const SEED_IDS = {
   window1200: 'T-win12',
   slab150: 'T-s150',
   column400: 'T-c400',
+  beam300: 'T-b300',
 } as const;
 
 export interface SeedRefs {
@@ -948,6 +978,7 @@ export interface SeedRefs {
   windowTypeId: Id;
   slabTypeId: Id;
   columnTypeId: Id;
+  beamTypeId: Id;
 }
 
 export function seedDocument(store: DocStore): SeedRefs {
@@ -993,6 +1024,15 @@ export function seedDocument(store: DocStore): SeedRefs {
         },
         SEED_IDS.column400,
       );
+      store.addType(
+        {
+          kind: 'beam',
+          name: 'RC 보 300×600',
+          section: { shape: 'rect', width: 300, depth: 600 },
+          color: '#cfc9bf',
+        },
+        SEED_IDS.beam300,
+      );
     });
   } else {
     // 구버전 문서(M2 이전 시드)에 새 타입 보충 — 고정 id라 멱등
@@ -1032,6 +1072,16 @@ export function seedDocument(store: DocStore): SeedRefs {
           },
           SEED_IDS.column400,
         );
+      if (!store.getType(SEED_IDS.beam300))
+        store.addType(
+          {
+            kind: 'beam',
+            name: 'RC 보 300×600',
+            section: { shape: 'rect', width: 300, depth: 600 },
+            color: '#cfc9bf',
+          },
+          SEED_IDS.beam300,
+        );
     });
   }
   return {
@@ -1041,5 +1091,6 @@ export function seedDocument(store: DocStore): SeedRefs {
     windowTypeId: SEED_IDS.window1200,
     slabTypeId: SEED_IDS.slab150,
     columnTypeId: SEED_IDS.column400,
+    beamTypeId: SEED_IDS.beam300,
   };
 }

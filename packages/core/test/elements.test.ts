@@ -21,9 +21,10 @@ describe('시드 v2', () => {
     const { store } = setup();
     // 시드 2회 호출해도 멱등
     const again = seedDocument(store);
-    expect(store.listTypes()).toHaveLength(6); // 벽2 + 문 + 창 + 슬라브 + 기둥
+    expect(store.listTypes()).toHaveLength(7); // 벽2 + 문 + 창 + 슬라브 + 기둥 + 보
     expect(again.doorTypeId).toBeDefined();
     expect(again.columnTypeId).toBeDefined();
+    expect(again.beamTypeId).toBeDefined();
   });
 });
 

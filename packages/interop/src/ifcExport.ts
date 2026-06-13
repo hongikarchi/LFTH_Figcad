@@ -1,5 +1,7 @@
 import * as WebIFC from 'web-ifc';
 import type {
+  BeamElement,
+  BeamType,
   ColumnElement,
   ColumnType,
   DocSnapshot,
@@ -88,6 +90,9 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
   );
   const columnTypes = new Map(
     snap.types.filter((t) => t.kind === 'column').map((t) => [t.id, t as ColumnType]),
+  );
+  const beamTypes = new Map(
+    snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
   );
 
   // 타입별 MaterialLayerSetUsage (벽 두께 — Revit/ArchiCAD가 레이어드 벽으로 인식) — 두께별 dedup
@@ -260,6 +265,57 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
         new I.IfcColumn(guid(`col-${col.id}`), null, label(`기둥 ${col.id}`), null, null, objPlace as never, shape as never, null, null),
       );
       contained.push(colEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
+    }
+
+    // 보 — a→b 중심축 따라 단면 압출 (IfcBeam). 솔리드 로컬 Z = 보 축, X = 수직
+    const levelBeams = snap.elements.filter(
+      (e): e is BeamElement => e.kind === 'beam' && e.levelId === level.id,
+    );
+    for (const beam of levelBeams) {
+      const btype = beamTypes.get(beam.typeId);
+      const section = btype?.section ?? { shape: 'rect', width: 300, depth: 600 };
+      const dx = beam.b[0] - beam.a[0];
+      const dy = beam.b[1] - beam.a[1];
+      const len = Math.hypot(dx, dy);
+      if (len === 0) continue;
+      const ux = dx / len;
+      const uy = dy / len;
+      const vHalf = section.shape === 'circle' ? section.diameter / 2 : section.depth / 2;
+      const z = beam.zOffset ?? level.height - vHalf;
+      const objPlace = local(storeyPlace, place3(pt3(beam.a[0], beam.a[1], z)));
+      // 솔리드 좌표계: Axis(로컬 Z) = 보 축(평면), RefDirection(로컬 X) = 수직(world Z)
+      const solidPos = w(
+        new I.IfcAxis2Placement3D(pt3(0, 0, 0) as never, dir3(ux, uy, 0) as never, dir3(0, 0, 1) as never),
+      );
+      const profile =
+        section.shape === 'circle'
+          ? w(
+              new I.IfcCircleProfileDef(
+                I.IfcProfileTypeEnum.AREA,
+                null,
+                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
+                (section.diameter / 2) as never,
+              ),
+            )
+          : w(
+              // XDim=수직(춤)=depth, YDim=수평=width
+              new I.IfcRectangleProfileDef(
+                I.IfcProfileTypeEnum.AREA,
+                null,
+                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
+                section.depth as never,
+                section.width as never,
+              ),
+            );
+      const solid = w(
+        new I.IfcExtrudedAreaSolid(profile as never, solidPos as never, dir3(0, 0, 1) as never, len as never),
+      );
+      const rep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
+      const shape = w(new I.IfcProductDefinitionShape(null, null, [rep as never]));
+      const beamEntity = w(
+        new I.IfcBeam(guid(`beam-${beam.id}`), null, label(`보 ${beam.id}`), null, null, objPlace as never, shape as never, null, null),
+      );
+      contained.push(beamEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
     }
 
     if (contained.length) {

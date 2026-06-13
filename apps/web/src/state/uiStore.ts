@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import type { Id } from '@figcad/core';
 
-export type ToolName = 'select' | 'wall' | 'door' | 'window' | 'slab' | 'grid' | 'column';
-export type TypeKind = 'wall' | 'door' | 'window' | 'slab' | 'column';
+export type ToolName = 'select' | 'wall' | 'door' | 'window' | 'slab' | 'grid' | 'column' | 'beam';
+export type TypeKind = 'wall' | 'door' | 'window' | 'slab' | 'column' | 'beam';
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
@@ -50,7 +50,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeTool: 'wall',
   selection: [],
   viewMode: '3d',
-  activeTypes: { wall: null, door: null, window: null, slab: null, column: null },
+  activeTypes: { wall: null, door: null, window: null, slab: null, column: null, beam: null },
   activeLevelId: null,
   connection: 'connecting',
   peerCount: 0,

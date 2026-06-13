@@ -70,6 +70,7 @@ const KIND_LABEL: Record<string, string> = {
   slab: '슬라브',
   grid: '그리드',
   column: '기둥',
+  beam: '보',
 };
 
 const dist = (p: Pt, q: Pt): number => Math.hypot(p[0] - q[0], p[1] - q[1]);
@@ -204,6 +205,8 @@ export function lint(store: DocStore): LintFinding[] {
       key = `o|${el.hostId}|${el.typeId}|${el.offset}|${el.widthOverride ?? ''}|${el.heightOverride ?? ''}|${el.sillOverride ?? ''}`;
     } else if (el.kind === 'column') {
       key = `c|${el.levelId}|${el.typeId}|${el.at[0]},${el.at[1]}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
+    } else if (el.kind === 'beam') {
+      key = `b|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.zOffset ?? ''}`;
     } else {
       key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
     }

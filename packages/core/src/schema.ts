@@ -82,11 +82,21 @@ export const ColumnTypeSchema = z.object({
 });
 export type ColumnType = z.infer<typeof ColumnTypeSchema>;
 
+export const BeamTypeSchema = z.object({
+  id: z.string(),
+  kind: z.literal('beam'),
+  name: z.string(),
+  section: SectionSchema, // width=수평(축 직각), depth=수직(춤)
+  color: z.string(),
+});
+export type BeamType = z.infer<typeof BeamTypeSchema>;
+
 export const ElemTypeSchema = z.discriminatedUnion('kind', [
   WallTypeSchema,
   OpeningTypeSchema,
   SlabTypeSchema,
   ColumnTypeSchema,
+  BeamTypeSchema,
 ]);
 export type ElemType = z.infer<typeof ElemTypeSchema>;
 
@@ -151,12 +161,25 @@ export const ColumnElementSchema = z.object({
 });
 export type ColumnElement = z.infer<typeof ColumnElementSchema>;
 
+/** 보 — 평면 두 점 사이 중심축을 따라 단면 압출. 단면=타입, 축·높이=인스턴스 */
+export const BeamElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('beam'),
+  levelId: z.string(),
+  typeId: z.string(),
+  a: Pt, // 중심축 시작 (평면 mm)
+  b: Pt, // 중심축 끝
+  zOffset: mm.optional(), // 중심축 높이(레벨 바닥 기준). 기본 = level.height - 단면높이/2 (상단을 천장에)
+});
+export type BeamElement = z.infer<typeof BeamElementSchema>;
+
 export const ElementSchema = z.discriminatedUnion('kind', [
   WallElementSchema,
   OpeningElementSchema,
   SlabElementSchema,
   GridLineSchema,
   ColumnElementSchema,
+  BeamElementSchema,
 ]);
 export type Element = z.infer<typeof ElementSchema>;
 
@@ -198,6 +221,12 @@ export interface SlabDeriveInput {
 export interface ColumnDeriveInput {
   column: ColumnElement;
   type: ColumnType;
+  level: Level;
+}
+
+export interface BeamDeriveInput {
+  beam: BeamElement;
+  type: BeamType;
   level: Level;
 }
 

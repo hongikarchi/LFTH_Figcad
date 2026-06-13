@@ -223,6 +223,42 @@ export function InfoBox({ store }: { store: DocStore }) {
     );
   }
 
+  if (el?.kind === 'beam') {
+    const level = store.getLevel(el.levelId);
+    const type = store.getType(el.typeId);
+    const sectionLabel =
+      type?.kind === 'beam'
+        ? type.section.shape === 'circle'
+          ? `Ø${type.section.diameter}`
+          : `${type.section.width}×${type.section.depth}`
+        : '—';
+    const lengthMm = Math.round(Math.hypot(el.b[0] - el.a[0], el.b[1] - el.a[1]));
+    return (
+      <div className="infobox">
+        <span className="infobox-title">보</span>
+        <span className="infobox-field">
+          <label>길이</label>
+          <span className="ro">{lengthMm.toLocaleString('ko-KR')}</span>
+        </span>
+        <span className="infobox-field">
+          <label>단면</label>
+          <span className="ro">{sectionLabel}</span>
+        </span>
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'beam'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        <span className="infobox-field">
+          <label>홈 스토리</label>
+          <span className="ro">{level?.name ?? '—'}</span>
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
   if (el?.kind === 'grid') {
     return (
       <div className="infobox">
@@ -246,6 +282,7 @@ export function InfoBox({ store }: { store: DocStore }) {
     window: 'window',
     slab: 'slab',
     column: 'column',
+    beam: 'beam',
   };
   const kind = toolTypeKind[activeTool];
   if (kind) {
@@ -255,14 +292,15 @@ export function InfoBox({ store }: { store: DocStore }) {
       window: '창 도구',
       slab: '슬라브 도구',
       column: '기둥 도구',
+      beam: '보 도구',
     }[kind];
     const filter =
       kind === 'wall'
         ? (t: { kind: string }) => t.kind === 'wall'
         : kind === 'slab'
           ? (t: { kind: string }) => t.kind === 'slab'
-          : kind === 'column'
-            ? (t: { kind: string }) => t.kind === 'column'
+          : kind === 'column' || kind === 'beam'
+            ? (t: { kind: string }) => t.kind === kind
             : (t: { kind: string; opening?: { kind: string } }) =>
                 t.kind === 'opening' && t.opening?.kind === (kind === 'door' ? 'door' : 'window');
     const current = activeTypes[kind] ?? store.listTypes().find(filter)?.id ?? '';
@@ -290,6 +328,9 @@ export function InfoBox({ store }: { store: DocStore }) {
         )}
         {kind === 'column' && (
           <span className="infobox-hint">배치할 점 클릭 — 그리드 교차점에 스냅</span>
+        )}
+        {kind === 'beam' && (
+          <span className="infobox-hint">두 점 클릭 — 기둥 머리를 잇거나 그리드 따라 배치</span>
         )}
       </div>
     );

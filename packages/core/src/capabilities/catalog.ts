@@ -160,6 +160,37 @@ export const CAPABILITIES: Capability[] = [
       }),
     summary: (a) => `기둥 생성 ${fmtPt(a['at'])}`,
   },
+  {
+    id: 'create_beam',
+    category: 'structure',
+    titleKo: '보',
+    icon: 'beam',
+    descriptionKo:
+      '보 생성 — a→b 중심축(mm)을 따라 typeId 단면 압출. zOffset(레벨 바닥 기준 중심축 높이) 생략 시 상단을 천장에 맞춤. 보통 기둥 머리를 잇는다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        typeId: { type: 'string', description: '보 타입 id (문서의 types에서 kind=beam)' },
+        a: ptSchema('중심축 시작점'),
+        b: ptSchema('중심축 끝점'),
+        zOffset: { type: 'integer', description: '중심축 높이 mm (레벨 바닥 기준, 생략 시 천장 정렬)' },
+      },
+      required: ['levelId', 'typeId', 'a', 'b'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createBeam({
+        levelId: asStr(a['levelId'], 'levelId'),
+        typeId: asStr(a['typeId'], 'typeId'),
+        a: asPt(a['a']),
+        b: asPt(a['b']),
+        ...(optNum(a['zOffset']) !== undefined ? { zOffset: optNum(a['zOffset'])! } : {}),
+      }),
+    summary: (a) => `보 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
+  },
 
   // ===== opening =====
   {

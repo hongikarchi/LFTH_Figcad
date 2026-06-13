@@ -7,10 +7,11 @@ import {
   openingDeriveKey,
   slabDeriveKey,
 } from './deriveOthers';
-import { columnDeriveKey, deriveColumn } from './deriveStructure';
+import { beamDeriveKey, columnDeriveKey, deriveBeam, deriveColumn } from './deriveStructure';
 import type { JoinInfo } from './joins';
 import type { DocStore } from '../store';
 import type {
+  BeamType,
   ColumnType,
   Id,
   OpeningElement,
@@ -184,6 +185,13 @@ export class DeriveCache {
       const input = { column: el, type: type as ColumnType, level };
       key = `c:${columnDeriveKey(input)}`;
       compute = () => deriveColumn(input);
+    } else if (el.kind === 'beam') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'beam' || !level) return null;
+      const input = { beam: el, type: type as BeamType, level };
+      key = `b:${beamDeriveKey(input)}`;
+      compute = () => deriveBeam(input);
     }
 
     if (!key || !compute) return null;

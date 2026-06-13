@@ -26,7 +26,7 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
       { label: '슬라브', icon: 'slab', tool: 'slab' },
       { label: '그리드', icon: 'grid', tool: 'grid' },
       { label: '기둥', icon: 'column', tool: 'column' },
-      { label: '보', icon: 'beam', planned: '추후' },
+      { label: '보', icon: 'beam', tool: 'beam' },
       { label: '지붕', icon: 'roof', planned: '추후' },
       { label: '계단', icon: 'stair', planned: '추후' },
       { label: '난간', icon: 'railing', planned: '추후' },

@@ -70,11 +70,11 @@ export function useLint(store: DocStore): LintFinding[] {
 
 /** 점프 앵커 (mm) — 요소 종류별 대표점 + 레벨 */
 function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId?: string } {
-  if (el.kind === 'wall' || el.kind === 'grid') {
+  if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam') {
     return {
       x: (el.a[0] + el.b[0]) / 2,
       y: (el.a[1] + el.b[1]) / 2,
-      ...(el.kind === 'wall' ? { levelId: el.levelId } : {}),
+      ...(el.kind !== 'grid' ? { levelId: el.levelId } : {}),
     };
   }
   if (el.kind === 'slab') {

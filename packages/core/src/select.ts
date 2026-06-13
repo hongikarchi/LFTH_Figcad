@@ -109,7 +109,8 @@ export type Footprint =
 
 /** 문서 좌표(mm) 기준 풋프린트. 앱이 화면 판정 시엔 각 점을 투영해 사용 */
 export function elementFootprint(el: Element, store: DocStore): Footprint {
-  if (el.kind === 'wall' || el.kind === 'grid') return { kind: 'segment', a: el.a, b: el.b };
+  if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam')
+    return { kind: 'segment', a: el.a, b: el.b };
   if (el.kind === 'slab') return { kind: 'polygon', pts: el.boundary };
   if (el.kind === 'column') return { kind: 'point', p: el.at };
   if (el.kind === 'opening') {

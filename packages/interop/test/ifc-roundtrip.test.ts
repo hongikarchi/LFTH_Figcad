@@ -179,6 +179,17 @@ describe('IFC 라운드트립', () => {
     api.CloseModel(m);
   });
 
+  it('보 — IfcBeam으로 export', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createBeam({ levelId: SEED_IDS.level, typeId: SEED_IDS.beam300, a: [0, 0], b: [5000, 0] });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: SEED_IDS.beam300, a: [5000, 0], b: [5000, 4000] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCBEAM).size()).toBe(2);
+    api.CloseModel(m);
+  });
+
   it('IFC 파일이 유효 (재오픈 가능)', () => {
     const s = sample();
     const { bytes } = roundtrip(s);
