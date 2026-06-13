@@ -60,7 +60,29 @@ try {
     throw new Error(`importSnapshot 후 ${after}개`);
   console.log(`PASS  importSnapshot 적용 — 문서 요소 ${after}개`);
 
-  console.log('\nIFC 스모크 통과');
+  // .3dm 라운드트립 (rhino3dm WASM ?url 로딩) — ifcClient 실제 경로
+  const rhino = await page.evaluate(async () => {
+    const { store, ifc } = window.__figcad;
+    const bytes = await ifc.exportRhinoBytes(store.snapshot());
+    const { snapshot } = await ifc.parseRhino(bytes);
+    const els = snapshot.elements;
+    return { bytes: bytes.length, walls: els.filter((e) => e.kind === 'wall').length, slabs: els.filter((e) => e.kind === 'slab').length };
+  });
+  if (rhino.walls !== 4 || rhino.slabs !== 1) throw new Error(`.3dm 복원 벽${rhino.walls}/슬라브${rhino.slabs}`);
+  console.log(`PASS  브라우저 .3dm export→import — ${rhino.bytes}B, 벽4/슬라브1`);
+
+  // DXF 라운드트립
+  const dxf = await page.evaluate(async () => {
+    const { store, ifc } = window.__figcad;
+    const text = await ifc.exportDxfText(store.snapshot());
+    const { snapshot } = await ifc.parseDxf(text);
+    const els = snapshot.elements;
+    return { len: text.length, walls: els.filter((e) => e.kind === 'wall').length, slabs: els.filter((e) => e.kind === 'slab').length };
+  });
+  if (dxf.walls !== 4 || dxf.slabs !== 1) throw new Error(`DXF 복원 벽${dxf.walls}/슬라브${dxf.slabs}`);
+  console.log(`PASS  브라우저 DXF export→import — ${dxf.len}자, 벽4/슬라브1`);
+
+  console.log('\n인터롭 스모크 통과 (IFC/.3dm/DXF)');
 } catch (err) {
   console.error('FAIL ', err.message);
   process.exitCode = 1;

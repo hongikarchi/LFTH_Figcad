@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./ifc": "./src/ifc.ts",
+    "./rhino": "./src/rhino3dm.ts",
+    "./dxf": "./src/dxf.ts"
   },
   "scripts": {
     "test": "vitest run"
@@ -15,6 +18,9 @@
   },
   "dependencies": {
     "@figcad/core": "workspace:*",
+    "dxf-parser": "^1.1.2",
+    "dxf-writer": "^1.18.4",
+    "rhino3dm": "^8.17.0",
     "web-ifc": "^0.0.71"
   }
 }

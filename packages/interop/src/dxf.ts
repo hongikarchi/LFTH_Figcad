@@ -1,0 +1,167 @@
+import Drawing from 'dxf-writer';
+import * as dxfParser from 'dxf-parser';
+import { DocStore, type DocSnapshot, type Id, type WallType } from '@figcad/core';
+
+// dxf-parser는 CJS로 클래스 자체를 module.exports — 빌더(vite/esbuild)별 default/named
+// 위치가 달라 런타임 안전 픽업 (named DxfParser → default → 네임스페이스 자체)
+interface DxfDoc {
+  entities?: DxfEntity[];
+}
+type DxfParserCtor = new () => { parseSync(text: string): DxfDoc | null };
+const ns = dxfParser as Record<string, unknown>;
+const DxfParser = (ns['DxfParser'] ?? ns['default'] ?? dxfParser) as DxfParserCtor;
+
+const ACI_GRAY = 8; // ACI에 GRAY 상수 없음 — 8 = dark gray
+
+/**
+ * DXF 2D export/import — 평면 도면 교환 (컨설턴트 도면 일상 워크플로).
+ *
+ * DXF는 2D 지오메트리만 (높이/레벨/두께 없음) — 지오메트리 레벨 교환.
+ * export: 평면 투영. 벽 중심선(Wall Axis)+풋프린트(Walls), 슬라브 경계(Slab),
+ *         그리드(Grid)+라벨. 좌표 mm. 모든 레벨이 한 평면에 겹쳐 그려진다(2D 한계).
+ * import: Wall Axis 라인 → 벽(기본 두께, 단일 레벨), 닫힌 폴리라인 → 슬라브.
+ *         외부 DXF는 best-effort(LINE/열린→벽, 닫힌 폴리라인→슬라브). 호/원/문자 등 스킵.
+ */
+
+const DEFAULT_THICKNESS = 200;
+const DEFAULT_SLAB_THICKNESS = 150;
+
+export function exportDxf(snap: DocSnapshot): string {
+  const d = new Drawing();
+  d.setUnits('Millimeters');
+  d.addLayer('Wall Axis', Drawing.ACI.WHITE, 'CONTINUOUS');
+  d.addLayer('Walls', ACI_GRAY, 'CONTINUOUS');
+  d.addLayer('Slab', Drawing.ACI.CYAN, 'CONTINUOUS');
+  d.addLayer('Grid', Drawing.ACI.RED, 'CONTINUOUS');
+
+  const wallTypes = new Map(
+    snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
+  );
+
+  for (const el of snap.elements) {
+    if (el.kind === 'wall') {
+      d.setActiveLayer('Wall Axis');
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+      // 풋프린트 (시각용)
+      const t = (wallTypes.get(el.typeId)?.thickness ?? DEFAULT_THICKNESS) / 2;
+      const dx = el.b[0] - el.a[0];
+      const dy = el.b[1] - el.a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (-dy / len) * t;
+      const ny = (dx / len) * t;
+      d.setActiveLayer('Walls');
+      d.drawPolyline(
+        [
+          [el.a[0] + nx, el.a[1] + ny],
+          [el.b[0] + nx, el.b[1] + ny],
+          [el.b[0] - nx, el.b[1] - ny],
+          [el.a[0] - nx, el.a[1] - ny],
+        ],
+        true,
+      );
+    } else if (el.kind === 'slab') {
+      d.setActiveLayer('Slab');
+      d.drawPolyline(
+        el.boundary.map((p) => [p[0], p[1]] as [number, number]),
+        true,
+      );
+    } else if (el.kind === 'grid') {
+      d.setActiveLayer('Grid');
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+      d.drawText(el.a[0], el.a[1], 300, 0, el.label);
+    }
+  }
+
+  return d.toDxfString();
+}
+
+export interface DxfImportResult {
+  snapshot: DocSnapshot;
+  skipped: Record<string, number>;
+}
+
+interface DxfVertex {
+  x: number;
+  y: number;
+}
+interface DxfEntity {
+  type: string;
+  layer?: string;
+  vertices?: DxfVertex[];
+  shape?: boolean; // LWPOLYLINE 닫힘
+}
+
+export function importDxf(text: string): DxfImportResult {
+  const parsed = new DxfParser().parseSync(text) as { entities?: DxfEntity[] } | null;
+  const entities = parsed?.entities ?? [];
+  const skipped: Record<string, number> = {};
+  const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
+
+  const store = new DocStore();
+  const levelId = store.addLevel({ name: '1층', elevation: 0, height: 3000, order: 0 });
+  const wallTypeId = store.addType({ kind: 'wall', name: `벽 ${DEFAULT_THICKNESS}`, thickness: DEFAULT_THICKNESS, color: '#eceae5' });
+  let slabTypeId: Id | null = null;
+  const slabType = () =>
+    (slabTypeId ??= store.addType({ kind: 'slab', name: `슬라브 ${DEFAULT_SLAB_THICKNESS}`, thickness: DEFAULT_SLAB_THICKNESS, color: '#dcdad5' }));
+
+  const hasFigcadLayers = entities.some((e) => e.layer === 'Wall Axis' || e.layer === 'Slab');
+  const pts = (e: DxfEntity): [number, number][] =>
+    (e.vertices ?? []).map((v) => [Math.round(v.x), Math.round(v.y)] as [number, number]);
+
+  for (const e of entities) {
+    const isPolyline = e.type === 'LWPOLYLINE' || e.type === 'POLYLINE';
+    if (e.type !== 'LINE' && !isPolyline) {
+      if (e.type === 'TEXT' || e.type === 'MTEXT') continue; // 라벨 — 무시(손실 아님)
+      bump(e.type);
+      continue;
+    }
+    if (e.layer === 'Walls') continue; // 시각용 풋프린트 — Axis에서 import
+
+    const v = pts(e);
+    if (v.length < 2) {
+      bump('빈 곡선');
+      continue;
+    }
+    const closed = isPolyline && (e.shape === true || (v.length > 2 && v[0]![0] === v[v.length - 1]![0] && v[0]![1] === v[v.length - 1]![1]));
+
+    const isWall = hasFigcadLayers ? e.layer === 'Wall Axis' : !closed;
+    const isSlab = hasFigcadLayers ? e.layer === 'Slab' : closed;
+    const isGrid = e.layer === 'Grid';
+
+    if (isGrid) {
+      try {
+        store.createGridLine({ a: v[0]!, b: v[v.length - 1]! });
+      } catch {
+        bump('grid(퇴화)');
+      }
+    } else if (isWall) {
+      const a = v[0]!;
+      const b = v[v.length - 1]!;
+      if (a[0] === b[0] && a[1] === b[1]) {
+        bump('wall(길이0)');
+        continue;
+      }
+      store.createWall({ levelId, typeId: wallTypeId, a, b });
+    } else if (isSlab) {
+      const ring = [...v];
+      if (ring.length > 1) {
+        const f = ring[0]!;
+        const l = ring[ring.length - 1]!;
+        if (f[0] === l[0] && f[1] === l[1]) ring.pop();
+      }
+      if (ring.length < 3) {
+        bump('slab(점부족)');
+        continue;
+      }
+      try {
+        store.createSlab({ levelId, typeId: slabType(), boundary: ring });
+      } catch {
+        bump('slab(자가교차)');
+      }
+    }
+  }
+
+  const snapshot = store.snapshot();
+  snapshot.meta = { ...snapshot.meta, projectName: '가져온 DXF 도면' };
+  return { snapshot, skipped };
+}

@@ -1,52 +1,85 @@
 import type { DocSnapshot } from '@figcad/core';
 
 /**
- * IFC export/import 클라이언트 — web-ifc(WASM ~1.2MB)는 무거우므로 전부 동적 import.
- * 사용자가 버튼을 눌렀을 때만 로드 (초기 번들·iPad 메모리 보호 — 불변 규칙: 핫패스 밖).
+ * 외부 포맷 export/import 클라이언트 — 무거운 라이브러리(web-ifc/rhino3dm WASM,
+ * dxf)를 전부 동적 import. 버튼을 눌렀을 때만, 포맷별 독립 청크로 로드한다
+ * (초기 번들·iPad 메모리 보호 — 불변 규칙: 핫패스 밖). 서브엔트리(@figcad/interop/ifc
+ * 등)로 import해 IFC만 쓸 때 rhino3dm/dxf가 딸려오지 않게 분리.
  */
 
-let apiPromise: Promise<import('web-ifc').IfcAPI> | null = null;
-
-async function getApi(): Promise<import('web-ifc').IfcAPI> {
-  if (!apiPromise) {
-    // 실패(WASM fetch 404/MIME, 메모리 등) 시 캐시를 비워 다음 호출이 재시도하게 함
-    // — 안 그러면 rejected promise가 고착돼 새로고침 전까지 IFC 기능 전체가 죽는다
-    apiPromise = (async () => {
-      const WebIFC = await import('web-ifc');
-      const wasmUrl = (await import('web-ifc/web-ifc.wasm?url')).default;
-      const api = new WebIFC.IfcAPI();
-      // 단일 스레드(mt/worker wasm 회피) + vite가 served한 wasm URL로 로드
-      await api.Init(() => wasmUrl, true);
-      return api;
-    })().catch((e) => {
-      apiPromise = null;
-      throw e;
-    });
-  }
-  return apiPromise;
+export interface ImportResult {
+  snapshot: DocSnapshot;
+  skipped: Record<string, number>;
 }
 
-/** 문서 스냅샷 → IFC 바이트 (다운로드 없이 — 테스트/프로그램 경로) */
-export async function exportIfcBytes(snapshot: DocSnapshot): Promise<Uint8Array> {
-  const [{ exportIfc }, api] = await Promise.all([import('@figcad/interop'), getApi()]);
-  return exportIfc(api, snapshot);
-}
-
-/** 문서 스냅샷 → IFC 파일 다운로드 */
-export async function downloadIfc(snapshot: DocSnapshot): Promise<void> {
-  const bytes = await exportIfcBytes(snapshot);
-  const blob = new Blob([bytes as BlobPart], { type: 'application/x-step' });
+function triggerDownload(data: BlobPart, filename: string, mime: string): void {
+  const blob = new Blob([data], { type: mime });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${snapshot.meta.projectName || 'figcad'}.ifc`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
 }
 
-/** IFC 파일 바이트 → 문서 스냅샷 + 무시 카운트 */
-export async function parseIfc(
-  bytes: Uint8Array,
-): Promise<{ snapshot: DocSnapshot; skipped: Record<string, number> }> {
-  const [{ importIfc }, api] = await Promise.all([import('@figcad/interop'), getApi()]);
+// --- IFC (web-ifc WASM) ---
+let ifcApiPromise: Promise<import('web-ifc').IfcAPI> | null = null;
+async function getIfcApi(): Promise<import('web-ifc').IfcAPI> {
+  if (!ifcApiPromise) {
+    // 실패 시 캐시 비워 재시도 가능하게 (rejected promise 고착 방지)
+    ifcApiPromise = (async () => {
+      const WebIFC = await import('web-ifc');
+      const wasmUrl = (await import('web-ifc/web-ifc.wasm?url')).default;
+      const api = new WebIFC.IfcAPI();
+      await api.Init(() => wasmUrl, true);
+      return api;
+    })().catch((e) => {
+      ifcApiPromise = null;
+      throw e;
+    });
+  }
+  return ifcApiPromise;
+}
+
+export async function exportIfcBytes(snapshot: DocSnapshot): Promise<Uint8Array> {
+  const [{ exportIfc }, api] = await Promise.all([import('@figcad/interop/ifc'), getIfcApi()]);
+  return exportIfc(api, snapshot);
+}
+export async function downloadIfc(snapshot: DocSnapshot): Promise<void> {
+  const bytes = await exportIfcBytes(snapshot);
+  triggerDownload(bytes as BlobPart, `${snapshot.meta.projectName || 'figcad'}.ifc`, 'application/x-step');
+}
+export async function parseIfc(bytes: Uint8Array): Promise<ImportResult> {
+  const [{ importIfc }, api] = await Promise.all([import('@figcad/interop/ifc'), getIfcApi()]);
   return importIfc(api, bytes);
+}
+
+// --- Rhino .3dm (rhino3dm WASM) — wasm URL을 vite ?url로 주입 ---
+async function rhinoWasmUrl(): Promise<string> {
+  return (await import('rhino3dm/rhino3dm.wasm?url')).default;
+}
+export async function downloadRhino(snapshot: DocSnapshot): Promise<void> {
+  const [{ exportRhino }, wasmUrl] = await Promise.all([import('@figcad/interop/rhino'), rhinoWasmUrl()]);
+  const bytes = await exportRhino(snapshot, { wasmUrl });
+  triggerDownload(bytes as BlobPart, `${snapshot.meta.projectName || 'figcad'}.3dm`, 'application/octet-stream');
+}
+export async function exportRhinoBytes(snapshot: DocSnapshot): Promise<Uint8Array> {
+  const [{ exportRhino }, wasmUrl] = await Promise.all([import('@figcad/interop/rhino'), rhinoWasmUrl()]);
+  return exportRhino(snapshot, { wasmUrl });
+}
+export async function parseRhino(bytes: Uint8Array): Promise<ImportResult> {
+  const [{ importRhino }, wasmUrl] = await Promise.all([import('@figcad/interop/rhino'), rhinoWasmUrl()]);
+  return importRhino(bytes, { wasmUrl });
+}
+
+// --- DXF (2D, 텍스트) ---
+export async function exportDxfText(snapshot: DocSnapshot): Promise<string> {
+  const { exportDxf } = await import('@figcad/interop/dxf');
+  return exportDxf(snapshot);
+}
+export async function downloadDxf(snapshot: DocSnapshot): Promise<void> {
+  triggerDownload(await exportDxfText(snapshot), `${snapshot.meta.projectName || 'figcad'}.dxf`, 'application/dxf');
+}
+export async function parseDxf(text: string): Promise<ImportResult> {
+  const { importDxf } = await import('@figcad/interop/dxf');
+  return importDxf(text);
 }
