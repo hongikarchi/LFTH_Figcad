@@ -1,5 +1,5 @@
 import type { DocStore } from '../store';
-import type { ColumnType, DrawingView, Pt, Section, WallType } from '../schema';
+import type { ColumnType, DrawingView, Pt, RoofType, Section, SlabType, WallType } from '../schema';
 import { wallFootprint } from './deriveWall';
 import { HATCH_CONCRETE, hatchPolygon, type Seg2D } from './hatch';
 
@@ -8,9 +8,11 @@ import { HATCH_CONCRETE, hatchPolygon, type Seg2D } from './hatch';
  * 리서치 합의(Revit View Range / ArchiCAD Cut Plane / Vectorworks Section):
  *   절단면에 걸린 요소 = 절단 윤곽(굵은 선 + poché 해치),
  *   절단면 아래 = 투영(가는 선), 위 = 숨김.
- * 좌표 = 도면 평면 mm (평면뷰의 paper space = 문서 평면, x 동쪽·y 북쪽).
- * v1 = 평면뷰 (wall·column 절단/투영 + 해치, slab 투영, grid 축선).
- *   벽 마이터·개구부 기호·단면/입면 = 후속 슬라이스.
+ * 좌표 = 도면 평면 mm.
+ *   평면뷰: paper space = 문서 평면 (x 동쪽·y 북쪽).
+ *   단면뷰: paper space = (u, z) — u = 절단선 따라 거리, z = 표고(전역).
+ * v1 = 평면(절단/투영+해치) + 단면(절단만 — 투영+은선제거는 1c·v1.5).
+ *   벽 마이터·개구부 기호·입면(은선제거) = 후속.
  */
 
 /** 2D 폴리라인 (도면 mm). closed = 닫힌 폴리곤 */
@@ -54,6 +56,56 @@ function sectionPolygon(at: Pt, sec: Section): Pt[] {
   return out;
 }
 
+/** 점이 단순 폴리곤 내부인가 (ray-casting). 로컬 정의 — select.ts 순환 import 회피. */
+function pointInPoly(p: Pt, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i]![0];
+    const yi = poly[i]![1];
+    const xj = poly[j]![0];
+    const yj = poly[j]![1];
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** 선분 a→b가 폴리곤 변 c→d와 만나는 t(0..1, a→b 파라미터) 또는 null */
+function segIntersectT(a: Pt, b: Pt, c: Pt, d: Pt): number | null {
+  const rx = b[0] - a[0];
+  const ry = b[1] - a[1];
+  const sx = d[0] - c[0];
+  const sy = d[1] - c[1];
+  const denom = rx * sy - ry * sx;
+  if (Math.abs(denom) < 1e-12) return null; // 평행
+  const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / denom;
+  const u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / denom;
+  if (u < -1e-9 || u > 1 + 1e-9) return null; // 변 범위 밖
+  return t;
+}
+
+/**
+ * 선분 a→b가 폴리곤 내부인 t-구간들. 변 교차점들로 분할 후 각 구간 중점이
+ * 내부인지 판정 (볼록·오목 모두 견고 — even-odd 정점 패리티 버그 없음).
+ */
+function segmentInsidePolygon(a: Pt, b: Pt, poly: Pt[]): [number, number][] {
+  const ts: number[] = [0, 1];
+  for (let i = 0; i < poly.length; i++) {
+    const t = segIntersectT(a, b, poly[i]!, poly[(i + 1) % poly.length]!);
+    if (t !== null && t > 1e-9 && t < 1 - 1e-9) ts.push(t);
+  }
+  ts.sort((x, y) => x - y);
+  const out: [number, number][] = [];
+  for (let i = 0; i + 1 < ts.length; i++) {
+    const t0 = ts[i]!;
+    const t1 = ts[i + 1]!;
+    if (t1 - t0 < 1e-9) continue;
+    const tm = (t0 + t1) / 2;
+    const mid: Pt = [a[0] + (b[0] - a[0]) * tm, a[1] + (b[1] - a[1]) * tm];
+    if (pointInPoly(mid, poly)) out.push([t0, t1]);
+  }
+  return out;
+}
+
 type Cls = 'cut' | 'below' | 'above';
 
 /** 요소 z-범위(전역 mm) vs 절단면 분류 */
@@ -63,9 +115,9 @@ function classify(bottom: number, top: number, cutZ: number): Cls {
   return 'above';
 }
 
-export function deriveDrawing(view: DrawingView, store: DocStore): Drawing2D {
-  // v1: 평면뷰만. section/elevation = 후속 슬라이스(GPU depth-buffer 은선제거 결정 후).
-  if (view.type !== 'plan' || !view.levelId) return EMPTY;
+// ===== 평면뷰 =====
+function derivePlan(view: DrawingView, store: DocStore): Drawing2D {
+  if (!view.levelId) return EMPTY;
   const level = store.getLevel(view.levelId);
   if (!level) return EMPTY;
   const cutZ = level.elevation + (view.cutHeight ?? 1200);
@@ -96,8 +148,7 @@ export function deriveDrawing(view: DrawingView, store: DocStore): Drawing2D {
       if (type?.kind !== 'wall') continue;
       const bottom = level.elevation + (el.baseOffset ?? 0);
       const top = bottom + (el.height ?? level.height);
-      const fp = wallFootprint({ wall: el, type: type as WallType, level });
-      addPoly(fp, classify(bottom, top, cutZ), true);
+      addPoly(wallFootprint({ wall: el, type: type as WallType, level }), classify(bottom, top, cutZ), true);
     } else if (el.kind === 'column') {
       const type = store.getType(el.typeId);
       if (type?.kind !== 'column') continue;
@@ -108,7 +159,79 @@ export function deriveDrawing(view: DrawingView, store: DocStore): Drawing2D {
       // 바닥 = 절단면 아래 → 투영 윤곽 (두께 절단 교차는 후속)
       res.proj.push({ pts: el.boundary, closed: true });
     }
-    // roof = 평면도(floor plan)에 미표시 (지붕 평면은 별도). opening/beam/stair 등 = 후속.
+    // roof = 평면도(floor plan)에 미표시. opening/beam/stair = 후속.
   }
   return res;
+}
+
+// ===== 단면뷰 (절단만 — v1) =====
+function deriveSection(view: DrawingView, store: DocStore): Drawing2D {
+  if (!view.line) return EMPTY;
+  const sa = view.line[0];
+  const sb = view.line[1];
+  const len = Math.hypot(sb[0] - sa[0], sb[1] - sa[1]);
+  if (len < 1) return EMPTY;
+  const res: Drawing2D = { cut: [], proj: [], hatch: [], labels: [] };
+
+  // (u,z) 직사각형 cut + 해치. u = 절단선 따라 거리, z = 표고.
+  const addCut = (intervals: [number, number][], zb: number, zt: number): void => {
+    if (zt <= zb) return;
+    for (const [t0, t1] of intervals) {
+      const u0 = t0 * len;
+      const u1 = t1 * len;
+      const rect: Pt[] = [
+        [u0, zb],
+        [u1, zb],
+        [u1, zt],
+        [u0, zt],
+      ];
+      res.cut.push({ pts: rect, closed: true });
+      res.hatch.push(...hatchPolygon(rect, HATCH_CONCRETE));
+    }
+  };
+
+  for (const el of store.listElements()) {
+    if (el.kind === 'wall') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'wall' || !level) continue;
+      const ints = segmentInsidePolygon(sa, sb, wallFootprint({ wall: el, type: type as WallType, level }));
+      if (!ints.length) continue;
+      const zb = level.elevation + (el.baseOffset ?? 0);
+      addCut(ints, zb, zb + (el.height ?? level.height));
+    } else if (el.kind === 'column') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'column' || !level) continue;
+      const ints = segmentInsidePolygon(sa, sb, sectionPolygon(el.at, (type as ColumnType).section));
+      if (!ints.length) continue;
+      const zb = level.elevation + (el.baseOffset ?? 0);
+      addCut(ints, zb, zb + (el.height ?? level.height));
+    } else if (el.kind === 'slab') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'slab' || !level) continue;
+      const ints = segmentInsidePolygon(sa, sb, el.boundary);
+      if (!ints.length) continue;
+      const th = el.thicknessOverride ?? (type as SlabType).thickness;
+      addCut(ints, level.elevation - th, level.elevation); // 슬라브 = elevation에서 아래로
+    } else if (el.kind === 'roof') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'roof' || !level) continue;
+      const ints = segmentInsidePolygon(sa, sb, el.boundary);
+      if (!ints.length) continue;
+      const th = el.thicknessOverride ?? (type as RoofType).thickness;
+      const base = level.elevation + level.height + (el.baseOffset ?? 0);
+      addCut(ints, base, base + th); // 경사 무시 (v1 평지붕 근사)
+    }
+    // beam/stair/railing = 후속. 입면(elevation)은 1c.
+  }
+  return res;
+}
+
+export function deriveDrawing(view: DrawingView, store: DocStore): Drawing2D {
+  if (view.type === 'plan') return derivePlan(view, store);
+  if (view.type === 'section') return deriveSection(view, store);
+  return EMPTY; // elevation = 1c (정사영 + 은선제거, painter's filled silhouette)
 }

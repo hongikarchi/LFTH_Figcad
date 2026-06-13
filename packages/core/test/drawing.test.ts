@@ -97,12 +97,60 @@ describe('deriveDrawing — 평면뷰 절단/투영 분류', () => {
     expect(d.hatch.length).toBeGreaterThan(0);
   });
 
-  it('section/elevation 뷰는 v1에서 빈 결과(후속 슬라이스)', () => {
+  it('elevation 뷰는 v1에서 빈 결과 (1c 후속 — 정사영+은선제거)', () => {
     const { store, seed } = setup();
     store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [4000, 0] });
-    const sec = deriveDrawing({ id: 'v', name: 's', type: 'section', line: [[0, -500], [4000, -500]] }, store);
-    expect(sec.cut).toHaveLength(0);
-    expect(sec.proj).toHaveLength(0);
+    const el = deriveDrawing({ id: 'v', name: 'e', type: 'elevation', line: [[0, -500], [4000, -500]] }, store);
+    expect(el.cut).toHaveLength(0);
+    expect(el.proj).toHaveLength(0);
+  });
+});
+
+describe('deriveDrawing — 단면뷰 절단(cut), (u,z) 좌표', () => {
+  const section = (line: [[number, number], [number, number]]) =>
+    ({ id: 'v', name: 's', type: 'section', line }) as const;
+
+  it('벽 가로지름 → cut 사각형, z = [elevation+baseOffset .. +height] 정확', () => {
+    const { store, seed } = setup();
+    // 레벨 elevation=0·height=3000. 벽 남북(a[0,0]→b[0,4000]). 절단선 동서로 가로지름.
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [0, 4000] });
+    const d = deriveDrawing(section([[-1000, 2000], [1000, 2000]]), store);
+    expect(d.cut).toHaveLength(1);
+    const z = d.cut[0]!.pts.map((p) => p[1]);
+    expect(Math.min(...z)).toBeCloseTo(0); // zb = elevation
+    expect(Math.max(...z)).toBeCloseTo(3000); // zt = +height
+    expect(d.hatch.length).toBeGreaterThan(0);
+  });
+
+  it('절단선에 평행/빗나간 벽 → cut 없음 (grazing)', () => {
+    const { store, seed } = setup();
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [4000, 0] });
+    const d = deriveDrawing(section([[0, 2000], [4000, 2000]]), store); // 평행, y=2000 안 만남
+    expect(d.cut).toHaveLength(0);
+  });
+
+  it('슬라브 절단 → z 위=elevation·아래로 두께, u-범위=가로지른 거리', () => {
+    const { store, seed } = setup();
+    store.createSlab({
+      levelId: seed.levelId,
+      typeId: seed.slabTypeId,
+      boundary: [[0, 0], [4000, 0], [4000, 4000], [0, 4000]],
+    });
+    const th = store.getType(seed.slabTypeId)!.kind === 'slab' ? (store.getType(seed.slabTypeId) as { thickness: number }).thickness : 0;
+    const d = deriveDrawing(section([[-500, 2000], [4500, 2000]]), store);
+    expect(d.cut).toHaveLength(1);
+    const z = d.cut[0]!.pts.map((p) => p[1]);
+    expect(Math.max(...z)).toBeCloseTo(0); // 위 = elevation
+    expect(Math.min(...z)).toBeCloseTo(-th); // 아래로 두께만큼
+    const u = d.cut[0]!.pts.map((p) => p[0]);
+    expect(Math.min(...u)).toBeCloseTo(500); // 절단선 길이 5000 중 slab 진입 u
+    expect(Math.max(...u)).toBeCloseTo(4500);
+  });
+
+  it('빈 절단선(길이 0) → 빈 결과', () => {
+    const { store, seed } = setup();
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [4000, 0] });
+    expect(deriveDrawing(section([[100, 100], [100, 100]]), store).cut).toHaveLength(0);
   });
 });
 

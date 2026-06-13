@@ -23,6 +23,7 @@ import { DimensionTool } from './tools/DimensionTool';
 import { TextTool } from './tools/TextTool';
 import { SketchTool } from './tools/SketchTool';
 import { CommentTool } from './tools/CommentTool';
+import { SectionTool } from './tools/SectionTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
@@ -132,6 +133,7 @@ tools.register('dimension', new DimensionTool(ctx));
 tools.register('text', new TextTool(ctx));
 tools.register('sketch', new SketchTool(ctx));
 tools.register('comment', new CommentTool(ctx));
+tools.register('section', new SectionTool(ctx));
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---

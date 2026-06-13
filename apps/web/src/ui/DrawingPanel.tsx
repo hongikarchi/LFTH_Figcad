@@ -186,6 +186,16 @@ export function DrawingPanel({ store }: { store: DocStore }) {
         <button style={btnS} onClick={newPlan} disabled={!activeLevelId} title="현재 레벨의 평면도 생성">
           + 평면도
         </button>
+        <button
+          style={btnS}
+          onClick={() => {
+            useUiStore.getState().setDrawingOpen(false);
+            useUiStore.getState().setTool('section');
+          }}
+          title="평면에 절단선을 그어 단면 생성"
+        >
+          + 단면
+        </button>
         {active && (
           <button style={btnS} onClick={() => void downloadDrawingDxf(active, store, active.name)} title="DXF로 내보내기 (2D 도면 납품)">
             DXF

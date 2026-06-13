@@ -70,7 +70,25 @@ try {
   if (!drawn.ok) throw new Error(`캔버스 비어있음 (${JSON.stringify(drawn)})`);
   console.log(`PASS  도면 캔버스 렌더 (그려진 픽셀 ${drawn.dark})`);
 
-  // 5) 빈 레벨(절단면 위 벽만) → 빈 도면이어도 에러 없이 처리
+  // 5) 단면 뷰 — 박스를 가로지르는 절단선 (벽 2개 + 기둥 통과)
+  await page.evaluate(() => {
+    const { store, ui } = window.__figcad;
+    const id = store.createView({ name: '단면 1', type: 'section', line: [[3000, -1000], [3000, 5000]] });
+    ui.getState().setActiveViewId(id);
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  const secDark = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-drawing]');
+    const ctx = c.getContext('2d');
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] < 200) dark++;
+    return dark;
+  });
+  if (secDark < 50) throw new Error(`단면 캔버스 비어있음 (${secDark})`);
+  console.log(`PASS  단면 뷰 렌더 (그려진 픽셀 ${secDark})`);
+
+  // 6) 빈 레벨(절단면 위 벽만) → 빈 도면이어도 에러 없이 처리
   await page.evaluate(() => {
     const { store, seed, ui } = window.__figcad;
     const id = store.createView({ name: '빈 평면', type: 'plan', levelId: seed.levelId, cutHeight: 999999 });

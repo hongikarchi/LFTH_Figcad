@@ -16,7 +16,8 @@ export type ToolName =
   | 'dimension'
   | 'text'
   | 'sketch'
-  | 'comment';
+  | 'comment'
+  | 'section';
 export type TypeKind =
   | 'wall'
   | 'door'
