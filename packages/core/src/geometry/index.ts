@@ -25,6 +25,7 @@ import {
   dimensionDeriveKey,
   textDeriveKey,
 } from './deriveAnnotations';
+import { deriveZone, zoneDeriveKey } from './deriveZone';
 import { resolveDimAnchor } from '../select';
 import type { JoinInfo } from './joins';
 import type { DocStore } from '../store';
@@ -49,6 +50,7 @@ export * from './deriveWall';
 export * from './deriveOthers';
 export * from './deriveStructure';
 export * from './deriveAnnotations';
+export * from './deriveZone';
 export * from './deriveDrawing';
 export * from './hatch';
 export * from './joins';
@@ -237,6 +239,12 @@ export class DeriveCache {
       const input = { roof: el, type: type as RoofType, level };
       key = `rf:${roofDeriveKey(input)}`;
       compute = () => deriveRoof(input);
+    } else if (el.kind === 'zone') {
+      const level = store.getLevel(el.levelId);
+      if (!level) return null;
+      const input = { zone: el, level };
+      key = `zn:${zoneDeriveKey(input)}`;
+      compute = () => deriveZone(input);
     } else if (el.kind === 'text') {
       const level = store.getLevel(el.levelId);
       if (!level) return null;

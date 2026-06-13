@@ -13,6 +13,7 @@ export type ToolName =
   | 'stair'
   | 'railing'
   | 'roof'
+  | 'zone'
   | 'dimension'
   | 'text'
   | 'sketch'

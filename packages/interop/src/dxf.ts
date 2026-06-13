@@ -52,6 +52,7 @@ export function exportDxf(snap: DocSnapshot): string {
   d.addLayer('Stair', Drawing.ACI.MAGENTA, 'CONTINUOUS');
   d.addLayer('Railing', Drawing.ACI.CYAN, 'CONTINUOUS');
   d.addLayer('Roof', ACI_GRAY, 'CONTINUOUS');
+  d.addLayer('Zone', Drawing.ACI.GREEN, 'CONTINUOUS');
 
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
@@ -135,6 +136,16 @@ export function exportDxf(snap: DocSnapshot): string {
         el.boundary.map((p) => [p[0], p[1]] as [number, number]),
         true,
       );
+    } else if (el.kind === 'zone') {
+      d.setActiveLayer('Zone');
+      d.drawPolyline(
+        el.boundary.map((p) => [p[0], p[1]] as [number, number]),
+        true,
+      );
+      // 중심에 이름 스탬프
+      const cx = el.boundary.reduce((s, p) => s + p[0], 0) / el.boundary.length;
+      const cy = el.boundary.reduce((s, p) => s + p[1], 0) / el.boundary.length;
+      d.drawText(cx, cy, 300, 0, el.number ? `${el.number} ${el.name}` : el.name);
     }
   }
 

@@ -1,4 +1,4 @@
-import { resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
+import { polygonArea, resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
 import { useUiStore, type TypeKind } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
@@ -418,6 +418,40 @@ export function InfoBox({ store }: { store: DocStore }) {
           <label>바인딩</label>
           <span className="ro">{bound ? '요소 추종' : '자유'}</span>
         </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  if (el?.kind === 'zone') {
+    const area = (polygonArea(el.boundary) / 1e6).toFixed(1);
+    return (
+      <div className="infobox">
+        <span className="infobox-title">존</span>
+        <TextField
+          label="이름"
+          value={el.name}
+          maxLength={40}
+          width={120}
+          onCommit={(v) => store.updateElement(el.id, { name: v })}
+        />
+        <TextField
+          label="번호"
+          value={el.number ?? ''}
+          maxLength={12}
+          width={56}
+          onCommit={(v) => store.updateElement(el.id, { number: v })}
+        />
+        <span className="infobox-field">
+          <label>면적</label>
+          <span className="ro">{area}㎡</span>
+        </span>
+        <NumField
+          label="높이"
+          value={el.height ?? store.getLevel(el.levelId)?.height ?? 3000}
+          min={100}
+          onCommit={(v) => store.updateElement(el.id, { height: v })}
+        />
         {deleteBtn(el.id)}
       </div>
     );

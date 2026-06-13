@@ -76,6 +76,7 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   const stairLayer = layers.addLayer('Stair', { r: 150, g: 90, b: 150 });
   const railingLayer = layers.addLayer('Railing', { r: 90, g: 150, b: 150 });
   const roofLayer = layers.addLayer('Roof', { r: 130, g: 120, b: 90 });
+  const zoneLayer = layers.addLayer('Zone', { r: 90, g: 160, b: 90 });
   const attr = (idx: number) => {
     const a = new rhino.ObjectAttributes();
     a.layerIndex = idx;
@@ -194,6 +195,12 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
       const pts = el.boundary.map((p) => [p[0], p[1], z] as number[]);
       pts.push(pts[0]!);
       objects.add(new rhino.PolylineCurve(pts), attr(roofLayer));
+    } else if (el.kind === 'zone') {
+      // 존 경계 — 바닥(레벨 elevation) z 닫힌 폴리라인 (공간 윤곽, 지오레벨)
+      const z = elev.get(el.levelId) ?? 0;
+      const pts = el.boundary.map((p) => [p[0], p[1], z] as number[]);
+      pts.push(pts[0]!);
+      objects.add(new rhino.PolylineCurve(pts), attr(zoneLayer));
     }
   }
 

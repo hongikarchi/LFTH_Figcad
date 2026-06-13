@@ -251,6 +251,18 @@ export const RoofElementSchema = z.object({
 });
 export type RoofElement = z.infer<typeof RoofElementSchema>;
 
+/** 존(공간) — 경계 폴리곤 + 이름/번호. 면적·부피는 파생(저장 안 함). 타입 없음(IfcSpace 대응). */
+export const ZoneElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('zone'),
+  levelId: z.string(),
+  boundary: z.array(Pt).min(3), // 단순 폴리곤 (자가교차 금지 — ops 검증)
+  name: z.string(),
+  number: z.string().optional(),
+  height: mm.optional(), // 공간 높이 (부피 계산용). 기본 = level.height
+});
+export type ZoneElement = z.infer<typeof ZoneElementSchema>;
+
 /** 텍스트 주석 — 평면 한 점에 문자열. 타입 없음(주석은 패밀리 무관). */
 export const TextElementSchema = z.object({
   id: z.string(),
@@ -292,6 +304,7 @@ export const ElementSchema = z.discriminatedUnion('kind', [
   StairElementSchema,
   RailingElementSchema,
   RoofElementSchema,
+  ZoneElementSchema,
   TextElementSchema,
   DimensionElementSchema,
 ]);

@@ -140,7 +140,8 @@ export function elementFootprint(el: Element, store: DocStore): Footprint {
     el.kind === 'railing'
   )
     return { kind: 'segment', a: el.a, b: el.b };
-  if (el.kind === 'slab' || el.kind === 'roof') return { kind: 'polygon', pts: el.boundary };
+  if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone')
+    return { kind: 'polygon', pts: el.boundary };
   if (el.kind === 'dimension')
     // 바인딩 해석 — 렌더/클릭픽과 같은 좌표(이동된 바인딩 치수도 박스선택 일치)
     return {

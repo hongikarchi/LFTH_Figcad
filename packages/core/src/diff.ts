@@ -103,6 +103,7 @@ const KIND_LABEL: Record<Element['kind'], string> = {
   stair: '계단',
   railing: '난간',
   roof: '지붕',
+  zone: '존',
   text: '텍스트',
   dimension: '치수',
 };

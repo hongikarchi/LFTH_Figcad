@@ -75,6 +75,7 @@ const KIND_LABEL: Record<string, string> = {
   stair: '계단',
   railing: '난간',
   roof: '지붕',
+  zone: '존',
   text: '텍스트',
   dimension: '치수',
 };
@@ -239,6 +240,8 @@ export function lint(store: DocStore): LintFinding[] {
       key = `txt|${el.levelId}|${el.at[0]},${el.at[1]}|${el.text}`;
     } else if (el.kind === 'dimension') {
       key = `dim|${el.levelId}|${segKey(el.a, el.b)}|${el.offset ?? ''}`;
+    } else if (el.kind === 'zone') {
+      key = `zn|${el.levelId}|${el.name}|${el.number ?? ''}|${boundaryKey(el.boundary)}`;
     } else {
       key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
     }

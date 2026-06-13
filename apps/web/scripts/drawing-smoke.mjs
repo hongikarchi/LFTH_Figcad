@@ -17,9 +17,13 @@ try {
   await page.setViewport({ width: 1280, height: 900 });
   page.on('dialog', (d) => d.accept('도면테스터'));
   const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  // collab WS(8787) 연결거부는 vite-only 스모크 환경 아티팩트 — 무시
+  const ignore = (t) => /WebSocket|ERR_CONNECTION_REFUSED|parties\/doc/.test(t);
+  page.on('pageerror', (e) => {
+    if (!ignore(e.message)) errors.push(e.message);
+  });
   page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text().slice(0, 200));
+    if (m.type() === 'error' && !ignore(m.text())) errors.push(m.text().slice(0, 200));
   });
   await page.goto(`http://localhost:${port}/?p=${room}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__figcad?.ui, { timeout: 10000 });
@@ -35,6 +39,19 @@ try {
     store.createWall({ levelId: L, typeId: t, a: [0, 4000], b: [0, 0] });
     store.createColumn({ levelId: L, typeId: seed.columnTypeId, at: [3000, 2000] });
   });
+  await new Promise((r) => setTimeout(r, 150));
+
+  // 1b) 존 생성 + 3D 렌더(새 derive→SceneManager 경로 무에러)
+  await page.evaluate(() => {
+    const { store, seed, ui } = window.__figcad;
+    store.createZone({ levelId: seed.levelId, boundary: [[200, 200], [5800, 200], [5800, 3800], [200, 3800]], name: '거실' });
+    ui.getState().setViewMode('3d');
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const zoneCount = await page.evaluate(() => window.__figcad.store.listElements().filter((e) => e.kind === 'zone').length);
+  if (zoneCount !== 1) throw new Error(`존 생성 실패 (${zoneCount})`);
+  console.log('PASS  존 생성 + 3D 렌더 (새 kind 파생 경로)');
+  await page.evaluate(() => window.__figcad.ui.getState().setViewMode('plan'));
   await new Promise((r) => setTimeout(r, 150));
 
   // 2) views ops — createView/list

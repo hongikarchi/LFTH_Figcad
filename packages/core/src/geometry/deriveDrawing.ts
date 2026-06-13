@@ -1,6 +1,7 @@
 import type { DocStore } from '../store';
 import type { ColumnType, DrawingView, Pt, RoofType, Section, SlabType, WallType } from '../schema';
 import { wallFootprint } from './deriveWall';
+import { polygonArea, polygonCentroid } from './deriveZone';
 import { HATCH_CONCRETE, hatchPolygon, type Seg2D } from './hatch';
 
 /**
@@ -207,6 +208,12 @@ function derivePlan(view: DrawingView, store: DocStore): Drawing2D {
     } else if (el.kind === 'slab') {
       // 바닥 = 절단면 아래 → 투영 윤곽 (두께 절단 교차는 후속)
       res.proj.push({ pts: el.boundary, closed: true });
+    } else if (el.kind === 'zone') {
+      // 존 = 경계 윤곽(가는 선) + 중심 스탬프(이름·면적)
+      res.proj.push({ pts: el.boundary, closed: true });
+      const c = polygonCentroid(el.boundary);
+      res.labels.push({ text: el.number ? `${el.number} ${el.name}` : el.name, pos: c });
+      res.labels.push({ text: `${(polygonArea(el.boundary) / 1e6).toFixed(1)}㎡`, pos: [c[0], c[1] - 400] });
     }
     // roof = 평면도(floor plan)에 미표시. opening/beam/stair = 후속.
   }

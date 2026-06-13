@@ -25,6 +25,7 @@ import {
   type SlabElement,
   type Comment,
   type DrawingView,
+  type ZoneElement,
   type StairElement,
   type TextElement,
   type WallElement,
@@ -658,6 +659,23 @@ export class DocStore {
     return id;
   }
 
+  createZone(params: { levelId: Id; boundary: Pt[]; name: string; number?: string; height?: number }): Id {
+    const boundary = params.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+    if (!isSimplePolygon(boundary)) throw new Error('self-intersecting zone boundary');
+    const id = nanoid(12);
+    const zone = ElementSchema.parse({
+      id,
+      kind: 'zone',
+      levelId: params.levelId,
+      boundary,
+      name: params.name,
+      ...(params.number !== undefined ? { number: params.number } : {}),
+      ...(params.height !== undefined ? { height: quantize(params.height) } : {}),
+    }) as ZoneElement;
+    this.setElement(id, zone);
+    return id;
+  }
+
   createText(params: { levelId: Id; at: Pt; text: string; size?: number }): Id {
     const id = nanoid(12);
     const el = ElementSchema.parse({
@@ -784,6 +802,10 @@ export class DocStore {
           dir: [quantize(next.slope.dir[0]), quantize(next.slope.dir[1])] as Pt,
           pitch: quantize(next.slope.pitch),
         };
+    } else if (next.kind === 'zone') {
+      next.boundary = next.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+      if (!isSimplePolygon(next.boundary)) return;
+      if (next.height !== undefined) next.height = quantize(next.height);
     } else if (next.kind === 'text') {
       next.at = [quantize(next.at[0]), quantize(next.at[1])];
       if (next.size !== undefined) next.size = quantize(next.size);
@@ -983,7 +1005,7 @@ export class DocStore {
           const newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
           wallIdMap.set(el.id, newId);
           created.push(newId);
-        } else if (el.kind === 'slab') {
+        } else if (el.kind === 'slab' || el.kind === 'zone') {
           created.push(this.writeNew({ ...el, boundary: el.boundary.map((p) => q2(xform(p))) }));
         } else if (el.kind === 'grid') {
           // 라벨은 자동 재발급 (중복 방지)
@@ -1056,7 +1078,7 @@ export class DocStore {
         ) {
           ymap.set('a', q2([el.a[0] + delta[0], el.a[1] + delta[1]]));
           ymap.set('b', q2([el.b[0] + delta[0], el.b[1] + delta[1]]));
-        } else if (el.kind === 'slab' || el.kind === 'roof') {
+        } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
           ymap.set(
             'boundary',
             el.boundary.map((p) => q2([p[0] + delta[0], p[1] + delta[1]])),
@@ -1110,7 +1132,7 @@ export class DocStore {
         ) {
           ymap.set('a', q2(rotatePoint(el.a, center, angleRad)));
           ymap.set('b', q2(rotatePoint(el.b, center, angleRad)));
-        } else if (el.kind === 'slab' || el.kind === 'roof') {
+        } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
           ymap.set(
             'boundary',
             el.boundary.map((p) => q2(rotatePoint(p, center, angleRad))),

@@ -105,6 +105,44 @@ export const CAPABILITIES: Capability[] = [
     },
   },
   {
+    id: 'create_zone',
+    category: 'structure',
+    titleKo: '존',
+    icon: 'box',
+    descriptionKo:
+      '존(공간/룸) 생성. boundary는 단순 폴리곤 꼭짓점, name은 공간 이름. 면적·부피는 자동 계산(IfcSpace 대응). 타입 없음.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '레벨 id' },
+        boundary: {
+          type: 'array',
+          items: { type: 'array', items: { type: 'integer' } },
+          description: '폴리곤 꼭짓점 [[x,y],...] mm — 3개 이상, 자가교차 금지',
+        },
+        name: { type: 'string', description: '공간 이름 (예: 거실, 침실)' },
+        number: { type: 'string', description: '실 번호 (선택)' },
+        height: { type: 'integer', description: '공간 높이 mm (선택, 기본 = 층고)' },
+      },
+      required: ['levelId', 'boundary', 'name'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) => {
+      const raw = a['boundary'];
+      if (!Array.isArray(raw)) throw new Error('boundary must be [[x,y],...]');
+      return store.createZone({
+        levelId: asStr(a['levelId'], 'levelId'),
+        boundary: raw.map(asPt),
+        name: asStr(a['name'], 'name'),
+        ...(a['number'] !== undefined ? { number: String(a['number']) } : {}),
+        ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+      });
+    },
+    summary: (a) => `존 생성 "${a['name'] ?? ''}" (꼭짓점 ${Array.isArray(a['boundary']) ? a['boundary'].length : 0}개)`,
+  },
+  {
     id: 'create_grid_line',
     category: 'structure',
     titleKo: '그리드',
