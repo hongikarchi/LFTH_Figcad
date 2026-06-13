@@ -28,6 +28,8 @@ interface UiState {
   aiOpen: boolean;
   /** 검사(lint) 패널 표시 (M5) */
   lintOpen: boolean;
+  /** 버전 타임라인 패널 표시 (M6) — 검사 패널과 같은 슬롯(상호 배타) */
+  versionOpen: boolean;
   setTool: (t: ToolName) => void;
   setSelection: (id: Id | null) => void;
   setEditAction: (a: EditAction | null) => void;
@@ -35,6 +37,7 @@ interface UiState {
   setRotateAngle: (deg: number) => void;
   setAiOpen: (open: boolean) => void;
   setLintOpen: (open: boolean) => void;
+  setVersionOpen: (open: boolean) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
@@ -55,6 +58,7 @@ export const useUiStore = create<UiState>((set) => ({
   rotateAngle: 90,
   aiOpen: false,
   lintOpen: false,
+  versionOpen: false,
   setTool: (activeTool) => set({ activeTool, selection: null, editAction: null }),
   setSelection: (selection) =>
     set((s) => ({ selection, editAction: selection ? s.editAction : null })),
@@ -62,7 +66,9 @@ export const useUiStore = create<UiState>((set) => ({
   setArrayCount: (arrayCount) => set({ arrayCount: Math.max(1, Math.min(50, arrayCount)) }),
   setRotateAngle: (rotateAngle) => set({ rotateAngle }),
   setAiOpen: (aiOpen) => set({ aiOpen }),
-  setLintOpen: (lintOpen) => set({ lintOpen }),
+  setLintOpen: (lintOpen) => set((s) => ({ lintOpen, versionOpen: lintOpen ? false : s.versionOpen })),
+  setVersionOpen: (versionOpen) =>
+    set((s) => ({ versionOpen, lintOpen: versionOpen ? false : s.lintOpen })),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveType: (kind, id) =>
     set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),

@@ -1,0 +1,20 @@
+M6: git식 버전 관리 — R2 커밋/타임라인/시맨틱 diff/복원
+
+- 커밋 = 문서 스냅샷 canonical JSON(키·id 정렬)의 SHA-256 콘텐츠 해시 blob
+  → R2 projects/<room>/commits/<hash>.json + log.json (head, 메타 목록)
+- Doc DO가 커밋 권위: 룸 HTTP ?op=commit(POST)/log/show — 룸 직렬화로
+  log read-modify-write 안전, ROOM_KEY 검사, room 이름 화이트리스트
+  (R2 키 경로 주입 차단), log 상한 500 (blob은 콘텐츠 주소라 dedup 유지)
+- 무변경 커밋은 head 해시 비교로 자동 스킵
+- 자동 체크포인트: 마지막 접속자 퇴장 시 (dedup이 빈 세션을 거름)
+- core diff.ts: 요소 단위 시맨틱 diff (추가/삭제/필드 변경, 레벨·타입 카운트),
+  키 순서 불변 비교 (canonical 라운드트립이 가짜 변경을 내지 않도록)
+- DocStore.snapshotOf: observer 없는 1회 읽기 — 장수명 DO doc 반복 읽기용
+- VersionPanel: 커밋(메시지)/타임라인/지금과 비교/복원(importSnapshot —
+  undo 가능·협업 전파). 검사 패널과 좌하단 슬롯 상호 배타
+- 버전 라우트 CORS 개방 (접근 통제는 ?key=) — vite 데브·iPad LAN 경로
+- 멀티에이전트 리뷰 확정 5건 반영 (경로 주입 major 포함)
+- 검증: 테스트 114/114, version-smoke(커밋→스킵→diff→복원), 자동 체크포인트
+  실측, 경로 주입 400 확인. 시점 3D 미리보기·fork는 v1.5/M6.5
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

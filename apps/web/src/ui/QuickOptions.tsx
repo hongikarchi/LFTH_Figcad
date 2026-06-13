@@ -28,6 +28,7 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
   const peerCount = useUiStore((s) => s.peerCount);
   const aiOpen = useUiStore((s) => s.aiOpen);
   const lintOpen = useUiStore((s) => s.lintOpen);
+  const versionOpen = useUiStore((s) => s.versionOpen);
   const findings = useLint(store);
   const worst = findings[0]?.severity; // lint()는 심각도순 정렬
 
@@ -53,6 +54,13 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
         +
       </button>
       <span className="qo-sep" />
+      <button
+        className={`qo-lint ${versionOpen ? 'active' : ''}`}
+        title="버전 — 커밋 타임라인, 비교, 복원"
+        onClick={() => useUiStore.getState().setVersionOpen(!versionOpen)}
+      >
+        버전
+      </button>
       <button
         className={`qo-lint ${lintOpen ? 'active' : ''} ${worst ?? ''}`}
         title="데이터 위생 검사 — 겹침·미접합·중복·고아 요소"

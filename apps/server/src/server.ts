@@ -2,12 +2,15 @@ import { DurableObject } from 'cloudflare:workers';
 import { routePartykitRequest, type Connection, type ConnectionContext } from 'partyserver';
 import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
+import { DocStore } from '@figcad/core';
 import { handleAgentRequest } from './agent';
+import { createCommit, handleVersionRequest, isSafeRoom } from './version';
 
 interface Env {
   Doc: DurableObjectNamespace;
   AgentRunner: DurableObjectNamespace;
   ASSETS: Fetcher;
+  COMMITS?: R2Bucket;
   ROOM_KEY?: string;
   ANTHROPIC_API_KEY?: string;
 }
@@ -53,6 +56,41 @@ export class Doc extends YServer<Env> {
       off += c.length;
     }
     Y.applyUpdate(this.document, total);
+  }
+
+  /** M6 버전 관리 — 룸 HTTP: ?op=commit/log/show (Doc DO = 커밋 권위) */
+  override async onRequest(request: Request): Promise<Response> {
+    return handleVersionRequest(
+      request,
+      this.name,
+      this.env.COMMITS,
+      () => DocStore.snapshotOf(this.document),
+      this.env.ROOM_KEY,
+    );
+  }
+
+  /** 마지막 접속자 퇴장 = 세션 종료 → 자동 체크포인트 (해시 dedup이 무변경 세션을 거름) */
+  override async onClose(
+    connection: Connection,
+    code: number,
+    reason: string,
+    wasClean: boolean,
+  ): Promise<void> {
+    await super.onClose(connection, code, reason, wasClean);
+    let remaining = 0;
+    for (const _ of this.getConnections()) remaining++;
+    if (remaining > 0 || !this.env.COMMITS || !isSafeRoom(this.name)) return;
+    try {
+      await createCommit(
+        this.env.COMMITS,
+        this.name,
+        DocStore.snapshotOf(this.document),
+        '자동',
+        '자동 체크포인트 (세션 종료)',
+      );
+    } catch {
+      // 체크포인트 실패가 연결 종료 처리를 막으면 안 됨
+    }
   }
 
   override async onSave(): Promise<void> {

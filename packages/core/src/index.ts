@@ -9,3 +9,4 @@ export * from './geometry';
 export * from './snap';
 export * from './ai';
 export * from './lint';
+export * from './diff';

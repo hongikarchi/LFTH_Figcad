@@ -770,6 +770,42 @@ export class DocStore {
     };
   }
 
+  /**
+   * 외부 Y.Doc을 observer 없이 1회 읽어 스냅샷 생성 — 서버(DO) 커밋처럼
+   * 장수명 doc을 반복 읽는 곳용 (DocStore 인스턴스화는 해제 불가 observer를 남김).
+   * 스키마 위반 요소는 조용히 제외 — DocStore.snapshot()(미러도 safeParse만 채움)과
+   * 동일 동작. 즉 커밋/백업은 "렌더 가능한 문서"의 무손실 보존이다.
+   */
+  static snapshotOf(ydoc: Y.Doc): DocSnapshot {
+    const yMeta = ydoc.getMap('meta');
+    const levels: Level[] = [];
+    for (const v of ydoc.getMap('levels').values()) {
+      const p = LevelSchema.safeParse(v);
+      if (p.success) levels.push(p.data);
+    }
+    const types: ElemType[] = [];
+    for (const v of ydoc.getMap('types').values()) {
+      const p = ElemTypeSchema.safeParse(v);
+      if (p.success) types.push(p.data);
+    }
+    const elements: Element[] = [];
+    for (const v of ydoc.getMap('elements').values()) {
+      if (!(v instanceof Y.Map)) continue;
+      const p = ElementSchema.safeParse(v.toJSON());
+      if (p.success) elements.push(p.data as Element);
+    }
+    return {
+      meta: {
+        schemaVersion: (yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
+        projectName: (yMeta.get('projectName') as string) ?? '새 프로젝트',
+        units: 'mm',
+      },
+      levels,
+      types,
+      elements,
+    };
+  }
+
   /** 스냅샷에서 독립 스토어 재구성 — id 보존 (AI 드라이런용 인메모리 사본) */
   static fromSnapshot(snap: DocSnapshot): DocStore {
     const store = new DocStore();

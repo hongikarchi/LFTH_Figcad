@@ -560,6 +560,125 @@
         background: rgba(215, 0, 21, 0.08);
       }
 
+      /* ---- 버전 패널 (좌하단 — 검사 패널과 같은 슬롯, M6) ---- */
+      .version-panel {
+        position: fixed;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+        left: calc(env(safe-area-inset-left, 0px) + 14px);
+        width: 320px;
+        max-height: min(480px, calc(100vh - 200px));
+        display: flex;
+        flex-direction: column;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        z-index: 30;
+        overflow: hidden;
+      }
+      .ver-commit {
+        display: flex;
+        gap: 6px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--hairline);
+      }
+      .ver-commit input {
+        flex: 1;
+        padding: 7px 10px;
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.035);
+        font-size: 12.5px;
+        outline: none;
+      }
+      .ver-commit input:focus {
+        border-color: var(--accent);
+      }
+      .ver-commit button {
+        padding: 7px 12px;
+        border: none;
+        border-radius: 8px;
+        background: var(--ink);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .ver-commit button:disabled {
+        opacity: 0.4;
+      }
+      .ver-notice {
+        padding: 6px 12px;
+        font-size: 11px;
+        color: var(--ink-soft);
+      }
+      .ver-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ver-item {
+        padding: 7px 8px;
+        border-radius: 8px;
+      }
+      .ver-item:hover {
+        background: rgba(0, 0, 0, 0.04);
+      }
+      .ver-row1 {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .ver-msg {
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.4;
+        word-break: keep-all;
+      }
+      .ver-hash {
+        font-size: 10px;
+        color: var(--ink-soft);
+        font-family: ui-monospace, monospace;
+        flex-shrink: 0;
+      }
+      .ver-row2 {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 10.5px;
+        color: var(--ink-soft);
+        margin-top: 2px;
+      }
+      .ver-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .ver-actions button {
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--ink);
+        font-size: 10.5px;
+        font-weight: 600;
+        padding: 2px 7px;
+        cursor: pointer;
+      }
+      .ver-actions button:hover {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .ver-diff {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #b25000;
+        line-height: 1.4;
+      }
+
       /* ---- AI 모드 패널 (우하단) ---- */
       .ai-panel {
         position: fixed;

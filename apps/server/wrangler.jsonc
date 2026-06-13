@@ -21,6 +21,8 @@
       { "name": "AgentRunner", "class_name": "AgentRunner" }
     ]
   },
+  // M6 버전 관리 — 커밋 blob + 타임라인 (콘텐츠 해시 주소화)
+  "r2_buckets": [{ "binding": "COMMITS", "bucket_name": "figcad-commits" }],
   // 무료 플랜은 SQLite 기반 DO만 지원
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Doc"] },

@@ -40,6 +40,9 @@ const mf = new Miniflare({
   bindings: process.env.ANTHROPIC_API_KEY
     ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY }
     : {},
+  // M6 버전 관리 — 로컬 R2 에뮬레이션 (디스크 영속)
+  r2Buckets: { COMMITS: 'figcad-commits' },
+  r2Persist: path.join(here, '.mf-r2'),
   // DO storage를 디스크에 영속화 — 데브 재시작에도 문서 유지
   durableObjectsPersist: path.join(here, '.mf-do'),
   assets: {
