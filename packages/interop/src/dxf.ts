@@ -1,6 +1,14 @@
 import Drawing from 'dxf-writer';
 import * as dxfParser from 'dxf-parser';
-import { DocStore, type DocSnapshot, type Id, type WallType } from '@figcad/core';
+import {
+  DocStore,
+  sectionRing,
+  type BeamType,
+  type ColumnType,
+  type DocSnapshot,
+  type Id,
+  type WallType,
+} from '@figcad/core';
 
 // dxf-parser는 CJS로 클래스 자체를 module.exports — 빌더(vite/esbuild)별 default/named
 // 위치가 달라 런타임 안전 픽업 (named DxfParser → default → 네임스페이스 자체)
@@ -18,8 +26,10 @@ const ACI_GRAY = 8; // ACI에 GRAY 상수 없음 — 8 = dark gray
  *
  * DXF는 2D 지오메트리만 (높이/레벨/두께 없음) — 지오메트리 레벨 교환.
  * export: 평면 투영. 벽 중심선(Wall Axis)+풋프린트(Walls), 슬라브 경계(Slab),
- *         그리드(Grid)+라벨. 좌표 mm. 모든 레벨이 한 평면에 겹쳐 그려진다(2D 한계).
+ *         그리드(Grid)+라벨, 기둥 단면(Column), 보 중심축(Beam). 좌표 mm.
+ *         모든 레벨이 한 평면에 겹쳐 그려진다(2D 한계).
  * import: Wall Axis 라인 → 벽(기본 두께, 단일 레벨), 닫힌 폴리라인 → 슬라브.
+ *         Column/Beam 레이어는 v1에서 되읽지 않음(스킵+카운트 — IFC 경유). 조용한 누락 없음.
  *         외부 DXF는 best-effort(LINE/열린→벽, 닫힌 폴리라인→슬라브). 호/원/문자 등 스킵.
  */
 
@@ -33,9 +43,17 @@ export function exportDxf(snap: DocSnapshot): string {
   d.addLayer('Walls', ACI_GRAY, 'CONTINUOUS');
   d.addLayer('Slab', Drawing.ACI.CYAN, 'CONTINUOUS');
   d.addLayer('Grid', Drawing.ACI.RED, 'CONTINUOUS');
+  d.addLayer('Column', Drawing.ACI.GREEN, 'CONTINUOUS');
+  d.addLayer('Beam', Drawing.ACI.YELLOW, 'CONTINUOUS');
 
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
+  );
+  const columnTypes = new Map(
+    snap.types.filter((t) => t.kind === 'column').map((t) => [t.id, t as ColumnType]),
+  );
+  const beamTypes = new Map(
+    snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
   );
 
   for (const el of snap.elements) {
@@ -69,6 +87,16 @@ export function exportDxf(snap: DocSnapshot): string {
       d.setActiveLayer('Grid');
       d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
       d.drawText(el.a[0], el.a[1], 300, 0, el.label);
+    } else if (el.kind === 'column') {
+      d.setActiveLayer('Column');
+      const section = columnTypes.get(el.typeId)?.section ?? { shape: 'rect', width: 400, depth: 400 };
+      d.drawPolyline(
+        sectionRing(section).map(([sx, sy]) => [el.at[0] + sx, el.at[1] + sy] as [number, number]),
+        true,
+      );
+    } else if (el.kind === 'beam') {
+      d.setActiveLayer('Beam');
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
     }
   }
 
@@ -116,6 +144,10 @@ export function importDxf(text: string): DxfImportResult {
       continue;
     }
     if (e.layer === 'Walls') continue; // 시각용 풋프린트 — Axis에서 import
+    if (e.layer === 'Column' || e.layer === 'Beam') {
+      bump('구조요소(v1 가져오기 미지원 — IFC 경유)');
+      continue;
+    }
 
     const v = pts(e);
     if (v.length < 2) {

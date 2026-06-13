@@ -54,6 +54,23 @@ describe('DXF 라운드트립 (2D 지오메트리)', () => {
     expect(dxf).toContain('LWPOLYLINE');
   });
 
+  it('기둥/보 — Column/Beam 레이어로 export, 조용히 누락 안 됨', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createColumn({ levelId: SEED_IDS.level, typeId: SEED_IDS.column400, at: [1000, 1000] });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: SEED_IDS.beam300, a: [0, 0], b: [5000, 0] });
+    const dxf = exportDxf(s.snapshot());
+    expect(dxf).toContain('Column');
+    expect(dxf).toContain('Beam');
+    // 재import: 구조요소 2건 인식 스킵 (드롭 아님)
+    const { skipped, snapshot } = importDxf(dxf);
+    const structKey = Object.keys(skipped).find((k) => k.includes('구조요소'));
+    expect(structKey).toBeDefined();
+    expect(skipped[structKey!]).toBe(2);
+    // 기둥 폴리라인이 슬라브로 오분류되지 않음
+    expect(snapshot.elements.filter((e) => e.kind === 'slab')).toHaveLength(0);
+  });
+
   it('외부 DXF best-effort (레이어 없이 LINE→벽, 닫힌 폴리라인→슬라브)', () => {
     // Figcad 레이어 없는 최소 DXF를 손으로 — dxf-writer로 기본 레이어(0)에 그림
     // (hasFigcadLayers=false 경로): 열린 LINE은 벽, 닫힌 폴리라인은 슬라브

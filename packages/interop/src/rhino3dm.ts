@@ -1,5 +1,13 @@
 import rhino3dm from 'rhino3dm';
-import { DocStore, type DocSnapshot, type Id, type WallType } from '@figcad/core';
+import {
+  DocStore,
+  sectionRing,
+  type BeamType,
+  type ColumnType,
+  type DocSnapshot,
+  type Id,
+  type WallType,
+} from '@figcad/core';
 
 /**
  * Rhino .3dm export/import (rhino3dm WASM).
@@ -9,8 +17,11 @@ import { DocStore, type DocSnapshot, type Id, type WallType } from '@figcad/core
  * 교환하는 것은 "편집 가능한 곡선": 벽 중심선·풋프린트, 슬라브 경계, 그리드 —
  * Rhino 사용자가 보고 스냅·모델링할 수 있는 형태. 좌표는 mm(문서 단위 그대로).
  *
- * export: Wall Axis(중심선)·Walls(풋프린트 사각형)·Slab(경계)·Grid 레이어
+ * export: Wall Axis(중심선)·Walls(풋프린트 사각형)·Slab(경계)·Grid·Column(단면
+ *         풋프린트)·Beam(중심축) 레이어 — 모든 1차 요소의 지오메트리를 곡선으로.
  * import: Wall Axis 라인 → 벽(기본 두께), Slab 닫힌 폴리라인 → 슬라브.
+ *         Column/Beam 레이어는 v1에서 되읽지 않음(스킵+카운트 — 구조요소 파라메트릭
+ *         복원은 IFC 경유). 조용한 누락 없음.
  *         외부 .3dm은 레이어가 달라도 best-effort(열린 곡선→벽, 닫힌→슬라브),
  *         메시/B-rep/서피스는 매핑 대상이 없어 스킵+카운트.
  */
@@ -58,6 +69,8 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   const wallLayer = layers.addLayer('Walls', { r: 120, g: 120, b: 120 });
   const slabLayer = layers.addLayer('Slab', { r: 150, g: 150, b: 150 });
   const gridLayer = layers.addLayer('Grid', { r: 200, g: 60, b: 60 });
+  const columnLayer = layers.addLayer('Column', { r: 90, g: 90, b: 120 });
+  const beamLayer = layers.addLayer('Beam', { r: 110, g: 110, b: 90 });
   const attr = (idx: number) => {
     const a = new rhino.ObjectAttributes();
     a.layerIndex = idx;
@@ -65,8 +78,15 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   };
   const objects = doc.objects();
   const elev = new Map(snap.levels.map((l) => [l.id, l.elevation]));
+  const levelH = new Map(snap.levels.map((l) => [l.id, l.height]));
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
+  );
+  const columnTypes = new Map(
+    snap.types.filter((t) => t.kind === 'column').map((t) => [t.id, t as ColumnType]),
+  );
+  const beamTypes = new Map(
+    snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
   );
 
   for (const el of snap.elements) {
@@ -109,6 +129,25 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
           [el.b[0], el.b[1], 0],
         ]),
         attr(gridLayer),
+      );
+    } else if (el.kind === 'column') {
+      // 단면 풋프린트 폴리라인 (베이스 z) — Rhino에서 보고 스냅 가능
+      const z = (elev.get(el.levelId) ?? 0) + (el.baseOffset ?? 0);
+      const section = columnTypes.get(el.typeId)?.section ?? { shape: 'rect', width: 400, depth: 400 };
+      const ring = sectionRing(section).map(([sx, sy]) => [el.at[0] + sx, el.at[1] + sy, z] as number[]);
+      ring.push(ring[0]!);
+      objects.add(new rhino.PolylineCurve(ring), attr(columnLayer));
+    } else if (el.kind === 'beam') {
+      // 중심축 라인 (보 높이 z)
+      const section = beamTypes.get(el.typeId)?.section ?? { shape: 'rect', width: 300, depth: 600 };
+      const vHalf = section.shape === 'circle' ? section.diameter / 2 : section.depth / 2;
+      const z = (elev.get(el.levelId) ?? 0) + (el.zOffset ?? (levelH.get(el.levelId) ?? 3000) - vHalf);
+      objects.add(
+        new rhino.PolylineCurve([
+          [el.a[0], el.a[1], z],
+          [el.b[0], el.b[1], z],
+        ]),
+        attr(beamLayer),
       );
     }
   }
@@ -199,6 +238,10 @@ export async function importRhino(bytes: Uint8Array, opts?: RhinoOpts): Promise<
     const isSlab = hasFigcadLayers ? c.layer === 'Slab' : c.closed;
     const isGrid = c.layer === 'Grid';
     if (c.layer === 'Walls') continue; // 시각용 풋프린트 — import는 Axis에서
+    if (c.layer === 'Column' || c.layer === 'Beam') {
+      bump('구조요소(v1 가져오기 미지원 — IFC 경유)');
+      continue;
+    }
 
     if (isGrid) {
       try {

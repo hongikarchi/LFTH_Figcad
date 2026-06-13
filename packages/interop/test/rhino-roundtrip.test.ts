@@ -64,6 +64,18 @@ describe('.3dm 라운드트립 (지오메트리 레벨)', () => {
     expect(wallsL2).toHaveLength(1);
   });
 
+  it('기둥/보 — 곡선으로 export, 조용히 누락 안 됨 (import은 v1 스킵+카운트)', async () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createColumn({ levelId: SEED_IDS.level, typeId: SEED_IDS.column400, at: [1000, 1000] });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: SEED_IDS.beam300, a: [0, 0], b: [5000, 0] });
+    const { skipped } = await importRhino(await exportRhino(s.snapshot()));
+    // 기둥(닫힌 폴리라인) + 보(라인) = 구조요소 2건이 인식되어 스킵 카운트 (드롭 아님)
+    const structKey = Object.keys(skipped).find((k) => k.includes('구조요소'));
+    expect(structKey).toBeDefined();
+    expect(skipped[structKey!]).toBe(2);
+  });
+
   it('유효 .3dm 바이트 (재오픈 가능)', async () => {
     const s = sample();
     const bytes = await exportRhino(s.snapshot());
