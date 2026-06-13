@@ -10,8 +10,10 @@ import {
 import {
   beamDeriveKey,
   columnDeriveKey,
+  curtainWallDeriveKey,
   deriveBeam,
   deriveColumn,
+  deriveCurtainWall,
   deriveRailing,
   deriveRoof,
   deriveStair,
@@ -32,6 +34,7 @@ import type { DocStore } from '../store';
 import type {
   BeamType,
   ColumnType,
+  CurtainWallType,
   Id,
   OpeningElement,
   OpeningType,
@@ -239,6 +242,13 @@ export class DeriveCache {
       const input = { roof: el, type: type as RoofType, level };
       key = `rf:${roofDeriveKey(input)}`;
       compute = () => deriveRoof(input);
+    } else if (el.kind === 'curtainwall') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'curtainwall' || !level) return null;
+      const input = { cw: el, type: type as CurtainWallType, level };
+      key = `cw:${curtainWallDeriveKey(input)}`;
+      compute = () => deriveCurtainWall(input);
     } else if (el.kind === 'zone') {
       const level = store.getLevel(el.levelId);
       if (!level) return null;

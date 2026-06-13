@@ -25,6 +25,7 @@ import { SketchTool } from './tools/SketchTool';
 import { CommentTool } from './tools/CommentTool';
 import { SectionTool } from './tools/SectionTool';
 import { ZoneTool } from './tools/ZoneTool';
+import { CurtainWallTool } from './tools/CurtainWallTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
@@ -46,6 +47,7 @@ const seed = seedDocument(store); // 고정 id 시드 — 동시 시드해도 �
   ui.setActiveType('stair', seed.stairTypeId);
   ui.setActiveType('railing', seed.railingTypeId);
   ui.setActiveType('roof', seed.roofTypeId);
+  ui.setActiveType('curtainwall', seed.curtainWallTypeId);
   ui.setActiveLevel(seed.levelId);
 }
 
@@ -67,8 +69,9 @@ store.observe(() => {
     stair: 'stair',
     railing: 'railing',
     roof: 'roof',
+    curtainwall: 'curtainwall',
   } as const;
-  for (const k of ['wall', 'door', 'window', 'slab', 'column', 'beam', 'stair', 'railing', 'roof'] as const) {
+  for (const k of ['wall', 'door', 'window', 'slab', 'column', 'beam', 'stair', 'railing', 'roof', 'curtainwall'] as const) {
     const id = ui.activeTypes[k];
     if (id && !store.getType(id)) {
       const candidates = store.listTypes(typeKindOf[k]);
@@ -106,6 +109,7 @@ const seedTypeByKind = {
   stair: seed.stairTypeId,
   railing: seed.railingTypeId,
   roof: seed.roofTypeId,
+  curtainwall: seed.curtainWallTypeId,
 } as const;
 const ctx: EditorContext = {
   store,
@@ -130,6 +134,7 @@ tools.register('beam', new BeamTool(ctx));
 tools.register('stair', new StairTool(ctx));
 tools.register('railing', new RailingTool(ctx));
 tools.register('roof', new RoofTool(ctx));
+tools.register('curtainwall', new CurtainWallTool(ctx));
 tools.register('zone', new ZoneTool(ctx));
 tools.register('dimension', new DimensionTool(ctx));
 tools.register('text', new TextTool(ctx));

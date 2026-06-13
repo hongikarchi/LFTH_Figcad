@@ -53,6 +53,7 @@ export function exportDxf(snap: DocSnapshot): string {
   d.addLayer('Railing', Drawing.ACI.CYAN, 'CONTINUOUS');
   d.addLayer('Roof', ACI_GRAY, 'CONTINUOUS');
   d.addLayer('Zone', Drawing.ACI.GREEN, 'CONTINUOUS');
+  d.addLayer('CurtainWall', Drawing.ACI.CYAN, 'CONTINUOUS');
 
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
@@ -146,6 +147,10 @@ export function exportDxf(snap: DocSnapshot): string {
       const cx = el.boundary.reduce((s, p) => s + p[0], 0) / el.boundary.length;
       const cy = el.boundary.reduce((s, p) => s + p[1], 0) / el.boundary.length;
       d.drawText(cx, cy, 300, 0, el.number ? `${el.number} ${el.name}` : el.name);
+    } else if (el.kind === 'curtainwall') {
+      // 평면 = 베이스라인 (멀리언 그리드는 입면/3D, 2D 평면은 선)
+      d.setActiveLayer('CurtainWall');
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
     }
   }
 

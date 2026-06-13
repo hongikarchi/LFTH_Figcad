@@ -205,6 +205,12 @@ function derivePlan(view: DrawingView, store: DocStore): Drawing2D {
       const bottom = level.elevation + (el.baseOffset ?? 0);
       const top = bottom + (el.height ?? level.height);
       addPoly(sectionPolygon(el.at, (type as ColumnType).section), classify(bottom, top, cutZ), true);
+    } else if (el.kind === 'curtainwall') {
+      // 커튼월 = 베이스라인 (절단면 범위 내면 절단선, 아니면 투영)
+      const bottom = level.elevation + (el.baseOffset ?? 0);
+      const top = bottom + (el.height ?? level.height);
+      const cls = classify(bottom, top, cutZ);
+      if (cls !== 'above') (cls === 'cut' ? res.cut : res.proj).push({ pts: [el.a, el.b], closed: false });
     } else if (el.kind === 'slab') {
       // 바닥 = 절단면 아래 → 투영 윤곽 (두께 절단 교차는 후속)
       res.proj.push({ pts: el.boundary, closed: true });

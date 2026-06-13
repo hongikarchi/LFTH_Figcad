@@ -31,7 +31,8 @@ import { ifcGuidFromId } from './ifcGuid';
  *
  * 미구현(deferred, 명시적 — 조용한 누락 아님):
  *   존(zone) → IfcSpace = spatial containment(IfcRelAggregates) 필요 → 후속(docs/GOAL_PROMPT.md Task A).
- *             존은 .3dm/.dxf로는 export됨(지오레벨). IFC 누락은 여기 문서화됨.
+ *   커튼월(curtainwall) → IfcCurtainWall(+멀리언/패널 분해) = 후속.
+ *             둘 다 .3dm/.dxf로는 export됨(지오레벨). IFC 누락은 여기 문서화됨.
  *   주석(text/dimension/label) = 의도적 스킵(IFC는 BIM 요소만).
  *
  * 단위: SI METRE + MILLI 접두 → 좌표를 문서 그대로(mm 정수) 기록 (float 드리프트 0).

@@ -230,6 +230,43 @@ export const CAPABILITIES: Capability[] = [
     summary: (a) => `보 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
   },
   {
+    id: 'create_curtainwall',
+    category: 'structure',
+    titleKo: '커튼월',
+    icon: 'window',
+    descriptionKo:
+      '커튼월 생성 — a→b 베이스라인(mm)에 typeId(kind=curtainwall) 멀리언 단면으로 uSpacing(수직)·vSpacing(수평) 그리드 프레임. height 생략 시 층고.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨 id' },
+        typeId: { type: 'string', description: '커튼월 타입 id (kind=curtainwall)' },
+        a: ptSchema('베이스라인 시작'),
+        b: ptSchema('베이스라인 끝'),
+        uSpacing: { type: 'integer', description: '수직 멀리언 간격 mm (베이스라인 방향)' },
+        vSpacing: { type: 'integer', description: '수평 멀리언 간격 mm (높이 방향)' },
+        height: { type: 'integer', description: '높이 mm (생략 시 층고)' },
+        baseOffset: { type: 'integer', description: '바닥 높이 mm (레벨 기준, 생략 시 0)' },
+      },
+      required: ['levelId', 'typeId', 'a', 'b', 'uSpacing', 'vSpacing'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createCurtainWall({
+        levelId: asStr(a['levelId'], 'levelId'),
+        typeId: asStr(a['typeId'], 'typeId'),
+        a: asPt(a['a']),
+        b: asPt(a['b']),
+        uSpacing: optNum(a['uSpacing']) ?? 1500,
+        vSpacing: optNum(a['vSpacing']) ?? 1500,
+        ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+        ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
+      }),
+    summary: (a) => `커튼월 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
+  },
+  {
     id: 'create_stair',
     category: 'structure',
     titleKo: '계단',

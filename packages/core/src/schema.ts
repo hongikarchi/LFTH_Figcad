@@ -121,6 +121,15 @@ export const RoofTypeSchema = z.object({
 });
 export type RoofType = z.infer<typeof RoofTypeSchema>;
 
+export const CurtainWallTypeSchema = z.object({
+  id: z.string(),
+  kind: z.literal('curtainwall'),
+  name: z.string(),
+  mullionSection: SectionSchema, // 멀리언 단면 (보통 rect 50×100 등)
+  color: z.string(),
+});
+export type CurtainWallType = z.infer<typeof CurtainWallTypeSchema>;
+
 export const ElemTypeSchema = z.discriminatedUnion('kind', [
   WallTypeSchema,
   OpeningTypeSchema,
@@ -130,6 +139,7 @@ export const ElemTypeSchema = z.discriminatedUnion('kind', [
   StairTypeSchema,
   RailingTypeSchema,
   RoofTypeSchema,
+  CurtainWallTypeSchema,
 ]);
 export type ElemType = z.infer<typeof ElemTypeSchema>;
 
@@ -251,6 +261,21 @@ export const RoofElementSchema = z.object({
 });
 export type RoofElement = z.infer<typeof RoofElementSchema>;
 
+/** 커튼월 — 베이스라인 a→b × 높이 면을 uSpacing/vSpacing 멀리언 그리드로. 단면=타입. */
+export const CurtainWallElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('curtainwall'),
+  levelId: z.string(),
+  typeId: z.string(),
+  a: Pt, // 베이스라인 시작
+  b: Pt, // 베이스라인 끝
+  height: mm.optional(), // 기본 = level.height
+  baseOffset: mm.optional(),
+  uSpacing: mm, // 수직 멀리언 간격 (베이스라인 방향)
+  vSpacing: mm, // 수평 멀리언 간격 (높이 방향)
+});
+export type CurtainWallElement = z.infer<typeof CurtainWallElementSchema>;
+
 /** 존(공간) — 경계 폴리곤 + 이름/번호. 면적·부피는 파생(저장 안 함). 타입 없음(IfcSpace 대응). */
 export const ZoneElementSchema = z.object({
   id: z.string(),
@@ -304,6 +329,7 @@ export const ElementSchema = z.discriminatedUnion('kind', [
   StairElementSchema,
   RailingElementSchema,
   RoofElementSchema,
+  CurtainWallElementSchema,
   ZoneElementSchema,
   TextElementSchema,
   DimensionElementSchema,
@@ -410,6 +436,12 @@ export interface RailingDeriveInput {
 export interface RoofDeriveInput {
   roof: RoofElement;
   type: RoofType;
+  level: Level;
+}
+
+export interface CurtainWallDeriveInput {
+  cw: CurtainWallElement;
+  type: CurtainWallType;
   level: Level;
 }
 

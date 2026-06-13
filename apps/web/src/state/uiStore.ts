@@ -13,6 +13,7 @@ export type ToolName =
   | 'stair'
   | 'railing'
   | 'roof'
+  | 'curtainwall'
   | 'zone'
   | 'dimension'
   | 'text'
@@ -29,7 +30,8 @@ export type TypeKind =
   | 'beam'
   | 'stair'
   | 'railing'
-  | 'roof';
+  | 'roof'
+  | 'curtainwall';
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
@@ -96,6 +98,7 @@ export const useUiStore = create<UiState>((set) => ({
     stair: null,
     railing: null,
     roof: null,
+    curtainwall: null,
   },
   activeLevelId: null,
   connection: 'connecting',

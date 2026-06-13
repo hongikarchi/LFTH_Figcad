@@ -136,6 +136,7 @@ export function elementFootprint(el: Element, store: DocStore): Footprint {
     el.kind === 'wall' ||
     el.kind === 'grid' ||
     el.kind === 'beam' ||
+    el.kind === 'curtainwall' ||
     el.kind === 'stair' ||
     el.kind === 'railing'
   )

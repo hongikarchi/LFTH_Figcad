@@ -30,7 +30,7 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
       { label: '계단', icon: 'stair', tool: 'stair' },
       { label: '난간', icon: 'railing', tool: 'railing' },
       { label: '지붕', icon: 'roof', tool: 'roof' },
-      { label: '커튼월', icon: 'window', planned: '추후' },
+      { label: '커튼월', icon: 'window', tool: 'curtainwall' },
       { label: '존', icon: 'box', tool: 'zone' },
       { label: '오브젝트', icon: 'box', planned: '추후' },
     ],

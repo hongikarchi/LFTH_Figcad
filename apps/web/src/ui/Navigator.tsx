@@ -17,6 +17,10 @@ import {
 function typeMeta(t: ElemType): string {
   if (t.kind === 'stair') return `${t.width}w·${t.riser}r`;
   if (t.kind === 'railing') return `h${t.height}`;
+  if (t.kind === 'curtainwall')
+    return t.mullionSection.shape === 'circle'
+      ? `Ø${t.mullionSection.diameter}`
+      : `${t.mullionSection.width}×${t.mullionSection.depth}`;
   if ('thickness' in t) return `${t.thickness}`;
   if ('section' in t)
     return t.section.shape === 'circle' ? `Ø${t.section.diameter}` : `${t.section.width}×${t.section.depth}`;
@@ -97,7 +101,7 @@ export function Navigator({ store }: { store: DocStore }) {
   const levels = store.listLevels();
   const types = store.listTypes();
 
-  const KIND_ORDER = { wall: 0, opening: 1, slab: 2, column: 3, beam: 4, stair: 5, railing: 6, roof: 7 } as const;
+  const KIND_ORDER = { wall: 0, opening: 1, slab: 2, column: 3, beam: 4, stair: 5, railing: 6, roof: 7, curtainwall: 8 } as const;
   const sortedTypes = [...types].sort(
     (a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name, 'ko'),
   );

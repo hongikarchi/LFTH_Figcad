@@ -10,6 +10,7 @@ import {
   quantize,
   type BeamElement,
   type ColumnElement,
+  type CurtainWallElement,
   type DocMeta,
   type Element,
   type ElemType,
@@ -583,6 +584,36 @@ export class DocStore {
     return id;
   }
 
+  createCurtainWall(params: {
+    levelId: Id;
+    typeId: Id;
+    a: Pt;
+    b: Pt;
+    uSpacing: number;
+    vSpacing: number;
+    height?: number;
+    baseOffset?: number;
+  }): Id {
+    if (quantize(params.a[0]) === quantize(params.b[0]) && quantize(params.a[1]) === quantize(params.b[1])) {
+      throw new Error('zero-length curtainwall');
+    }
+    const id = nanoid(12);
+    const cw = ElementSchema.parse({
+      id,
+      kind: 'curtainwall',
+      levelId: params.levelId,
+      typeId: params.typeId,
+      a: [quantize(params.a[0]), quantize(params.a[1])],
+      b: [quantize(params.b[0]), quantize(params.b[1])],
+      uSpacing: Math.max(quantize(params.uSpacing), 100),
+      vSpacing: Math.max(quantize(params.vSpacing), 100),
+      ...(params.height !== undefined ? { height: quantize(params.height) } : {}),
+      ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+    }) as CurtainWallElement;
+    this.setElement(id, cw);
+    return id;
+  }
+
   createStair(params: { levelId: Id; typeId: Id; a: Pt; b: Pt; baseOffset?: number }): Id {
     if (
       quantize(params.a[0]) === quantize(params.b[0]) &&
@@ -786,6 +817,14 @@ export class DocStore {
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
       if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
       if (next.zOffset !== undefined) next.zOffset = quantize(next.zOffset);
+    } else if (next.kind === 'curtainwall') {
+      next.a = [quantize(next.a[0]), quantize(next.a[1])];
+      next.b = [quantize(next.b[0]), quantize(next.b[1])];
+      if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
+      next.uSpacing = Math.max(quantize(next.uSpacing), 100);
+      next.vSpacing = Math.max(quantize(next.vSpacing), 100);
+      if (next.height !== undefined) next.height = quantize(next.height);
+      if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
     } else if (next.kind === 'stair' || next.kind === 'railing') {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
@@ -1014,7 +1053,12 @@ export class DocStore {
           created.push(this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) }));
         } else if (el.kind === 'column' || el.kind === 'text') {
           created.push(this.writeNew({ ...el, at: q2(xform(el.at)) }));
-        } else if (el.kind === 'beam' || el.kind === 'stair' || el.kind === 'railing') {
+        } else if (
+          el.kind === 'beam' ||
+          el.kind === 'curtainwall' ||
+          el.kind === 'stair' ||
+          el.kind === 'railing'
+        ) {
           created.push(this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) }));
         } else if (el.kind === 'dimension') {
           // 복사본은 바인딩 해제 → 변환된 위치의 자유 치수. 단 출처는 stored가 아닌
@@ -1072,6 +1116,7 @@ export class DocStore {
           el.kind === 'wall' ||
           el.kind === 'grid' ||
           el.kind === 'beam' ||
+          el.kind === 'curtainwall' ||
           el.kind === 'stair' ||
           el.kind === 'railing' ||
           el.kind === 'dimension'
@@ -1126,6 +1171,7 @@ export class DocStore {
           el.kind === 'wall' ||
           el.kind === 'grid' ||
           el.kind === 'beam' ||
+          el.kind === 'curtainwall' ||
           el.kind === 'stair' ||
           el.kind === 'railing' ||
           el.kind === 'dimension'
@@ -1411,6 +1457,7 @@ export const SEED_IDS = {
   stair: 'T-st1',
   railing: 'T-rl1',
   roof: 'T-rf1',
+  curtainwall: 'T-cw1',
 } as const;
 
 export interface SeedRefs {
@@ -1424,6 +1471,7 @@ export interface SeedRefs {
   stairTypeId: Id;
   railingTypeId: Id;
   roofTypeId: Id;
+  curtainWallTypeId: Id;
 }
 
 export function seedDocument(store: DocStore): SeedRefs {
@@ -1490,6 +1538,15 @@ export function seedDocument(store: DocStore): SeedRefs {
         { kind: 'roof', name: '지붕 슬라브 200', thickness: 200, color: '#c4bfb4' },
         SEED_IDS.roof,
       );
+      store.addType(
+        {
+          kind: 'curtainwall',
+          name: '커튼월 50×100',
+          mullionSection: { shape: 'rect', width: 50, depth: 100 },
+          color: '#8fa8b8',
+        },
+        SEED_IDS.curtainwall,
+      );
     });
   } else {
     // 구버전 문서(M2 이전 시드)에 새 타입 보충 — 고정 id라 멱등
@@ -1554,6 +1611,16 @@ export function seedDocument(store: DocStore): SeedRefs {
           { kind: 'roof', name: '지붕 슬라브 200', thickness: 200, color: '#c4bfb4' },
           SEED_IDS.roof,
         );
+      if (!store.getType(SEED_IDS.curtainwall))
+        store.addType(
+          {
+            kind: 'curtainwall',
+            name: '커튼월 50×100',
+            mullionSection: { shape: 'rect', width: 50, depth: 100 },
+            color: '#8fa8b8',
+          },
+          SEED_IDS.curtainwall,
+        );
     });
   }
   return {
@@ -1567,5 +1634,6 @@ export function seedDocument(store: DocStore): SeedRefs {
     stairTypeId: SEED_IDS.stair,
     railingTypeId: SEED_IDS.railing,
     roofTypeId: SEED_IDS.roof,
+    curtainWallTypeId: SEED_IDS.curtainwall,
   };
 }

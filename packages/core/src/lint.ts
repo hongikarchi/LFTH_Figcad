@@ -75,6 +75,7 @@ const KIND_LABEL: Record<string, string> = {
   stair: '계단',
   railing: '난간',
   roof: '지붕',
+  curtainwall: '커튼월',
   zone: '존',
   text: '텍스트',
   dimension: '치수',
@@ -230,6 +231,8 @@ export function lint(store: DocStore): LintFinding[] {
       key = `c|${el.levelId}|${el.typeId}|${el.at[0]},${el.at[1]}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
     } else if (el.kind === 'beam') {
       key = `b|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.zOffset ?? ''}`;
+    } else if (el.kind === 'curtainwall') {
+      key = `cw|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.uSpacing}|${el.vSpacing}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
     } else if (el.kind === 'stair') {
       key = `st|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.baseOffset ?? ''}`;
     } else if (el.kind === 'railing') {

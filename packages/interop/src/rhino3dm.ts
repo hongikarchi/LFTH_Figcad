@@ -77,6 +77,7 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   const railingLayer = layers.addLayer('Railing', { r: 90, g: 150, b: 150 });
   const roofLayer = layers.addLayer('Roof', { r: 130, g: 120, b: 90 });
   const zoneLayer = layers.addLayer('Zone', { r: 90, g: 160, b: 90 });
+  const cwLayer = layers.addLayer('CurtainWall', { r: 90, g: 150, b: 170 });
   const attr = (idx: number) => {
     const a = new rhino.ObjectAttributes();
     a.layerIndex = idx;
@@ -201,6 +202,10 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
       const pts = el.boundary.map((p) => [p[0], p[1], z] as number[]);
       pts.push(pts[0]!);
       objects.add(new rhino.PolylineCurve(pts), attr(zoneLayer));
+    } else if (el.kind === 'curtainwall') {
+      // 베이스라인 (멀리언 그리드는 지오레벨 미보존 — 베이스라인+높이만)
+      const z = elev.get(el.levelId) ?? 0;
+      objects.add(new rhino.PolylineCurve([[el.a[0], el.a[1], z], [el.b[0], el.b[1], z]]), attr(cwLayer));
     }
   }
 

@@ -74,6 +74,7 @@ function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId
     el.kind === 'wall' ||
     el.kind === 'grid' ||
     el.kind === 'beam' ||
+    el.kind === 'curtainwall' ||
     el.kind === 'stair' ||
     el.kind === 'railing'
   ) {

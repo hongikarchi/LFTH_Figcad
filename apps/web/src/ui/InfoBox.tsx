@@ -328,6 +328,30 @@ export function InfoBox({ store }: { store: DocStore }) {
     );
   }
 
+  if (el?.kind === 'curtainwall') {
+    const level = store.getLevel(el.levelId);
+    return (
+      <div className="infobox">
+        <span className="infobox-title">커튼월</span>
+        <NumField label="수직 간격" value={el.uSpacing} min={100} onCommit={(v) => store.updateElement(el.id, { uSpacing: v })} />
+        <NumField label="수평 간격" value={el.vSpacing} min={100} onCommit={(v) => store.updateElement(el.id, { vSpacing: v })} />
+        <NumField
+          label="높이"
+          value={el.height ?? level?.height ?? 3000}
+          min={100}
+          onCommit={(v) => store.updateElement(el.id, { height: v })}
+        />
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'curtainwall'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
   if (el?.kind === 'roof') {
     const level = store.getLevel(el.levelId);
     const type = store.getType(el.typeId);
@@ -500,6 +524,7 @@ export function InfoBox({ store }: { store: DocStore }) {
     stair: 'stair',
     railing: 'railing',
     roof: 'roof',
+    curtainwall: 'curtainwall',
   };
   const kind = toolTypeKind[activeTool];
   if (kind) {
@@ -513,6 +538,7 @@ export function InfoBox({ store }: { store: DocStore }) {
       stair: '계단 도구',
       railing: '난간 도구',
       roof: '지붕 도구',
+      curtainwall: '커튼월 도구',
     }[kind];
     const filter =
       kind === 'door' || kind === 'window'

@@ -45,12 +45,16 @@ try {
   await page.evaluate(() => {
     const { store, seed, ui } = window.__figcad;
     store.createZone({ levelId: seed.levelId, boundary: [[200, 200], [5800, 200], [5800, 3800], [200, 3800]], name: '거실' });
+    store.createCurtainWall({ levelId: seed.levelId, typeId: seed.curtainWallTypeId, a: [0, 0], b: [6000, 0], uSpacing: 1500, vSpacing: 1500 });
     ui.getState().setViewMode('3d');
   });
   await new Promise((r) => setTimeout(r, 300));
-  const zoneCount = await page.evaluate(() => window.__figcad.store.listElements().filter((e) => e.kind === 'zone').length);
-  if (zoneCount !== 1) throw new Error(`존 생성 실패 (${zoneCount})`);
-  console.log('PASS  존 생성 + 3D 렌더 (새 kind 파생 경로)');
+  const newKinds = await page.evaluate(() => {
+    const els = window.__figcad.store.listElements();
+    return { zone: els.filter((e) => e.kind === 'zone').length, cw: els.filter((e) => e.kind === 'curtainwall').length };
+  });
+  if (newKinds.zone !== 1 || newKinds.cw !== 1) throw new Error(`존/커튼월 생성 실패 ${JSON.stringify(newKinds)}`);
+  console.log('PASS  존+커튼월 생성 + 3D 렌더 (새 kind 파생 경로)');
   await page.evaluate(() => window.__figcad.ui.getState().setViewMode('plan'));
   await new Promise((r) => setTimeout(r, 150));
 

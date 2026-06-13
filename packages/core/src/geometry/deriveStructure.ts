@@ -3,6 +3,7 @@ import type { DerivedGeometry } from './deriveWall';
 import type {
   BeamDeriveInput,
   ColumnDeriveInput,
+  CurtainWallDeriveInput,
   RailingDeriveInput,
   RoofDeriveInput,
   Section,
@@ -338,6 +339,92 @@ export function roofDeriveKey(input: RoofDeriveInput): string {
     roof.thicknessOverride ?? null,
     roof.slope ?? null,
     type.thickness,
+    type.color,
+    level.elevation,
+    level.height,
+  ]);
+}
+
+/** 0..total을 spacing 간격으로 — 양끝(0,total) 테두리 포함 */
+function gridStops(total: number, spacing: number): number[] {
+  const s = Math.max(spacing, 50);
+  const out: number[] = [];
+  for (let x = 0; x < total - 1; x += s) out.push(x);
+  out.push(total);
+  return out;
+}
+
+/**
+ * 커튼월 — 베이스라인 a→b × 높이 H 면을 멀리언 그리드로.
+ * 수직 멀리언(기둥식 수직 압출) at u=0..L every uSpacing + 수평 멀리언(보식 축 압출)
+ * at v=0..H every vSpacing. 패널(유리)=v1.5. 단면=type.mullionSection.
+ */
+export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometry {
+  const { cw, type, level } = input;
+  const [ax, ay] = cw.a;
+  const [bx, by] = cw.b;
+  const L = Math.hypot(bx - ax, by - ay);
+  const H = cw.height ?? level.height;
+  const baseE = level.elevation + (cw.baseOffset ?? 0);
+  const baseY = baseE * MM;
+  const anchors = {
+    a: [ax * MM, baseY, ay * MM] as [number, number, number],
+    b: [bx * MM, baseY, by * MM] as [number, number, number],
+  };
+  if (L === 0 || H <= 0) {
+    return { positions: new Float32Array(0), normals: new Float32Array(0), edges: new Float32Array(0), anchors };
+  }
+  const dir: [number, number] = [(bx - ax) / L, (by - ay) / L];
+  const n: [number, number] = [dir[1], -dir[0]]; // 베이스라인 수직(평면)
+  const ring = sectionRing(type.mullionSection);
+  const meshes: MeshData[] = [];
+
+  // 수직 멀리언 — 각 u 위치에서 단면을 수직 압출 (기둥식)
+  const mh = H * MM;
+  const centerY = baseY + mh / 2;
+  for (const u of gridStops(L, cw.uSpacing)) {
+    const px = ax + dir[0] * u;
+    const py = ay + dir[1] * u;
+    const profile: Profile = {
+      outer: ring.map(([sw, sd]) => {
+        const wx = px + dir[0] * sw + n[0] * sd;
+        const wy = py + dir[1] * sw + n[1] * sd;
+        return [wx * MM, -(wy * MM)] as [number, number];
+      }),
+      holes: [],
+    };
+    meshes.push(extrudeProfile(profile, mh, (uu, vv, w) => [uu, centerY + w, -vv]));
+  }
+
+  // 수평 멀리언 — 각 v 높이에서 단면을 베이스라인 축 압출 (보식)
+  const mx = (ax + bx) / 2;
+  const my = (ay + by) / 2;
+  const nb: [number, number] = [dir[1], -dir[0]];
+  for (const v of gridStops(H, cw.vSpacing)) {
+    const axisZ = (baseE + v) * MM;
+    const profile: Profile = { outer: ring, holes: [] };
+    meshes.push(
+      extrudeProfile(profile, L, (p, q, w) => [
+        (mx + dir[0] * w + nb[0] * p) * MM,
+        axisZ + q * MM,
+        (my + dir[1] * w + nb[1] * p) * MM,
+      ]),
+    );
+  }
+
+  return { ...mergeMeshData(meshes), anchors };
+}
+
+export function curtainWallDeriveKey(input: CurtainWallDeriveInput): string {
+  const { cw, type, level } = input;
+  return JSON.stringify([
+    cw.a,
+    cw.b,
+    cw.height ?? null,
+    cw.baseOffset ?? null,
+    cw.uSpacing,
+    cw.vSpacing,
+    type.mullionSection,
     type.color,
     level.elevation,
     level.height,
