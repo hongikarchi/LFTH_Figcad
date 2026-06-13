@@ -1,4 +1,4 @@
-import type { DocSnapshot } from '@figcad/core';
+import type { DocSnapshot, DocStore, DrawingView } from '@figcad/core';
 
 /**
  * 외부 포맷 export/import 클라이언트 — 무거운 라이브러리(web-ifc/rhino3dm WASM,
@@ -82,4 +82,10 @@ export async function downloadDxf(snapshot: DocSnapshot): Promise<void> {
 export async function parseDxf(text: string): Promise<ImportResult> {
   const { importDxf } = await import('@figcad/interop/dxf');
   return importDxf(text);
+}
+
+/** 도면 뷰 DXF 다운로드 (M11) — 전체모델 export와 다른 뷰별 cut 도면 */
+export async function downloadDrawingDxf(view: DrawingView, store: DocStore, name: string): Promise<void> {
+  const { exportDrawingDxf } = await import('@figcad/interop/dxf');
+  triggerDownload(exportDrawingDxf(view, store), `${name || 'drawing'}.dxf`, 'application/dxf');
 }

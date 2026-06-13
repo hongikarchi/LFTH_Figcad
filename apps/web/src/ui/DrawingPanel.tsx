@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { deriveDrawing, type DocStore, type Pt } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
+import { downloadDrawingDxf } from '../interop/ifcClient';
 
 /**
  * 도면 시트 패널 (M11 Phase 1) — 평면/단면/입면 2D 라인워크.
@@ -185,6 +186,11 @@ export function DrawingPanel({ store }: { store: DocStore }) {
         <button style={btnS} onClick={newPlan} disabled={!activeLevelId} title="현재 레벨의 평면도 생성">
           + 평면도
         </button>
+        {active && (
+          <button style={btnS} onClick={() => void downloadDrawingDxf(active, store, active.name)} title="DXF로 내보내기 (2D 도면 납품)">
+            DXF
+          </button>
+        )}
         {active && (
           <button
             style={btnS}

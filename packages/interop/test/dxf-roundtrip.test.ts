@@ -7,7 +7,7 @@ import {
   type SlabElement,
   type WallElement,
 } from '@figcad/core';
-import { exportDxf, importDxf } from '../src';
+import { exportDrawingDxf, exportDxf, importDxf } from '../src';
 
 function sample(): DocStore {
   const s = new DocStore();
@@ -35,6 +35,20 @@ describe('DXF 라운드트립 (2D 지오메트리)', () => {
     const { snapshot } = importDxf(exportDxf(s.snapshot()));
     const slab = snapshot.elements.find((e): e is SlabElement => e.kind === 'slab')!;
     expect(slab.boundary).toEqual([[0, 0], [4000, 0], [4000, 3000], [0, 3000]]);
+  });
+
+  it('exportDrawingDxf — 평면뷰 cut/hatch 레이어 + 폴리라인 엔티티', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const L = SEED_IDS.level;
+    s.createWall({ levelId: L, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    s.createWall({ levelId: L, typeId: SEED_IDS.wall200, a: [4000, 0], b: [4000, 3000] });
+    const vid = s.createView({ name: '평면', type: 'plan', levelId: L, cutHeight: 1200 });
+    const dxf = exportDrawingDxf(s.getView(vid)!, s);
+    expect(dxf).toContain('Cut');
+    expect(dxf).toContain('Hatch');
+    expect(dxf).toMatch(/POLYLINE/); // 절단 벽 윤곽
+    expect(dxf.length).toBeGreaterThan(200);
   });
 
   it('그리드 보존', () => {

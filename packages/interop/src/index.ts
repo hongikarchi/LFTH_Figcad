@@ -6,4 +6,4 @@ export { exportIfc } from './ifcExport';
 export { importIfc, type IfcImportResult } from './ifcImport';
 export { ifcGuidFromId } from './ifcGuid';
 export { exportRhino, importRhino, type RhinoImportResult } from './rhino3dm';
-export { exportDxf, importDxf, type DxfImportResult } from './dxf';
+export { exportDrawingDxf, exportDxf, importDxf, type DxfImportResult } from './dxf';

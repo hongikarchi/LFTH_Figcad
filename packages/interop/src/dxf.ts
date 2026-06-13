@@ -2,10 +2,12 @@ import Drawing from 'dxf-writer';
 import * as dxfParser from 'dxf-parser';
 import {
   DocStore,
+  deriveDrawing,
   sectionRing,
   type BeamType,
   type ColumnType,
   type DocSnapshot,
+  type DrawingView,
   type Id,
   type StairType,
   type WallType,
@@ -135,6 +137,37 @@ export function exportDxf(snap: DocSnapshot): string {
       );
     }
   }
+
+  return d.toDxfString();
+}
+
+/**
+ * 도면 뷰 DXF export (M11) — exportDxf(전체모델 평면 투영)와 다름:
+ * 특정 도면 뷰의 라인워크(deriveDrawing)를 절단/투영/해치/문자 레이어로.
+ * 2D 도면 납품(컨설턴트 교환). 좌표 mm. 단면/입면 뷰도 동일 경로(좌표는 paper space).
+ */
+export function exportDrawingDxf(view: DrawingView, store: DocStore): string {
+  const d = new Drawing();
+  d.setUnits('Millimeters');
+  d.addLayer('Cut', Drawing.ACI.WHITE, 'CONTINUOUS'); // 절단 — 굵게(뷰어 가중치)
+  d.addLayer('Projection', ACI_GRAY, 'CONTINUOUS');
+  d.addLayer('Hatch', ACI_GRAY, 'CONTINUOUS');
+  d.addLayer('Text', Drawing.ACI.RED, 'CONTINUOUS');
+
+  const dr = deriveDrawing(view, store);
+  const poly = (pts: [number, number][], closed: boolean) => {
+    if (pts.length < 2) return;
+    d.drawPolyline(pts, closed);
+  };
+
+  d.setActiveLayer('Hatch');
+  for (const [a, b] of dr.hatch) d.drawLine(a[0], a[1], b[0], b[1]);
+  d.setActiveLayer('Projection');
+  for (const pl of dr.proj) poly(pl.pts.map((p) => [p[0], p[1]] as [number, number]), pl.closed);
+  d.setActiveLayer('Cut');
+  for (const pl of dr.cut) poly(pl.pts.map((p) => [p[0], p[1]] as [number, number]), pl.closed);
+  d.setActiveLayer('Text');
+  for (const l of dr.labels) d.drawText(l.pos[0], l.pos[1], 300, 0, l.text);
 
   return d.toDxfString();
 }
