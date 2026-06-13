@@ -107,7 +107,7 @@ export function LintPanel({ store, actions }: { store: DocStore; actions: ViewAc
     const { x, y, levelId } = anchorOf(store, el);
     const ui = useUiStore.getState();
     if (levelId && store.getLevel(levelId)) ui.setActiveLevel(levelId);
-    ui.setSelection(el.id);
+    ui.setSelection([el.id]);
     const elev = levelId ? (store.getLevel(levelId)?.elevation ?? 0) : 0;
     actions.focusWorld(x / 1000, elev / 1000, y / 1000);
   };
@@ -116,7 +116,8 @@ export function LintPanel({ store, actions }: { store: DocStore; actions: ViewAc
     if (!f.fix) return;
     store.deleteElements(f.fix.deleteIds);
     const ui = useUiStore.getState();
-    if (ui.selection && f.fix.deleteIds.includes(ui.selection)) ui.setSelection(null);
+    const remaining = ui.selection.filter((id) => !f.fix!.deleteIds.includes(id));
+    if (remaining.length !== ui.selection.length) ui.setSelection(remaining);
   };
 
   return (

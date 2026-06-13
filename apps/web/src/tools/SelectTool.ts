@@ -1,14 +1,21 @@
 import * as THREE from 'three';
 import {
+  elementFootprint,
+  footprintCrossesRect,
+  footprintInRect,
   infiniteLineIntersect,
+  rectFromPoints,
   resolveOpening,
   snapPoint,
+  type Element,
+  type Footprint,
   type OpeningType,
   type Pt,
+  type Rect,
   type WallElement,
   type WallType,
 } from '@figcad/core';
-import { pickElement } from '../engine/Picker';
+import { pickElement, worldToScreen } from '../engine/Picker';
 import { useUiStore, type EditAction } from '../state/uiStore';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
@@ -17,6 +24,7 @@ const HANDLE_PX = 14; // 끝점 핸들 픽킹 반경 (화면 px)
 const SNAP_PX = 12;
 const GRID_MM = 100;
 const WRITE_THROTTLE_MS = 33; // 드래그 중 문서 쓰기 ~30Hz (Yjs 문서 비대화 방지)
+const BOX_THRESHOLD_PX = 5; // 이 이상 끌어야 박스 선택 (미만은 클릭=해제)
 
 type DragMode =
   | { kind: 'none' }
@@ -24,7 +32,8 @@ type DragMode =
   | { kind: 'endpoint'; id: string; which: 'a' | 'b' }
   | { kind: 'opening'; id: string }
   | { kind: 'slab'; id: string; startDoc: Pt; origBoundary: Pt[] }
-  | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt };
+  | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
+  | { kind: 'box'; startX: number; startY: number; armed: boolean };
 
 /**
  * 선택/이동: 클릭 픽킹 → 선택, 선택된 벽 드래그 = 평행 이동,
@@ -62,7 +71,7 @@ export class SelectTool implements Tool {
     const ui = useUiStore.getState();
 
     // 편집 액션 무장 상태 — 클릭 = 액션 점 수집/실행 (선택/드래그 안 함)
-    if (ui.editAction && ui.selection) {
+    if (ui.editAction && ui.selection.length) {
       this.handleAction(ui.editAction, ui.selection, info);
       return;
     }
@@ -88,26 +97,45 @@ export class SelectTool implements Tool {
 
     // 2. 요소 픽킹 — 종류별 드래그 준비
     const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
-    ui.setSelection(hit);
-    this.ctx.scene.setSelected(hit);
-    if (hit) {
-      const el = this.ctx.store.getElement(hit);
-      if (!el) return;
-      if (this.refuseIfLocked(hit)) return; // 선택은 허용, 드래그만 거부
-      if (el.kind === 'wall') {
-        this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
-      } else if (el.kind === 'opening') {
-        this.drag = { kind: 'opening', id: hit };
-      } else if (el.kind === 'slab') {
-        this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
-      } else if (el.kind === 'grid') {
-        this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
-      }
-      if (this.drag.kind !== 'none') this.ctx.collab.setEditing(hit);
+    if (!hit) {
+      // 빈 공간 — 박스 선택 대기 (즉시 해제하지 않음. 끌면 박스, 안 끌면 up에서 해제)
+      this.drag = { kind: 'box', startX: info.clientX, startY: info.clientY, armed: false };
+      return;
     }
+    this.setSelection([hit]);
+    const el = this.ctx.store.getElement(hit);
+    if (!el) return;
+    if (this.refuseIfLocked(hit)) return; // 선택은 허용, 드래그만 거부
+    if (el.kind === 'wall') {
+      this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
+    } else if (el.kind === 'opening') {
+      this.drag = { kind: 'opening', id: hit };
+    } else if (el.kind === 'slab') {
+      this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
+    } else if (el.kind === 'grid') {
+      this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
+    }
+    if (this.drag.kind !== 'none') this.ctx.collab.setEditing(hit);
+  }
+
+  /** 선택 갱신 — uiStore + 씬 하이라이트 동기 */
+  private setSelection(ids: string[]): void {
+    useUiStore.getState().setSelection(ids);
+    this.ctx.scene.setSelected(ids);
   }
 
   move(info: ToolPointerInfo): void {
+    if (this.drag.kind === 'box') {
+      const d = this.drag;
+      if (!d.armed && Math.hypot(info.clientX - d.startX, info.clientY - d.startY) >= BOX_THRESHOLD_PX)
+        d.armed = true;
+      if (d.armed) {
+        const crossing = info.clientX < d.startX; // 우→좌 = crossing (Rhino)
+        this.ctx.hud.showDragBox(d.startX, d.startY, info.clientX, info.clientY, crossing);
+        this.ctx.engine.requestRender();
+      }
+      return;
+    }
     if (!info.doc) return;
     const ui = useUiStore.getState();
     if (ui.editAction) {
@@ -190,12 +218,66 @@ export class SelectTool implements Tool {
     }
   }
 
-  up(): void {
+  up(info: ToolPointerInfo): void {
+    if (this.drag.kind === 'box') {
+      const d = this.drag;
+      this.ctx.hud.hideDragBox();
+      if (d.armed) {
+        const crossing = info.clientX < d.startX;
+        this.boxSelect(d.startX, d.startY, info.clientX, info.clientY, crossing);
+      } else {
+        this.setSelection([]); // 끌지 않은 클릭 = 해제
+      }
+      this.drag = { kind: 'none' };
+      this.ctx.engine.requestRender();
+      return;
+    }
     if (useUiStore.getState().editAction) return; // 액션 모드 — down에서 처리
     this.flushWrite(); // 마지막 정확값 1회 기록
     if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
     this.drag = { kind: 'none' };
     this.ctx.hud.hideDimension();
+  }
+
+  /**
+   * 박스 선택 — 화면 px 사각형 안/교차 요소 선택 (Rhino window/crossing).
+   * 판정은 화면 공간: 각 요소 풋프린트(문서 mm)를 카메라로 투영해 비교 (원근/평면 모두 정확).
+   */
+  private boxSelect(x1: number, y1: number, x2: number, y2: number, crossing: boolean): void {
+    const rect: Rect = rectFromPoints([x1, y1], [x2, y2]);
+    const camera = this.ctx.rig.active;
+    const hits: string[] = [];
+    for (const el of this.ctx.store.listElements()) {
+      const fp = elementFootprint(el, this.ctx.store);
+      const screen = this.projectFootprint(fp, el, camera);
+      if (!screen) continue;
+      if (crossing ? footprintCrossesRect(screen, rect) : footprintInRect(screen, rect))
+        hits.push(el.id);
+    }
+    this.setSelection(hits);
+  }
+
+  /** 요소 풋프린트(문서 mm)를 화면 px 풋프린트로 투영 */
+  private projectFootprint(fp: Footprint, el: Element, camera: THREE.Camera): Footprint {
+    if (!fp) return null;
+    const elevMm = this.elevationOf(el);
+    const toScreen = (p: Pt): Pt => {
+      const s = worldToScreen(new THREE.Vector3(p[0] / 1000, elevMm / 1000, p[1] / 1000), camera);
+      return [s.x, s.y];
+    };
+    if (fp.kind === 'point') return { kind: 'point', p: toScreen(fp.p) };
+    if (fp.kind === 'segment') return { kind: 'segment', a: toScreen(fp.a), b: toScreen(fp.b) };
+    return { kind: 'polygon', pts: fp.pts.map(toScreen) };
+  }
+
+  private elevationOf(el: Element): number {
+    if (el.kind === 'grid') return 0;
+    if (el.kind === 'opening') {
+      const host = this.ctx.store.getElement(el.hostId);
+      const lv = host && 'levelId' in host ? this.ctx.store.getLevel(host.levelId) : undefined;
+      return lv?.elevation ?? 0;
+    }
+    return this.ctx.store.getLevel(el.levelId)?.elevation ?? 0;
   }
 
   cancel(): void {
@@ -209,8 +291,8 @@ export class SelectTool implements Tool {
     this.flushWrite();
     if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
     this.drag = { kind: 'none' };
-    ui.setSelection(null);
-    this.ctx.scene.setSelected(null);
+    this.ctx.hud.hideDragBox();
+    this.setSelection([]);
     this.ctx.hud.hideDimension();
   }
 
@@ -225,7 +307,8 @@ export class SelectTool implements Tool {
 
   // ===== 편집 액션 상태머신 =====
 
-  private handleAction(action: EditAction, selId: string, info: ToolPointerInfo): void {
+  private handleAction(action: EditAction, ids: string[], info: ToolPointerInfo): void {
+    const selId = ids[0]!;
     const el = this.ctx.store.getElement(selId);
     if (!el) {
       this.finishAction();
@@ -240,7 +323,7 @@ export class SelectTool implements Tool {
           this.actionPoints.push(p);
         } else {
           const base = this.actionPoints[0]!;
-          this.ctx.store.moveElements([selId], [p[0] - base[0], p[1] - base[1]]);
+          this.ctx.store.moveElements(ids, [p[0] - base[0], p[1] - base[1]]);
           this.finishAction();
         }
         break;
@@ -250,7 +333,7 @@ export class SelectTool implements Tool {
           this.actionPoints.push(p);
         } else {
           const base = this.actionPoints[0]!;
-          this.ctx.store.duplicateElements([selId], [p[0] - base[0], p[1] - base[1]]);
+          this.ctx.store.duplicateElements(ids, [p[0] - base[0], p[1] - base[1]]);
           // 무장 유지 — 같은 기준점으로 반복 복사 (Esc/우클릭으로 종료)
         }
         break;
@@ -261,7 +344,7 @@ export class SelectTool implements Tool {
         } else {
           const base = this.actionPoints[0]!;
           this.ctx.store.arrayElements(
-            [selId],
+            ids,
             [p[0] - base[0], p[1] - base[1]],
             useUiStore.getState().arrayCount,
           );
@@ -272,7 +355,7 @@ export class SelectTool implements Tool {
       case 'mirror': {
         this.actionPoints.push(p);
         if (this.actionPoints.length === 2) {
-          this.ctx.store.mirrorElements([selId], this.actionPoints[0]!, this.actionPoints[1]!);
+          this.ctx.store.mirrorElements(ids, this.actionPoints[0]!, this.actionPoints[1]!);
           this.finishAction();
         }
         break;
@@ -280,8 +363,7 @@ export class SelectTool implements Tool {
       case 'split': {
         const result = this.ctx.store.splitWall(selId, p);
         if (result) {
-          useUiStore.getState().setSelection(result[0]);
-          this.ctx.scene.setSelected(result[0]);
+          this.setSelection([result[0]]);
         } else {
           this.ctx.hud.toast('끝에서 너무 가까워 분할할 수 없습니다');
         }
@@ -315,7 +397,7 @@ export class SelectTool implements Tool {
       }
       case 'rotate': {
         const deg = useUiStore.getState().rotateAngle;
-        this.ctx.store.rotateElements([selId], p, (deg * Math.PI) / 180);
+        this.ctx.store.rotateElements(ids, p, (deg * Math.PI) / 180);
         this.finishAction();
         break;
       }
@@ -394,9 +476,10 @@ export class SelectTool implements Tool {
   }
 
   private selectedWall(): WallElement | null {
-    const id = useUiStore.getState().selection;
-    if (!id) return null;
-    const el = this.ctx.store.getElement(id);
+    // 끝점 핸들·길이칩은 단일 벽 선택일 때만
+    const sel = useUiStore.getState().selection;
+    if (sel.length !== 1) return null;
+    const el = this.ctx.store.getElement(sel[0]!);
     return el?.kind === 'wall' ? el : null;
   }
 

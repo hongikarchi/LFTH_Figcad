@@ -42,19 +42,39 @@ export function InfoBox({ store }: { store: DocStore }) {
   const activeTypes = useUiStore((s) => s.activeTypes);
   const setActiveType = useUiStore((s) => s.setActiveType);
 
-  const el = selection ? store.getElement(selection) : undefined;
+  // 단일 선택일 때만 요소 편집기 표시. 다중 선택은 요약 + 일괄 삭제.
+  const el = selection.length === 1 ? store.getElement(selection[0]!) : undefined;
 
   const deleteBtn = (id: Id) => (
     <button
       className="danger"
       onClick={() => {
         store.deleteElements([id]);
-        setSelection(null);
+        setSelection([]);
       }}
     >
       삭제
     </button>
   );
+
+  // ---- 다중 선택 ----
+  if (selection.length > 1) {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">{selection.length}개 선택됨</span>
+        <span className="infobox-hint">이동/복사/배열/대칭/회전 가능 · Delete로 삭제</span>
+        <button
+          className="danger"
+          onClick={() => {
+            store.deleteElements(selection);
+            setSelection([]);
+          }}
+        >
+          전체 삭제
+        </button>
+      </div>
+    );
+  }
 
   // ---- 선택 요소 컨텍스트 ----
   if (el?.kind === 'wall') {

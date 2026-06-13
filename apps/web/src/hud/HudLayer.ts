@@ -17,8 +17,18 @@ export class HudLayer {
   private labels = new Map<string, HudLabel>();
   private toastEl: HTMLDivElement;
   private toastTimer: number | null = null;
+  private dragBox: HTMLDivElement;
 
   constructor() {
+    this.dragBox = document.createElement('div');
+    this.dragBox.style.cssText = [
+      'position:fixed',
+      'pointer-events:none',
+      'display:none',
+      'z-index:9',
+      'background:rgba(10,132,255,0.08)',
+    ].join(';');
+    document.body.appendChild(this.dragBox);
     this.chip = document.createElement('div');
     this.chip.style.cssText = [
       'position:fixed',
@@ -105,6 +115,26 @@ export class HudLayer {
       label.el.remove();
       this.labels.delete(key);
     }
+  }
+
+  /**
+   * 드래그 선택 박스 — 화면 px. crossing(우→좌)=점선, window(좌→우)=실선 (Rhino).
+   */
+  showDragBox(x1: number, y1: number, x2: number, y2: number, crossing: boolean): void {
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    this.dragBox.style.left = `${left}px`;
+    this.dragBox.style.top = `${top}px`;
+    this.dragBox.style.width = `${Math.abs(x2 - x1)}px`;
+    this.dragBox.style.height = `${Math.abs(y2 - y1)}px`;
+    this.dragBox.style.border = crossing
+      ? '1px dashed rgba(10,132,255,0.9)'
+      : '1px solid rgba(10,132,255,0.9)';
+    this.dragBox.style.display = 'block';
+  }
+
+  hideDragBox(): void {
+    this.dragBox.style.display = 'none';
   }
 
   toast(text: string): void {

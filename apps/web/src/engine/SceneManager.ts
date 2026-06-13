@@ -60,7 +60,7 @@ export class SceneManager {
     transparent: true,
     opacity: 0.15,
   });
-  private selected: Id | null = null;
+  private selected = new Set<Id>(); // 내 선택 (다중)
   private remoteHighlights = new Map<Id, string>(); // 원격 사용자 선택 (id → 사용자 색)
   private viewMode: '3d' | 'plan' = '3d';
   private activeLevelId: Id | null = null;
@@ -83,11 +83,10 @@ export class SceneManager {
     return [...this.entries.values()].map((e) => e.mesh);
   }
 
-  setSelected(id: Id | null): void {
-    const prev = this.selected;
-    this.selected = id;
-    if (prev) this.applyHighlight(prev);
-    if (id) this.applyHighlight(id);
+  setSelected(ids: Id[]): void {
+    const affected = new Set<Id>([...this.selected, ...ids]);
+    this.selected = new Set(ids);
+    for (const id of affected) this.applyHighlight(id);
     this.engine.requestRender();
   }
 
@@ -104,7 +103,7 @@ export class SceneManager {
     const entry = this.entries.get(id);
     if (!entry) return;
     const mat = entry.mesh.material as THREE.MeshLambertMaterial;
-    if (this.selected === id) {
+    if (this.selected.has(id)) {
       mat.emissive.setHex(SELECT_EMISSIVE);
       mat.emissiveIntensity = 0.3;
     } else {
@@ -248,7 +247,7 @@ export class SceneManager {
     }
     this.entries.delete(id);
     this.derive.evict(id);
-    if (this.selected === id) this.selected = null;
+    this.selected.delete(id);
   }
 }
 

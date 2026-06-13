@@ -26,11 +26,12 @@ export function EditActions({ store }: { store: DocStore }) {
   const rotateAngle = useUiStore((s) => s.rotateAngle);
   const { setEditAction, setArrayCount, setRotateAngle } = useUiStore.getState();
 
-  if (activeTool !== 'select' || !selection) return null;
-  const el = store.getElement(selection);
-  if (!el || el.kind === 'opening') return null; // 개구부는 드래그/InfoBox로 충분
+  if (activeTool !== 'select' || selection.length === 0) return null;
+  // 단일 선택 시 요소 종류로 액션 게이트, 다중 선택 시 변환 액션만
+  const single = selection.length === 1 ? store.getElement(selection[0]!) : undefined;
+  if (selection.length === 1 && (!single || single.kind === 'opening')) return null; // 개구부 단독은 드래그/InfoBox로
 
-  const wallOnly = el.kind === 'wall';
+  const wallOnly = selection.length === 1 && single?.kind === 'wall'; // 분할/연장은 단일 벽만
   const actions: { a: EditAction; label: string; show: boolean }[] = [
     { a: 'move', label: '이동', show: true },
     { a: 'copy', label: '복사', show: true },

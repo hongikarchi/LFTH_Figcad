@@ -13,7 +13,8 @@ export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror'
  */
 interface UiState {
   activeTool: ToolName;
-  selection: Id | null;
+  /** 선택 요소 id 목록 (다중). 단일 선택 = 길이 1 */
+  selection: Id[];
   viewMode: ViewModeUi;
   /** 도구별 활성 타입 (벽/문/창/슬라브) */
   activeTypes: Record<TypeKind, Id | null>;
@@ -31,7 +32,7 @@ interface UiState {
   /** 버전 타임라인 패널 표시 (M6) — 검사 패널과 같은 슬롯(상호 배타) */
   versionOpen: boolean;
   setTool: (t: ToolName) => void;
-  setSelection: (id: Id | null) => void;
+  setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
   setArrayCount: (n: number) => void;
   setRotateAngle: (deg: number) => void;
@@ -47,7 +48,7 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   activeTool: 'wall',
-  selection: null,
+  selection: [],
   viewMode: '3d',
   activeTypes: { wall: null, door: null, window: null, slab: null },
   activeLevelId: null,
@@ -59,9 +60,9 @@ export const useUiStore = create<UiState>((set) => ({
   aiOpen: false,
   lintOpen: false,
   versionOpen: false,
-  setTool: (activeTool) => set({ activeTool, selection: null, editAction: null }),
+  setTool: (activeTool) => set({ activeTool, selection: [], editAction: null }),
   setSelection: (selection) =>
-    set((s) => ({ selection, editAction: selection ? s.editAction : null })),
+    set((s) => ({ selection, editAction: selection.length ? s.editAction : null })),
   setEditAction: (editAction) => set({ editAction }),
   setArrayCount: (arrayCount) => set({ arrayCount: Math.max(1, Math.min(50, arrayCount)) }),
   setRotateAngle: (rotateAngle) => set({ rotateAngle }),

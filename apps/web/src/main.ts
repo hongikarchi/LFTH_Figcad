@@ -136,7 +136,7 @@ new InputManager(
 useUiStore.subscribe((state, prev) => {
   if (state.activeTool !== prev.activeTool) {
     tools.setActive(state.activeTool);
-    sceneManager.setSelected(null);
+    sceneManager.setSelected([]);
   }
   if (state.viewMode !== prev.viewMode || state.activeLevelId !== prev.activeLevelId) {
     rig.setMode(state.viewMode);
@@ -145,7 +145,7 @@ useUiStore.subscribe((state, prev) => {
   }
   if (state.selection !== prev.selection) {
     sceneManager.setSelected(state.selection);
-    presence.setSelection(state.selection ? [state.selection] : []);
+    presence.setSelection(state.selection);
   }
 });
 
@@ -172,9 +172,9 @@ window.addEventListener('keydown', (e) => {
     case 'Delete':
     case 'Backspace': {
       const sel = useUiStore.getState().selection;
-      if (sel) {
-        store.deleteElements([sel]);
-        useUiStore.getState().setSelection(null);
+      if (sel.length) {
+        store.deleteElements(sel);
+        useUiStore.getState().setSelection([]);
       }
       break;
     }
@@ -238,6 +238,7 @@ if (import.meta.env.DEV) {
         rig,
         lint,
         ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
+        ui: useUiStore,
       };
     },
   );
