@@ -42,12 +42,15 @@
 |---|---|---|
 | **0** | 문서/컨텍스트 일관성(이 파일·rules·compact 지침) | ✅ |
 | **1** | 도면생성 평면+단면+입면 + 해치 (정체성 핵심) | ✅ 배포 b9f0f98f |
-| **2** | 요소: 커튼월·존·라벨 | ▶️ 진행 중 |
-| 3 | M6.5 fork (스냅샷→새 룸) | ⬜ |
+| **2** | 요소: 존 ✅ · 커튼월·라벨 → goal prompt | ▶️ 존 완료·배포, 커튼월/라벨 goal prompt |
+| 3 | M6.5 fork (스냅샷→새 룸) | ⬜ goal prompt |
 | 4 | M10 connector (?op=apply + Rhino RhinoCommon 플러그인) | ⬜ goal prompt(.NET 환경 밖) |
 | 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
 
-**현재 위치: Phase 2 (요소 라이브러리).** Phase 1 완료·배포: 평면(절단/투영/해치 even-odd) + 단면(cut, (u,z)) + 입면(박스 매싱 painter HLR) + DXF 납품 + views 채널(schemaVersion 3). 멀티에이전트 리뷰 1건(해치) 수정. **Phase 4·5는 이 환경 밖**(Rhino .NET·416MB 파일) → 자율 run 종료 시 goal prompt로 작성.
+**현재 위치: 자율 run 종료 — goal prompt 핸드오프.** 배포 `8a082170`(Phase 1 도면 + Zone).
+- Phase 1 ✅: 평면(절단/투영/해치 even-odd) + 단면(cut (u,z)) + 입면(박스매싱 painter HLR) + DXF + views(schemaVersion 3). 멀티에이전트 리뷰 1건(해치) 수정.
+- Phase 2 존 ✅: Zone(IfcSpace 대응, 면적/부피, DXF/.3dm export). 커밋 7c649e7 = 신규 kind 완전 배선 **템플릿**.
+- 남은 커튼월·라벨·fork·connector·validation = **goal prompt**(`docs/GOAL_PROMPT.md`). 커튼월/라벨/fork는 이 환경서 빌드 가능(Zone 템플릿)·Phase 4·5는 .NET/416MB 외부 필요.
 
 ### Phase 요지 (상세는 wondrous-hugging-pebble.md)
 - **1 도면생성**: 3사 공식 합의 = 단면=절단면∩지오메트리(굵은선+poché) + 투영(가는선) / 입면=정사영+은선제거. 우리는 edges/footprint 소유 → 절단면∩메시·정사영 직접 계산, 은선제거=depth-sort. `views` 맵(파생, 미저장) + `deriveDrawing` + `hatch`(라인패턴). 1a 평면+해치→1b 단면→1c 입면.
