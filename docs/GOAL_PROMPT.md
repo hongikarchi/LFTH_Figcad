@@ -1,7 +1,9 @@
 # Figcad M11 잔여 작업 — /goal 프롬프트
 
-> 사용 법: 아래 **각 Task를 별도 `/goal` 호출**로 실행 (단일 메가 프롬프트는 컨텍스트 드리프트로 실패 — Anthropic prompt-eng 가이드). 순서 권장 A→B→C→D→E. 각 Task는 자체 검증·커밋으로 끝남.
-> Task A·B·C는 이 저장소에서 빌드 가능. Task D·E는 **외부 환경 필요**(.NET/Rhino, 416MB 파일) — 해당 환경에서.
+> 사용 법: 아래 **각 Task를 별도 `/goal` 호출**로 실행 (단일 메가 프롬프트는 컨텍스트 드리프트로 실패 — Anthropic prompt-eng 가이드). 각 Task는 자체 검증·커밋으로 끝남.
+>
+> **완료(자율 run에서 구현·배포 727fabc0)**: ~~Task A 커튼월~~ ✅ · ~~Task C fork~~ ✅ · 도면생성(평면/단면/입면+DXF) · 존. 신규 kind 템플릿 = `git show 7c649e7`(존) / `git show 4503355`(커튼월, typed kind).
+> **남음**: Task B 라벨(이 저장소 빌드 가능) · Task D connector(.NET/Rhino) · Task E 검증(416MB 파일).
 
 ## 공통 컨텍스트 (모든 Task 앞에 둘 것)
 
@@ -20,24 +22,7 @@ cadence(필수): advisor(설계 전·완료 전) → 구현 → corepack pnpm -F
 
 ---
 
-## Task A — 커튼월 (Curtain Wall) [이 저장소에서 빌드]
-
-```
-목표: 새 Element kind 'curtainwall' 추가 — 파사드 UV 그리드. 존(7c649e7)을 템플릿으로 전 파이프라인 배선.
-
-데이터 모델(리서치: Revit 커튼월 grid+mullion+panel / ArchiCAD scheme): Type/Instance 분리.
-- CurtainWallType { id, kind:'curtainwall', name, mullionSection: Section(rect, 기존 SectionSchema 재사용), color }.
-- CurtainWallElement { id, kind:'curtainwall', levelId, typeId, a:Pt, b:Pt(베이스라인), height?(기본=level.height), baseOffset?, uSpacing(수직 멀리언 간격 mm), vSpacing(수평 멀리언 간격 mm) }.
-
-파생 deriveCurtainWall(core/geometry/deriveCurtainWall.ts, 순수): 베이스라인 a→b × height 면을 uSpacing/vSpacing으로 분할.
-- 멀리언 = 각 그리드선(수직·수평·테두리)에 mullionSection을 extrudeProfile로 압출(기존 deriveStructure의 extrudeProfile 재사용 — 기둥/보 패턴).
-- 패널 = 각 셀에 얇은 유리 쿼드(반투명 머티리얼 힌트). v1 = 멀리언 격자 + 패널 쿼드. handedness/법선은 stair.test.ts의 signedVolume·topFaceNormalY 검증 패턴 차용.
-- deriveKey = JSON(a,b,height,baseOffset,uSpacing,vSpacing,mullionSection,level.elevation,level.height).
-
-배선(체크리스트): schema(Type+Element+union) · geometry/index DeriveCache 분기·export · store(createCurtainWall + update[a/b/uSpacing/vSpacing 양자화] + move/rotate[a/b]/transformCopy[a/b] — beam과 동일 2점 분기 재사용) + seed CurtainWallType 1종 · select footprint(segment a→b) · capabilities/catalog create_curtainwall(aiExposed) · lint dup+KIND_LABEL · diff KIND_LABEL · interop ifcExport(IfcCurtainWall — 가능하면, 아니면 IfcWall 근사+주석)·rhino3dm(멀리언 곡선+패널)·dxf(평면 베이스라인+그리드) · web CurtainWallTool(2점, BeamTool 클론) + main 등록 + uiStore ToolName + Toolbox '커튼월' 활성(현재 planned) + InfoBox 에디터(uSpacing/vSpacing/height/타입) · deriveDrawing 평면(절단 시 멀리언 점들).
-
-검증: core 테스트 신규(파생 멀리언 수 = 그리드 분할 수·move/copy/rotate·lint·footprint·capability) → tsc → 브라우저 스모크(배치+3D 렌더) → 커밋 "M11 Phase 2 (커튼월): CurtainWall 요소". 불변규칙 준수.
-```
+## ~~Task A — 커튼월~~ ✅ 완료 (커밋 4503355, 배포 727fabc0) — typed kind 템플릿
 
 ## Task B — 라벨 (Label) [이 저장소에서 빌드]
 
@@ -53,17 +38,7 @@ cadence(필수): advisor(설계 전·완료 전) → 구현 → corepack pnpm -F
 검증: core 테스트(template별 텍스트·존 면적 추종·고아 fallback) → tsc → 스모크 → 커밋 "M11 Phase 2 (라벨): Label 요소". Toolbox '레이블' 활성.
 ```
 
-## Task C — fork (M6.5 GitHub식) [이 저장소에서 빌드]
-
-```
-목표: 버전 fork — 한 커밋 스냅샷에서 새 프로젝트(룸) 생성. apps/server/src/version.ts에 ?op=fork 추가.
-
-현재 version.ts = handleVersionRequest(?op=commit/log/show, 선형체인, R2 figcad-commits). DocStore.snapshotOf/importSnapshot 재사용.
-
-구현: ?op=fork (POST {sourceHash, newRoom?}) — ① sourceHash 커밋 blob(R2 show)을 읽어 ② 새 projectId(없으면 nanoid) 경로(projects/<newRoom>/commits/)에 그 스냅샷을 초기 커밋(parent=null)으로 복사 + log.json 시드 ③ {room:newRoom, hash} 반환. 클라(VersionPanel.tsx)에 "이 버전에서 새 프로젝트" 버튼 → fork → location ?p=<newRoom> 이동. isSafeRoom 게이트 재사용.
-
-branch/merge/공개허브목록 = v1.5(범위 밖). 검증: 로컬 dev(dev-node.mjs 8787) 라운드트립(commit→fork→새 룸 log 확인) + 기존 version E2E 무회귀 → tsc → 커밋 "M11 Phase 3: fork(스냅샷→새 룸)". 배포.
-```
+## ~~Task C — fork~~ ✅ 완료 (커밋 f4e1fbc) — 클라 주도(서버 DO storage 격리), VersionPanel fork 버튼
 
 ## Task D — Rhino↔Figcad connector [외부: .NET/Rhino 환경 필요]
 
