@@ -204,6 +204,7 @@ export function DrawingPanel({ store }: { store: DocStore }) {
       </div>
       <canvas
         ref={canvasRef}
+        data-drawing="1"
         style={{ flex: 1, width: '100%', display: 'block', cursor: 'grab', background: '#fff' }}
         onWheel={onWheel}
         onMouseDown={onDown}
