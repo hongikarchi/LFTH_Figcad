@@ -47,7 +47,7 @@
 | 4 | M10 connector (?op=apply + Rhino RhinoCommon 플러그인) | ⬜ goal prompt(.NET 환경 밖) |
 | 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
 
-**현재 위치: 자율 run 종료 — 사용자 명시 요청 기능 전부 완료. 배포 `727fabc0`.**
+**현재 위치: 자율 run 종료 — 사용자 명시 요청 기능 전부 완료. 배포 `b06e6a1f`.**
 - Phase 1 ✅: 평면(절단/투영/해치 even-odd) + 단면(cut (u,z)) + 입면(박스매싱 painter HLR) + DXF + views(schemaVersion 3). 멀티에이전트 리뷰 1건(해치) 수정.
 - Phase 2 ✅: 존(IfcSpace, 면적/부피) + 커튼월(UV 멀리언 그리드). 신규 kind 완전 배선(커밋 7c649e7 존 = **템플릿**).
 - Phase 3 ✅: fork(클라 주도 — 한 버전 스냅샷→새 룸. 서버 DO storage 격리라 클라 importSnapshot).
