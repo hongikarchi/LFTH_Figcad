@@ -27,6 +27,12 @@ import { ifcGuidFromId } from './ifcGuid';
  *   벽     → IfcWallStandardCase (Axis 중심선 + Body 압출 + MaterialLayerSetUsage 두께)
  *   슬라브 → IfcSlab (ArbitraryClosedProfile 경계 압출)
  *   문/창  → IfcDoor/IfcWindow + IfcOpeningElement(void) + RelVoids/RelFills
+ *   기둥/보/계단/난간/지붕 → IfcColumn/IfcBeam/IfcStair/IfcRailing/IfcSlab(ROOF)
+ *
+ * 미구현(deferred, 명시적 — 조용한 누락 아님):
+ *   존(zone) → IfcSpace = spatial containment(IfcRelAggregates) 필요 → 후속(docs/GOAL_PROMPT.md Task A).
+ *             존은 .3dm/.dxf로는 export됨(지오레벨). IFC 누락은 여기 문서화됨.
+ *   주석(text/dimension/label) = 의도적 스킵(IFC는 BIM 요소만).
  *
  * 단위: SI METRE + MILLI 접두 → 좌표를 문서 그대로(mm 정수) 기록 (float 드리프트 0).
  * 좌표계: 문서 [x,y]평면 + elevation → IFC Z-up (x,y,elevation).

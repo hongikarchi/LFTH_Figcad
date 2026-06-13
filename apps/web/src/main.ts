@@ -140,11 +140,33 @@ tools.register('elevation', new SectionTool(ctx, 'elevation'));
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---
-const { provider } = setupCollab(ydoc);
+const { provider, projectId } = setupCollab(ydoc);
 const presence = new Presence(provider.awareness, engine, sceneManager, hud, (n) =>
   useUiStore.getState().setPeerCount(n),
 );
 ctx.collab = presence;
+
+// fork(M6.5): VersionPanel이 한 버전 스냅샷을 localStorage에 두고 새 룸(?p=)을 연다.
+// 이 룸이 그 핸드오프 대상이면 sync 후 importSnapshot으로 새 프로젝트 콘텐츠를 채운다.
+// (서버 fork 불가 — 타겟 Doc DO storage는 인스턴스 격리라 클라가 채워야 함.)
+const forkKey = `figcad.fork:${projectId}`;
+const forkRaw = localStorage.getItem(forkKey);
+if (forkRaw) {
+  let imported = false;
+  const doImport = (): void => {
+    if (imported) return;
+    imported = true;
+    try {
+      store.importSnapshot(JSON.parse(forkRaw));
+      engine.requestRender();
+    } catch (e) {
+      console.warn('[fork] import 실패', e);
+    }
+    localStorage.removeItem(forkKey);
+  };
+  provider.on('synced', doImport); // y-partyserver sync 완료 시
+  setTimeout(doImport, 2500); // 이벤트 미발화 폴백 — 새 룸이라 안전
+}
 
 provider.on('status', (e: { status: string }) => {
   const map = { connected: 'connected', connecting: 'connecting', disconnected: 'offline' } as const;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { nanoid } from 'nanoid';
 import { diffSnapshots, diffSummary, type DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { commitVersion, fetchCommit, fetchLog, type CommitMeta } from '../version/versionClient';
@@ -81,6 +82,22 @@ export function VersionPanel({ store }: { store: DocStore }) {
     }
   };
 
+  // fork(M6.5) — 이 버전을 새 프로젝트(룸)로. 스냅샷을 localStorage로 핸드오프하고
+  // 새 룸을 새 탭에 연다(main.ts가 sync 후 importSnapshot). 새 룸 히스토리는 새로 시작.
+  const fork = async (c: CommitMeta) => {
+    try {
+      const snap = await fetchCommit(c.hash);
+      const newRoom = nanoid(10);
+      localStorage.setItem(`figcad.fork:${newRoom}`, JSON.stringify(snap));
+      const key = new URL(location.href).searchParams.get('key');
+      const url = `${location.pathname}?p=${newRoom}${key ? `&key=${encodeURIComponent(key)}` : ''}`;
+      window.open(url, '_blank');
+      setNotice(`✓ '${c.message}' 시점에서 새 프로젝트(fork) — 새 탭에서 열림`);
+    } catch (e) {
+      setNotice(`fork 실패: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
   const restore = async (c: CommitMeta) => {
     try {
       const snap = await fetchCommit(c.hash);
@@ -144,6 +161,7 @@ export function VersionPanel({ store }: { store: DocStore }) {
               <span className="ver-actions">
                 <button onClick={() => void showDiff(c)}>비교</button>
                 <button onClick={() => void restore(c)}>복원</button>
+                <button onClick={() => void fork(c)} title="이 버전에서 새 프로젝트 생성">fork</button>
               </span>
             </div>
             {diffs[itemKey(c)] && <div className="ver-diff">이후 변경: {diffs[itemKey(c)]}</div>}
