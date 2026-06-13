@@ -318,6 +318,23 @@ export const CommentSchema = z.object({
 });
 export type Comment = z.infer<typeof CommentSchema>;
 
+/**
+ * 도면 뷰 — 요소가 아닌 별도 채널(ydoc 'views' 맵 예정). 2D 라인워크는 저장 안 함 —
+ * 뷰 *정의*(절단높이·방향·범위·축척)만 파라미터로, 라인워크는 deriveDrawing으로 파생.
+ * plan = 레벨 + 절단높이(평면). section/elevation = 절단선 a→b + 깊이(후속 슬라이스).
+ */
+export const DrawingViewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.enum(['plan', 'section', 'elevation']),
+  levelId: z.string().optional(), // plan: 절단할 레벨
+  cutHeight: mm.optional(), // plan: 레벨 바닥 위 절단면 높이 (기본 1200)
+  line: z.tuple([Pt, Pt]).optional(), // section/elevation: 절단/시선 선
+  depth: mm.optional(), // section/elevation: 선 뒤 시야 깊이
+  scale: z.number().int().optional(), // 1:N 축척 (기본 100)
+});
+export type DrawingView = z.infer<typeof DrawingViewSchema>;
+
 export interface DocMeta {
   schemaVersion: number;
   projectName: string;

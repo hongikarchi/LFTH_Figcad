@@ -49,6 +49,8 @@ export * from './deriveWall';
 export * from './deriveOthers';
 export * from './deriveStructure';
 export * from './deriveAnnotations';
+export * from './deriveDrawing';
+export * from './hatch';
 export * from './joins';
 
 interface CacheEntry {

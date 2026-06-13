@@ -1,0 +1,165 @@
+import { describe, expect, it } from 'vitest';
+import { DocStore, seedDocument } from '../src/store';
+import { HATCH_CONCRETE, deriveDrawing, hatchPolygon, wallFootprint } from '../src/geometry';
+import type { DrawingView, Level, WallElement, WallType } from '../src/schema';
+
+function setup() {
+  const store = new DocStore();
+  const seed = seedDocument(store);
+  return { store, seed };
+}
+
+const planView = (levelId: string, cutHeight = 1200): DrawingView => ({
+  id: 'v1',
+  name: '1층 평면',
+  type: 'plan',
+  levelId,
+  cutHeight,
+});
+
+describe('deriveDrawing — 평면뷰 절단/투영 분류', () => {
+  it('절단면에 걸린 벽 4개 박스 → 절단 윤곽 4 + 해치, 투영 0', () => {
+    const { store, seed } = setup();
+    const t = seed.wallTypeIds[0]!;
+    const L = seed.levelId;
+    // 기본 높이(level.height=3000), cut=1200 → 전부 절단
+    store.createWall({ levelId: L, typeId: t, a: [0, 0], b: [4000, 0] });
+    store.createWall({ levelId: L, typeId: t, a: [4000, 0], b: [4000, 3000] });
+    store.createWall({ levelId: L, typeId: t, a: [4000, 3000], b: [0, 3000] });
+    store.createWall({ levelId: L, typeId: t, a: [0, 3000], b: [0, 0] });
+
+    const d = deriveDrawing(planView(L), store);
+    expect(d.cut).toHaveLength(4);
+    expect(d.proj).toHaveLength(0);
+    expect(d.hatch.length).toBeGreaterThan(0);
+    // 절단 폴리곤은 닫힌 사각형(4점)
+    expect(d.cut.every((p) => p.closed && p.pts.length === 4)).toBe(true);
+  });
+
+  it('절단면 아래 벽 → 투영(가는 선), 절단 0', () => {
+    const { store, seed } = setup();
+    const id = store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [4000, 0],
+      height: 600, // top=600 < cut=1200
+    });
+    expect(id).toBeTruthy();
+    const d = deriveDrawing(planView(seed.levelId), store);
+    expect(d.cut).toHaveLength(0);
+    expect(d.proj).toHaveLength(1);
+    expect(d.hatch).toHaveLength(0);
+  });
+
+  it('절단면 위 벽 → 숨김(절단·투영 모두 0)', () => {
+    const { store, seed } = setup();
+    store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [4000, 0],
+      baseOffset: 2000, // bottom=2000, top=3000, cut=1200 → above
+      height: 1000,
+    });
+    const d = deriveDrawing(planView(seed.levelId), store);
+    expect(d.cut).toHaveLength(0);
+    expect(d.proj).toHaveLength(0);
+  });
+
+  it('슬라브 → 투영 윤곽, 그리드 → 축선 + 라벨', () => {
+    const { store, seed } = setup();
+    store.createSlab({
+      levelId: seed.levelId,
+      typeId: seed.slabTypeId,
+      boundary: [
+        [0, 0],
+        [4000, 0],
+        [4000, 3000],
+        [0, 3000],
+      ],
+    });
+    store.createGridLine({ a: [0, -1000], b: [0, 4000], label: 'A' });
+    const d = deriveDrawing(planView(seed.levelId), store);
+    // 슬라브(닫힘) + 그리드(열림) = 투영 2
+    expect(d.proj).toHaveLength(2);
+    expect(d.proj.some((p) => p.closed && p.pts.length === 4)).toBe(true); // 슬라브
+    expect(d.proj.some((p) => !p.closed)).toBe(true); // 그리드 축선
+    expect(d.labels).toContainEqual({ text: 'A', pos: [0, 4000] });
+  });
+
+  it('기둥 절단 → 단면 윤곽 + 해치', () => {
+    const { store, seed } = setup();
+    store.createColumn({ levelId: seed.levelId, typeId: seed.columnTypeId, at: [1000, 1000] });
+    const d = deriveDrawing(planView(seed.levelId), store);
+    expect(d.cut.length).toBeGreaterThan(0);
+    expect(d.hatch.length).toBeGreaterThan(0);
+  });
+
+  it('section/elevation 뷰는 v1에서 빈 결과(후속 슬라이스)', () => {
+    const { store, seed } = setup();
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [4000, 0] });
+    const sec = deriveDrawing({ id: 'v', name: 's', type: 'section', line: [[0, -500], [4000, -500]] }, store);
+    expect(sec.cut).toHaveLength(0);
+    expect(sec.proj).toHaveLength(0);
+  });
+});
+
+describe('wallFootprint — 마이터 footprint 폴리곤 (butt 기본)', () => {
+  it('단일 벽 → 두께 사각형 4점', () => {
+    const level: Level = { id: 'L', name: '1', elevation: 0, height: 3000, order: 0 };
+    const type: WallType = { id: 'T', kind: 'wall', name: 'w', thickness: 200, color: '#fff' };
+    const wall: WallElement = { id: 'w1', kind: 'wall', levelId: 'L', typeId: 'T', a: [0, 0], b: [1000, 0] };
+    const fp = wallFootprint({ wall, type, level });
+    expect(fp).toHaveLength(4);
+    // x축 벽, 두께 200 → y ∈ {-100, +100}, x ∈ {0, 1000}
+    const ys = fp.map((p) => p[1]).sort((a, b) => a - b);
+    expect(ys).toEqual([-100, -100, 100, 100]);
+    const xs = [...new Set(fp.map((p) => p[0]))].sort((a, b) => a - b);
+    expect(xs).toEqual([0, 1000]);
+  });
+
+  it('0길이 벽 → 빈 배열', () => {
+    const level: Level = { id: 'L', name: '1', elevation: 0, height: 3000, order: 0 };
+    const type: WallType = { id: 'T', kind: 'wall', name: 'w', thickness: 200, color: '#fff' };
+    const wall: WallElement = { id: 'w1', kind: 'wall', levelId: 'L', typeId: 'T', a: [50, 50], b: [50, 50] };
+    expect(wallFootprint({ wall, type, level })).toEqual([]);
+  });
+});
+
+describe('hatchPolygon — even-odd 평행선 채움', () => {
+  it('1000×1000 사각형, 0°·간격200 → 수평선 4개, 각 길이 1000', () => {
+    const sq: [number, number][] = [
+      [0, 0],
+      [1000, 0],
+      [1000, 1000],
+      [0, 1000],
+    ];
+    const segs = hatchPolygon(sq, { angle: 0, spacing: 200 });
+    // y=200,400,600,800 (start=ceil(0/200)*200=0 제외? t<tMax & t from 0) → 0 포함되나 경계라 even-odd…
+    expect(segs.length).toBeGreaterThanOrEqual(4);
+    for (const [p0, p1] of segs) {
+      expect(Math.abs(p0[1] - p1[1])).toBeLessThan(1e-6); // 수평
+      expect(Math.abs(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) - 1000)).toBeLessThan(1e-6); // 길이 1000
+    }
+  });
+
+  it('45° 콘크리트 패턴 → 폴리곤 bbox 내 선분', () => {
+    const sq: [number, number][] = [
+      [0, 0],
+      [600, 0],
+      [600, 600],
+      [0, 600],
+    ];
+    const segs = hatchPolygon(sq, HATCH_CONCRETE);
+    expect(segs.length).toBeGreaterThan(0);
+    for (const [p0, p1] of segs) {
+      for (const p of [p0, p1]) {
+        expect(p[0]).toBeGreaterThanOrEqual(-1);
+        expect(p[0]).toBeLessThanOrEqual(601);
+        expect(p[1]).toBeGreaterThanOrEqual(-1);
+        expect(p[1]).toBeLessThanOrEqual(601);
+      }
+    }
+  });
+});

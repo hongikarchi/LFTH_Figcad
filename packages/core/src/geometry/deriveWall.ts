@@ -1,6 +1,6 @@
 import { buildFaces, type FaceSpec, type MeshData } from './meshBuilder';
 import { endCorners } from './joins';
-import { resolveOpening, type WallDeriveInput } from '../schema';
+import { resolveOpening, type Pt, type WallDeriveInput } from '../schema';
 
 const MM = 0.001; // 문서 mm → 렌더 월드 m
 
@@ -16,6 +16,27 @@ export interface DerivedGeometry extends MeshData {
   anchors: { a: [number, number, number]; b: [number, number, number] };
   /** 씬 내 라벨 (그리드/텍스트/치수). 없으면 라벨 없음 */
   labels?: LabelSpec[];
+}
+
+/**
+ * 벽 2D 풋프린트 폴리곤 (도면 평면 mm, 마이터 코너 포함). deriveWall의 프리즘 바닥과
+ * 동일한 코너 계산 — 평면도 절단 윤곽·poché에 재사용. joins 없으면 butt 캡.
+ * 순서: aMinus → bMinus → bPlus → aPlus (CCW/CW는 벽 방향 의존, 도면용은 무관).
+ */
+export function wallFootprint(input: WallDeriveInput): Pt[] {
+  const { wall, type, joins } = input;
+  const [axMm, ayMm] = wall.a;
+  const [bxMm, byMm] = wall.b;
+  const lenMm = Math.hypot(bxMm - axMm, byMm - ayMm);
+  if (lenMm === 0) return [];
+  const dir: [number, number] = [(bxMm - axMm) / lenMm, (byMm - ayMm) / lenMm];
+  const negDir: [number, number] = [-dir[0], -dir[1]];
+  const ca = endCorners([axMm, ayMm], dir, type.thickness, joins?.a ?? null);
+  const cb = endCorners([bxMm, byMm], negDir, type.thickness, joins?.b ?? null);
+  // deriveWall: bPlus=cb.minus, bMinus=cb.plus
+  return [ca.minus, cb.plus, cb.minus, ca.plus].map(
+    ([x, y]) => [Math.round(x), Math.round(y)] as Pt,
+  );
 }
 
 /**
