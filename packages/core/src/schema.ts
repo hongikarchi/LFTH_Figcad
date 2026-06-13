@@ -7,7 +7,7 @@ import { z } from 'zod';
  * 불변 규칙: 지오메트리는 여기 없다 — 항상 파라미터에서 파생.
  */
 
-export const CORE_SCHEMA_VERSION = 2; // v2 = 협업 코멘트 채널 추가 (v1 문서는 comments 부재→[] 호환)
+export const CORE_SCHEMA_VERSION = 3; // v2 = 코멘트 채널, v3 = 도면 뷰 채널 (구버전 문서는 해당 채널 부재→[] 호환)
 
 export type Id = string;
 

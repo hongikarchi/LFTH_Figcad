@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument } from '../src/store';
 import { HATCH_CONCRETE, deriveDrawing, hatchPolygon, wallFootprint } from '../src/geometry';
+import { CORE_SCHEMA_VERSION } from '../src/schema';
 import type { DrawingView, Level, WallElement, WallType } from '../src/schema';
 
 function setup() {
@@ -161,5 +162,38 @@ describe('hatchPolygon — even-odd 평행선 채움', () => {
         expect(p[1]).toBeLessThanOrEqual(601);
       }
     }
+  });
+});
+
+describe('도면 뷰 채널 — ops + 스냅샷', () => {
+  it('createView/updateView/deleteView + mm 양자화', () => {
+    const { store, seed } = setup();
+    const id = store.createView({ name: '1층 평면', type: 'plan', levelId: seed.levelId, cutHeight: 1200.6 });
+    expect(store.getView(id)!.cutHeight).toBe(1201);
+    store.updateView(id, { cutHeight: 900, name: '지하 평면' });
+    expect(store.getView(id)!.cutHeight).toBe(900);
+    expect(store.getView(id)!.name).toBe('지하 평면');
+    expect(store.listViews()).toHaveLength(1);
+    store.deleteView(id);
+    expect(store.listViews()).toHaveLength(0);
+  });
+
+  it('snapshot 라운드트립 — schemaVersion 3 + views 보존', () => {
+    const { store, seed } = setup();
+    store.createView({ name: 'p', type: 'plan', levelId: seed.levelId, cutHeight: 1200 });
+    const snap = store.snapshot();
+    expect(snap.meta.schemaVersion).toBe(CORE_SCHEMA_VERSION);
+    expect(snap.views).toHaveLength(1);
+    const restored = DocStore.fromSnapshot(snap);
+    expect(restored.listViews()).toHaveLength(1);
+  });
+
+  it('importSnapshot — views 부재(커밋복원)=보존, 명시(JSON백업)=교체', () => {
+    const { store, seed } = setup();
+    store.createView({ name: 'p', type: 'plan', levelId: seed.levelId });
+    store.importSnapshot({ ...store.snapshot(), views: undefined }); // 커밋 복원 → 보존
+    expect(store.listViews()).toHaveLength(1);
+    store.importSnapshot({ ...store.snapshot(), views: [] }); // JSON 백업 → 교체(비움)
+    expect(store.listViews()).toHaveLength(0);
   });
 });

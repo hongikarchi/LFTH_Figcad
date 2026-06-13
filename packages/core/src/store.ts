@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import {
   CommentSchema,
   CORE_SCHEMA_VERSION,
+  DrawingViewSchema,
   ElementSchema,
   ElemTypeSchema,
   LevelSchema,
@@ -23,6 +24,7 @@ import {
   type RoofElement,
   type SlabElement,
   type Comment,
+  type DrawingView,
   type StairElement,
   type TextElement,
   type WallElement,
@@ -133,6 +135,8 @@ export interface DocSnapshot {
   elements: Element[];
   /** 협업 코멘트 (v2). v1 스냅샷엔 부재 — 읽을 때 [] 기본 */
   comments?: Comment[];
+  /** 도면 뷰 (v3). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
+  views?: DrawingView[];
 }
 
 export type DocObserver = (change: DocChange) => void;
@@ -167,12 +171,14 @@ export class DocStore {
   private yTypes: Y.Map<unknown>;
   private yElements: Y.Map<unknown>;
   private yComments: Y.Map<unknown>;
+  private yViews: Y.Map<unknown>;
 
   // 읽기 미러 (Yjs 이벤트로만 갱신)
   private levels = new Map<Id, Level>();
   private types = new Map<Id, ElemType>();
   private elements = new Map<Id, Element>();
   private comments = new Map<Id, Comment>();
+  private views = new Map<Id, DrawingView>();
   private observers = new Set<DocObserver>();
 
   constructor(ydoc?: Y.Doc) {
@@ -182,12 +188,14 @@ export class DocStore {
     this.yTypes = this.ydoc.getMap('types');
     this.yElements = this.ydoc.getMap('elements');
     this.yComments = this.ydoc.getMap('comments');
+    this.yViews = this.ydoc.getMap('views');
 
     // 기존 콘텐츠(프로바이더/캐시에서 온 doc) 미러 초기화
     for (const id of this.yLevels.keys()) this.mirrorLevel(id);
     for (const id of this.yTypes.keys()) this.mirrorType(id);
     for (const id of this.yElements.keys()) this.mirrorElement(id);
     for (const id of this.yComments.keys()) this.mirrorComment(id);
+    for (const id of this.yViews.keys()) this.mirrorView(id);
 
     this.yLevels.observe((e) => {
       const change: DocChange = { added: [], updated: [], removed: [] };
@@ -251,11 +259,24 @@ export class DocStore {
       }
       this.notifyAll(); // 코멘트 변경 → 옵저버 강제 통지 (emit은 빈 change를 무시함)
     });
+    // 도면 뷰 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 통지로 도면 패널 재파생.
+    this.yViews.observe((e) => {
+      for (const [id, c] of e.changes.keys) {
+        if (c.action === 'delete') this.views.delete(id);
+        else this.mirrorView(id);
+      }
+      this.notifyAll();
+    });
   }
 
   private mirrorComment(id: Id): void {
     const parsed = CommentSchema.safeParse(this.yComments.get(id));
     if (parsed.success) this.comments.set(id, parsed.data);
+  }
+
+  private mirrorView(id: Id): void {
+    const parsed = DrawingViewSchema.safeParse(this.yViews.get(id));
+    if (parsed.success) this.views.set(id, parsed.data);
   }
 
   private mirrorLevel(id: Id): void {
@@ -876,6 +897,51 @@ export class DocStore {
     return this.comments.get(id);
   }
 
+  // ===== 도면 뷰 (M11) — 별도 'views' 채널. 2D 라인워크는 deriveDrawing으로 파생,
+  // 여기엔 뷰 정의(절단높이·선·범위·축척)만. undo 비추적(코멘트와 동일 — 도면 config). =====
+
+  /** mm 양자화 후 검증 — 모든 view 쓰기 경로 공유 */
+  private parseView(input: DrawingView): DrawingView {
+    return DrawingViewSchema.parse({
+      ...input,
+      cutHeight: input.cutHeight != null ? quantize(input.cutHeight) : undefined,
+      depth: input.depth != null ? quantize(input.depth) : undefined,
+      scale: input.scale != null ? Math.round(input.scale) : undefined,
+      line: input.line
+        ? [
+            [quantize(input.line[0][0]), quantize(input.line[0][1])],
+            [quantize(input.line[1][0]), quantize(input.line[1][1])],
+          ]
+        : undefined,
+    });
+  }
+
+  createView(params: Omit<DrawingView, 'id'>): Id {
+    const id = nanoid(12);
+    const v = this.parseView({ ...params, id } as DrawingView);
+    this.transact(() => this.yViews.set(id, v));
+    return id;
+  }
+
+  updateView(id: Id, patch: Partial<Omit<DrawingView, 'id'>>): void {
+    const cur = this.views.get(id);
+    if (!cur) return;
+    const v = this.parseView({ ...cur, ...patch, id });
+    this.transact(() => this.yViews.set(id, v));
+  }
+
+  deleteView(id: Id): void {
+    if (!this.views.has(id)) return;
+    this.transact(() => this.yViews.delete(id));
+  }
+
+  listViews(): DrawingView[] {
+    return [...this.views.values()];
+  }
+  getView(id: Id): DrawingView | undefined {
+    return this.views.get(id);
+  }
+
   // ===== 편집 ops (M3.5) — 전부 단일 transact = undo 1스텝, 협업 원자적 =====
 
   /** 검증 후 새 id로 요소 기록 (transact 내부에서 호출) — 유니온이라 런타임 zod 검증 */
@@ -1157,6 +1223,7 @@ export class DocStore {
       types: [...this.types.values()],
       elements: [...this.elements.values()],
       comments: [...this.comments.values()],
+      views: [...this.views.values()],
     };
   }
 
@@ -1191,6 +1258,11 @@ export class DocStore {
       const p = CommentSchema.safeParse(v);
       if (p.success) comments.push(p.data);
     }
+    const views: DrawingView[] = [];
+    for (const v of ydoc.getMap('views').values()) {
+      const p = DrawingViewSchema.safeParse(v);
+      if (p.success) views.push(p.data);
+    }
     return {
       meta: {
         schemaVersion: (yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
@@ -1201,6 +1273,7 @@ export class DocStore {
       types,
       elements,
       comments,
+      views,
     };
   }
 
@@ -1220,6 +1293,7 @@ export class DocStore {
         store.yElements.set(el.id, ymap);
       }
       for (const c of snap.comments ?? []) store.yComments.set(c.id, CommentSchema.parse(c));
+      for (const v of snap.views ?? []) store.yViews.set(v.id, DrawingViewSchema.parse(v));
     }, LOCAL_ORIGIN);
     return store;
   }
@@ -1243,6 +1317,9 @@ export class DocStore {
     // JSON 백업 복원(comments 명시, [] 포함)만 교체. (커밋 blob엔 코멘트 미포함 — 의도)
     const replaceComments = snap.comments !== undefined;
     const comments = replaceComments ? snap.comments!.map((c) => CommentSchema.parse(c)) : [];
+    // 도면 뷰도 직교 채널 — 커밋 복원(views 부재)은 보존, JSON 백업(views 명시)만 교체
+    const replaceViews = snap.views !== undefined;
+    const views = replaceViews ? snap.views!.map((v) => DrawingViewSchema.parse(v)) : [];
     this.transact(() => {
       for (const k of [...this.yElements.keys()]) this.yElements.delete(k);
       for (const k of [...this.yLevels.keys()]) this.yLevels.delete(k);
@@ -1260,6 +1337,10 @@ export class DocStore {
       if (replaceComments) {
         for (const k of [...this.yComments.keys()]) this.yComments.delete(k);
         for (const c of comments) this.yComments.set(c.id, c);
+      }
+      if (replaceViews) {
+        for (const k of [...this.yViews.keys()]) this.yViews.delete(k);
+        for (const v of views) this.yViews.set(v.id, v);
       }
     });
   }
