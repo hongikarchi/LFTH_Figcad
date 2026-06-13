@@ -30,6 +30,11 @@ export interface Drawing2D {
   hatch: Seg2D[];
   /** 그리드 라벨 등 */
   labels: { text: string; pos: Pt }[];
+  /**
+   * 입면 실루엣 — **far→near 정렬**된 닫힌 폴리곤. 렌더가 순서대로 흰색 채움+stroke하면
+   * 가까운 게 먼 윤곽을 덮어 은선제거(painter's). derive는 정렬만 담당, occlusion은 픽셀에서.
+   */
+  silhouettes?: Polyline2D[];
 }
 
 const EMPTY: Drawing2D = { cut: [], proj: [], hatch: [], labels: [] };
@@ -104,6 +109,50 @@ function segmentInsidePolygon(a: Pt, b: Pt, poly: Pt[]): [number, number][] {
     if (pointInPoly(mid, poly)) out.push([t0, t1]);
   }
   return out;
+}
+
+/**
+ * 질량 요소의 평면 풋프린트 + z-범위(전역 mm) — 단면·입면 공유. z 규약은 실제
+ * derive 수학과 일치(deriveWall/deriveStructure/deriveOthers): 누락 = 조용한 z 오류.
+ */
+function massFootprint(
+  el: { kind: string; [k: string]: unknown },
+  store: DocStore,
+): { poly: Pt[]; zb: number; zt: number } | null {
+  if (el.kind === 'wall') {
+    const w = el as unknown as import('../schema').WallElement;
+    const type = store.getType(w.typeId);
+    const level = store.getLevel(w.levelId);
+    if (type?.kind !== 'wall' || !level) return null;
+    const zb = level.elevation + (w.baseOffset ?? 0);
+    return { poly: wallFootprint({ wall: w, type: type as WallType, level }), zb, zt: zb + (w.height ?? level.height) };
+  }
+  if (el.kind === 'column') {
+    const c = el as unknown as import('../schema').ColumnElement;
+    const type = store.getType(c.typeId);
+    const level = store.getLevel(c.levelId);
+    if (type?.kind !== 'column' || !level) return null;
+    const zb = level.elevation + (c.baseOffset ?? 0);
+    return { poly: sectionPolygon(c.at, (type as ColumnType).section), zb, zt: zb + (c.height ?? level.height) };
+  }
+  if (el.kind === 'slab') {
+    const s = el as unknown as import('../schema').SlabElement;
+    const type = store.getType(s.typeId);
+    const level = store.getLevel(s.levelId);
+    if (type?.kind !== 'slab' || !level) return null;
+    const th = s.thicknessOverride ?? (type as SlabType).thickness;
+    return { poly: s.boundary, zb: level.elevation - th, zt: level.elevation }; // elevation에서 아래로
+  }
+  if (el.kind === 'roof') {
+    const r = el as unknown as import('../schema').RoofElement;
+    const type = store.getType(r.typeId);
+    const level = store.getLevel(r.levelId);
+    if (type?.kind !== 'roof' || !level) return null;
+    const th = r.thicknessOverride ?? (type as RoofType).thickness;
+    const base = level.elevation + level.height + (r.baseOffset ?? 0);
+    return { poly: r.boundary, zb: base, zt: base + th }; // 경사 무시 (v1 평지붕 근사)
+  }
+  return null;
 }
 
 type Cls = 'cut' | 'below' | 'above';
@@ -190,48 +239,62 @@ function deriveSection(view: DrawingView, store: DocStore): Drawing2D {
     }
   };
 
+  // 전 층 순회 (레벨 필터 없음 — 단면은 건물 전체 절단). beam/stair/railing = 후속.
   for (const el of store.listElements()) {
-    if (el.kind === 'wall') {
-      const type = store.getType(el.typeId);
-      const level = store.getLevel(el.levelId);
-      if (type?.kind !== 'wall' || !level) continue;
-      const ints = segmentInsidePolygon(sa, sb, wallFootprint({ wall: el, type: type as WallType, level }));
-      if (!ints.length) continue;
-      const zb = level.elevation + (el.baseOffset ?? 0);
-      addCut(ints, zb, zb + (el.height ?? level.height));
-    } else if (el.kind === 'column') {
-      const type = store.getType(el.typeId);
-      const level = store.getLevel(el.levelId);
-      if (type?.kind !== 'column' || !level) continue;
-      const ints = segmentInsidePolygon(sa, sb, sectionPolygon(el.at, (type as ColumnType).section));
-      if (!ints.length) continue;
-      const zb = level.elevation + (el.baseOffset ?? 0);
-      addCut(ints, zb, zb + (el.height ?? level.height));
-    } else if (el.kind === 'slab') {
-      const type = store.getType(el.typeId);
-      const level = store.getLevel(el.levelId);
-      if (type?.kind !== 'slab' || !level) continue;
-      const ints = segmentInsidePolygon(sa, sb, el.boundary);
-      if (!ints.length) continue;
-      const th = el.thicknessOverride ?? (type as SlabType).thickness;
-      addCut(ints, level.elevation - th, level.elevation); // 슬라브 = elevation에서 아래로
-    } else if (el.kind === 'roof') {
-      const type = store.getType(el.typeId);
-      const level = store.getLevel(el.levelId);
-      if (type?.kind !== 'roof' || !level) continue;
-      const ints = segmentInsidePolygon(sa, sb, el.boundary);
-      if (!ints.length) continue;
-      const th = el.thicknessOverride ?? (type as RoofType).thickness;
-      const base = level.elevation + level.height + (el.baseOffset ?? 0);
-      addCut(ints, base, base + th); // 경사 무시 (v1 평지붕 근사)
-    }
-    // beam/stair/railing = 후속. 입면(elevation)은 1c.
+    const m = massFootprint(el as { kind: string; [k: string]: unknown }, store);
+    if (!m) continue;
+    const ints = segmentInsidePolygon(sa, sb, m.poly);
+    if (ints.length) addCut(ints, m.zb, m.zt);
   }
   return res;
+}
+
+// ===== 입면뷰 (정사영 + painter's 은선제거 — v1 박스 매싱) =====
+function deriveElevation(view: DrawingView, store: DocStore): Drawing2D {
+  if (!view.line) return EMPTY;
+  const sa = view.line[0];
+  const sb = view.line[1];
+  const len = Math.hypot(sb[0] - sa[0], sb[1] - sa[1]);
+  if (len < 1) return EMPTY;
+  const ux = (sb[0] - sa[0]) / len;
+  const uy = (sb[1] - sa[1]) / len; // baseline 방향
+  const nx = -uy;
+  const ny = ux; // 시선 깊이 축 (baseline 수직). 관찰자=+n 쪽에서 -n 바라봄 → +n=가까움
+  const toU = (p: Pt): number => (p[0] - sa[0]) * ux + (p[1] - sa[1]) * uy;
+  const toN = (p: Pt): number => (p[0] - sa[0]) * nx + (p[1] - sa[1]) * ny;
+
+  // 전 층 순회 (레벨 필터 없음 — 입면은 건물 전체). 각 질량을 (u,z) 실루엣 사각형으로 투영.
+  const items: { rect: Pt[]; depth: number }[] = [];
+  for (const el of store.listElements()) {
+    const m = massFootprint(el as { kind: string; [k: string]: unknown }, store);
+    if (!m || m.poly.length < 2 || m.zt <= m.zb) continue;
+    let umin = Infinity;
+    let umax = -Infinity;
+    let nSum = 0;
+    for (const p of m.poly) {
+      const u = toU(p);
+      if (u < umin) umin = u;
+      if (u > umax) umax = u;
+      nSum += toN(p);
+    }
+    if (umax - umin < 1) continue;
+    items.push({
+      rect: [
+        [umin, m.zb],
+        [umax, m.zb],
+        [umax, m.zt],
+        [umin, m.zt],
+      ],
+      depth: nSum / m.poly.length,
+    });
+  }
+  // far→near: 관찰자 +n 쪽 → toN 작을수록 멀다. 오름차순 정렬 → 배열 끝=가까움=마지막 그림=덮음.
+  items.sort((a, b) => a.depth - b.depth);
+  return { cut: [], proj: [], hatch: [], labels: [], silhouettes: items.map((it) => ({ pts: it.rect, closed: true })) };
 }
 
 export function deriveDrawing(view: DrawingView, store: DocStore): Drawing2D {
   if (view.type === 'plan') return derivePlan(view, store);
   if (view.type === 'section') return deriveSection(view, store);
-  return EMPTY; // elevation = 1c (정사영 + 은선제거, painter's filled silhouette)
+  return deriveElevation(view, store);
 }

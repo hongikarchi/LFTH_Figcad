@@ -9,9 +9,9 @@ const GRID_MM = 100;
 const DRAG_COMMIT_PX = 8;
 
 /**
- * 단면선 — 평면에서 두 점(절단선 a→b)을 그어 단면 도면 뷰를 생성한다.
- * 요소가 아닌 'views' 채널 엔트리. 커밋 즉시 도면 패널을 그 단면으로 연다.
- * (DrawingPanel "+단면" 버튼이 이 도구를 활성화 — 평면에 선 긋기.)
+ * 단면/입면선 — 평면에서 두 점(절단선/시선 baseline a→b)을 그어 도면 뷰를 생성한다.
+ * 요소가 아닌 'views' 채널 엔트리. 커밋 즉시 도면 패널을 그 뷰로 연다.
+ * (DrawingPanel "+단면"/"+입면" 버튼이 kind별로 이 도구를 활성화 — 평면에 선 긋기.)
  */
 export class SectionTool implements Tool {
   private chainStart: Pt | null = null;
@@ -19,7 +19,10 @@ export class SectionTool implements Tool {
   private preview: THREE.Line;
   private marker: THREE.Mesh;
 
-  constructor(private ctx: EditorContext) {
+  constructor(
+    private ctx: EditorContext,
+    private kind: 'section' | 'elevation' = 'section',
+  ) {
     this.preview = new THREE.Line(
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({ color: 0xc0392b }),
@@ -73,8 +76,9 @@ export class SectionTool implements Tool {
     const start = this.chainStart!;
     const lenMm = Math.hypot(end[0] - start[0], end[1] - start[1]);
     if (lenMm >= 100) {
-      const n = this.ctx.store.listViews().filter((v) => v.type === 'section').length + 1;
-      const id = this.ctx.store.createView({ name: `단면 ${n}`, type: 'section', line: [start, end] });
+      const n = this.ctx.store.listViews().filter((v) => v.type === this.kind).length + 1;
+      const label = this.kind === 'elevation' ? '입면' : '단면';
+      const id = this.ctx.store.createView({ name: `${label} ${n}`, type: this.kind, line: [start, end] });
       const ui = useUiStore.getState();
       ui.setActiveViewId(id);
       ui.setDrawingOpen(true);

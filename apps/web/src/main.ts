@@ -133,7 +133,8 @@ tools.register('dimension', new DimensionTool(ctx));
 tools.register('text', new TextTool(ctx));
 tools.register('sketch', new SketchTool(ctx));
 tools.register('comment', new CommentTool(ctx));
-tools.register('section', new SectionTool(ctx));
+tools.register('section', new SectionTool(ctx, 'section'));
+tools.register('elevation', new SectionTool(ctx, 'elevation'));
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---

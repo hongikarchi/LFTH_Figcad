@@ -88,6 +88,24 @@ try {
   if (secDark < 50) throw new Error(`단면 캔버스 비어있음 (${secDark})`);
   console.log(`PASS  단면 뷰 렌더 (그려진 픽셀 ${secDark})`);
 
+  // 5b) 입면 뷰 — baseline 따라 박스 전체 투영(실루엣 painter HLR)
+  await page.evaluate(() => {
+    const { store, ui } = window.__figcad;
+    const id = store.createView({ name: '입면 1', type: 'elevation', line: [[-500, 0], [6500, 0]] });
+    ui.getState().setActiveViewId(id);
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  const elevDark = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-drawing]');
+    const ctx = c.getContext('2d');
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] < 200) dark++;
+    return dark;
+  });
+  if (elevDark < 50) throw new Error(`입면 캔버스 비어있음 (${elevDark})`);
+  console.log(`PASS  입면 뷰 렌더 (그려진 픽셀 ${elevDark})`);
+
   // 6) 빈 레벨(절단면 위 벽만) → 빈 도면이어도 에러 없이 처리
   await page.evaluate(() => {
     const { store, seed, ui } = window.__figcad;

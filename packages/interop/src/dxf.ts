@@ -152,6 +152,7 @@ export function exportDrawingDxf(view: DrawingView, store: DocStore): string {
   d.addLayer('Cut', Drawing.ACI.WHITE, 'CONTINUOUS'); // 절단 — 굵게(뷰어 가중치)
   d.addLayer('Projection', ACI_GRAY, 'CONTINUOUS');
   d.addLayer('Hatch', ACI_GRAY, 'CONTINUOUS');
+  d.addLayer('Elevation', Drawing.ACI.WHITE, 'CONTINUOUS'); // 입면 실루엣 윤곽
   d.addLayer('Text', Drawing.ACI.RED, 'CONTINUOUS');
 
   const dr = deriveDrawing(view, store);
@@ -166,6 +167,9 @@ export function exportDrawingDxf(view: DrawingView, store: DocStore): string {
   for (const pl of dr.proj) poly(pl.pts.map((p) => [p[0], p[1]] as [number, number]), pl.closed);
   d.setActiveLayer('Cut');
   for (const pl of dr.cut) poly(pl.pts.map((p) => [p[0], p[1]] as [number, number]), pl.closed);
+  // 입면 실루엣 윤곽 — 2D DXF는 z-order 가림 없음(화면 HLR과 불일치, 알려진 한계: 윤곽만)
+  d.setActiveLayer('Elevation');
+  for (const pl of dr.silhouettes ?? []) poly(pl.pts.map((p) => [p[0], p[1]] as [number, number]), pl.closed);
   d.setActiveLayer('Text');
   for (const l of dr.labels) d.drawText(l.pos[0], l.pos[1], 300, 0, l.text);
 

@@ -63,6 +63,7 @@ export function DrawingPanel({ store }: { store: DocStore }) {
       };
       for (const pl of d.cut) for (const p of pl.pts) acc(p);
       for (const pl of d.proj) for (const p of pl.pts) acc(p);
+      for (const pl of d.silhouettes ?? []) for (const p of pl.pts) acc(p);
       for (const [a, b] of d.hatch) {
         acc(a);
         acc(b);
@@ -99,6 +100,22 @@ export function DrawingPanel({ store }: { store: DocStore }) {
         ctx.stroke();
       };
 
+      // 입면 실루엣 — far→near 순서대로 흰 채움+stroke = painter's 은선제거
+      for (const pl of d.silhouettes ?? []) {
+        if (pl.pts.length < 2) continue;
+        ctx.beginPath();
+        pl.pts.forEach((p, i) => {
+          const [x, y] = toPx(p);
+          if (i) ctx.lineTo(x, y);
+          else ctx.moveTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
       // 해치(가장 옅게)
       ctx.strokeStyle = '#c4c4c4';
       ctx.lineWidth = 0.5;
@@ -195,6 +212,16 @@ export function DrawingPanel({ store }: { store: DocStore }) {
           title="평면에 절단선을 그어 단면 생성"
         >
           + 단면
+        </button>
+        <button
+          style={btnS}
+          onClick={() => {
+            useUiStore.getState().setDrawingOpen(false);
+            useUiStore.getState().setTool('elevation');
+          }}
+          title="평면에 시선선을 그어 입면 생성 (선 +n 쪽에서 바라봄)"
+        >
+          + 입면
         </button>
         {active && (
           <button style={btnS} onClick={() => void downloadDrawingDxf(active, store, active.name)} title="DXF로 내보내기 (2D 도면 납품)">

@@ -154,6 +154,36 @@ describe('deriveDrawing — 단면뷰 절단(cut), (u,z) 좌표', () => {
   });
 });
 
+describe('deriveDrawing — 입면뷰 실루엣(painter HLR)', () => {
+  const elev = (line: [[number, number], [number, number]]) =>
+    ({ id: 'v', name: 'e', type: 'elevation', line }) as const;
+
+  it('실루엣 far→near 정렬 — 가까운 게 배열 마지막 (부호규약 핀)', () => {
+    const { store, seed } = setup();
+    // baseline x축. n=[0,1] → toN=y. 관찰자 +y → 가까움=높은 y.
+    // 먼 벽 y=1000(height 3000), 가까운 벽 y=5000(height 2000, 구분용).
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [1000, 1000], b: [3000, 1000] });
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [1000, 5000], b: [3000, 5000], height: 2000 });
+    const d = deriveDrawing(elev([[0, 0], [10000, 0]]), store);
+    expect(d.silhouettes).toBeDefined();
+    expect(d.silhouettes!).toHaveLength(2);
+    const ztOf = (i: number) => Math.max(...d.silhouettes![i]!.pts.map((p) => p[1]));
+    expect(ztOf(0)).toBeCloseTo(3000); // 먼 벽 = 배열 처음
+    expect(ztOf(1)).toBeCloseTo(2000); // 가까운 벽 = 배열 마지막(위에 그려 덮음). 뒤집히면 3000
+  });
+
+  it('전 층 포함 — 레벨 필터 없음 (1·2층 모두 실루엣)', () => {
+    const { store, seed } = setup();
+    const L2 = store.addLevel({ name: '2층', elevation: 3000, height: 3000, order: 1 });
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 1000], b: [4000, 1000] });
+    store.createWall({ levelId: L2, typeId: seed.wallTypeIds[0]!, a: [0, 1000], b: [4000, 1000] });
+    const d = deriveDrawing(elev([[0, 0], [4000, 0]]), store);
+    expect(d.silhouettes!).toHaveLength(2);
+    const tops = d.silhouettes!.map((s) => Math.max(...s.pts.map((p) => p[1]))).sort((a, b) => a - b);
+    expect(tops).toEqual([3000, 6000]); // 1층 0..3000, 2층 3000..6000
+  });
+});
+
 describe('wallFootprint — 마이터 footprint 폴리곤 (butt 기본)', () => {
   it('단일 벽 → 두께 사각형 4점', () => {
     const level: Level = { id: 'L', name: '1', elevation: 0, height: 3000, order: 0 };
