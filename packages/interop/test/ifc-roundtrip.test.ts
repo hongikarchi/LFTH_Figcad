@@ -119,6 +119,42 @@ describe('IFC 라운드트립', () => {
     }
   });
 
+  it('범위 밖 offset 개구부 — 클램프 베이크 없이 원본 offset 보존', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const wall = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    // offset 100은 width 900 문에 대해 resolveOpening이 500으로 클램프하는 값
+    s.createOpening({ hostId: wall, typeId: SEED_IDS.door900, offset: 100 });
+    const { snapshot } = roundtrip(s);
+    const op = snapshot.elements.find((e): e is OpeningElement => e.kind === 'opening')!;
+    expect(op.offset).toBe(100); // 클램프된 500이 아니라 원본 100
+  });
+
+  it('baseOffset 있는 벽 (허리벽) — 보존', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0], baseOffset: 900, height: 1200 });
+    const { snapshot } = roundtrip(s);
+    const w = snapshot.elements.find((e): e is WallElement => e.kind === 'wall')!;
+    expect(w.baseOffset).toBe(900);
+    expect(w.height).toBe(1200);
+  });
+
+  it('대각선 벽 — 정수 끝점 보존', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [3000, 4000] }); // len=5000 정수
+    s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall100, a: [1000, 500], b: [2730, 1230] }); // 비정수 len
+    const { snapshot } = roundtrip(s);
+    const walls = snapshot.elements.filter((e): e is WallElement => e.kind === 'wall');
+    const keys = walls.map((w) => `${w.a}|${w.b}`).sort();
+    expect(keys).toContain('0,0|3000,4000');
+    // 비정수 길이도 끝점 반올림 오차 ≤ 1mm
+    const diag = walls.find((w) => w.a[0] === 1000)!;
+    expect(Math.abs(diag.b[0] - 2730)).toBeLessThanOrEqual(1);
+    expect(Math.abs(diag.b[1] - 1230)).toBeLessThanOrEqual(1);
+  });
+
   it('빈 문서 / 자유형 무시 — 깨지지 않음', () => {
     const s = new DocStore();
     seedDocument(s);

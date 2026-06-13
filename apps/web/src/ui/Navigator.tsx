@@ -104,9 +104,14 @@ export function Navigator({ store }: { store: DocStore }) {
     input.click();
   };
 
+  // setState 직후 busy 라벨이 페인트될 틈을 준다 — 이어지는 WASM 동기 호출이
+  // 메인 스레드를 막아 '눌렀는데 반응 없음'으로 보이는 것 방지
+  const paintYield = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
   const exportIfcFile = async () => {
     setIfcBusy('export');
     try {
+      await paintYield();
       await downloadIfc(store.snapshot());
     } catch (e) {
       window.alert(`IFC 내보내기 실패: ${e instanceof Error ? e.message : e}`);
@@ -125,6 +130,7 @@ export function Navigator({ store }: { store: DocStore }) {
       void file.arrayBuffer().then(async (buf) => {
         setIfcBusy('import');
         try {
+          await paintYield();
           const { snapshot, skipped } = await parseIfc(new Uint8Array(buf));
           const elems = snapshot.elements.length;
           const skipNote = Object.keys(skipped).length

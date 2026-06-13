@@ -9,6 +9,8 @@ let apiPromise: Promise<import('web-ifc').IfcAPI> | null = null;
 
 async function getApi(): Promise<import('web-ifc').IfcAPI> {
   if (!apiPromise) {
+    // 실패(WASM fetch 404/MIME, 메모리 등) 시 캐시를 비워 다음 호출이 재시도하게 함
+    // — 안 그러면 rejected promise가 고착돼 새로고침 전까지 IFC 기능 전체가 죽는다
     apiPromise = (async () => {
       const WebIFC = await import('web-ifc');
       const wasmUrl = (await import('web-ifc/web-ifc.wasm?url')).default;
@@ -16,7 +18,10 @@ async function getApi(): Promise<import('web-ifc').IfcAPI> {
       // 단일 스레드(mt/worker wasm 회피) + vite가 served한 wasm URL로 로드
       await api.Init(() => wasmUrl, true);
       return api;
-    })();
+    })().catch((e) => {
+      apiPromise = null;
+      throw e;
+    });
   }
   return apiPromise;
 }

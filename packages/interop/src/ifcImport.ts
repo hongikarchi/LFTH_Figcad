@@ -133,14 +133,16 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     return item ?? null;
   };
 
-  // --- 벽 ---
+  // --- 벽 (IfcWallStandardCase + 외부 도구의 평범한 IfcWall 둘 다) ---
   const wallExpressToId = new Map<number, Id>();
-  for (const wid of ids(WebIFC.IFCWALLSTANDARDCASE)) {
+  const wallIds = new Set<number>([...ids(WebIFC.IFCWALLSTANDARDCASE), ...ids(WebIFC.IFCWALL)]);
+  for (const wid of wallIds) {
     const wl = line(wid);
     const place = (wl['ObjectPlacement'] as AnyLine)?.['RelativePlacement'] as AnyLine | undefined;
     const loc = coordsOf(place?.['Location']);
     const ax = Math.round(loc[0] ?? 0);
     const ay = Math.round(loc[1] ?? 0);
+    const baseOffset = Math.round(loc[2] ?? 0);
     const ratios = ((place?.['RefDirection'] as AnyLine)?.['DirectionRatios'] as number[] | undefined)?.map(num) ?? [1, 0];
     let dx = ratios[0] ?? 1;
     let dy = ratios[1] ?? 0;
@@ -153,7 +155,8 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     const thickness = Math.round(num(profile?.['YDim'])) || 200;
     const height = Math.round(num(solid?.['Depth'])) || 3000;
     if (len <= 0) {
-      bump('wall(no-profile)');
+      // 사각 프로필 압출이 아닌 벽(자유형/외부 표현) — 복원 불가, 손실 보고
+      bump('wall(미지원 표현)');
       continue;
     }
     const levelId = levelFor(elementStorey.get(wid));
@@ -166,6 +169,7 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
       a,
       b,
       ...(height !== level.height ? { height } : {}),
+      ...(baseOffset !== 0 ? { baseOffset } : {}),
     });
     wallExpressToId.set(wid, wallId);
   }

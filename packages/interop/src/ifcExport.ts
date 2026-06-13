@@ -129,7 +129,9 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
       const ux = dx / len;
       const uy = dy / len;
 
-      const objPlace = local(storeyPlace, place3(pt3(wall.a[0], wall.a[1], 0), dir3(ux, uy, 0)));
+      // baseOffset → 벽 로컬 원점 Z (storey elevation 기준 위로). Body는 z=0부터 압출.
+      const baseOffset = wall.baseOffset ?? 0;
+      const objPlace = local(storeyPlace, place3(pt3(wall.a[0], wall.a[1], baseOffset), dir3(ux, uy, 0)));
 
       // Body: 중심선 따라 len, 두께 thickness, 높이 height 박스
       const profile = w(
@@ -158,16 +160,18 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
         const ot = openingTypes.get(op.typeId);
         if (!ot) continue;
         const r = resolveOpening(op, ot, wall, height);
-        if (!r) continue;
-        // 개구부 박스 — 벽-로컬: X 중심 offset, Y 벽두께 관통, Z sill..sill+height
-        const opW = r.width;
-        const opH = r.height;
-        const sill = r.sill;
+        if (!r) continue; // 물리적으로 못 들어가면 생략
+        // void 박스 기하는 클램프된 r 사용(벽 안 유효 관통). 단, import가 되읽는
+        // 문/창 placement·치수는 원본값으로 기록 — 라운드트립 비파괴 (offset/override 보존).
+        const offset0 = op.offset;
+        const width0 = op.widthOverride ?? ot.opening.width;
+        const height0 = op.heightOverride ?? ot.opening.height;
+        const sill0 = op.sillOverride ?? ot.opening.sillHeight;
         const opProfile = w(
-          new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(r.offset, 0) as never, null)) as never, opW as never, (thickness + 20) as never),
+          new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(r.offset, 0) as never, null)) as never, r.width as never, (thickness + 20) as never),
         );
         const opSolid = w(
-          new I.IfcExtrudedAreaSolid(opProfile as never, place3(pt3(0, 0, sill)) as never, dir3(0, 0, 1) as never, opH as never),
+          new I.IfcExtrudedAreaSolid(opProfile as never, place3(pt3(0, 0, r.sill)) as never, dir3(0, 0, 1) as never, r.height as never),
         );
         const opShape = w(
           new I.IfcProductDefinitionShape(null, null, [w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [opSolid as never])) as never]),
@@ -178,12 +182,12 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
         );
         w(new I.IfcRelVoidsElement(guid(`void-${op.id}`), null, null, null, wallEntity as never, opening as never));
 
-        // 문/창 — 같은 박스 위치, 채움
-        const fillPlace = local(objPlace, place3(pt3(r.offset, 0, sill)));
+        // 문/창 — 원본 offset/치수/sill (import가 이 값으로 정확히 복원)
+        const fillPlace = local(objPlace, place3(pt3(offset0, 0, sill0)));
         const fillEntity =
           ot.opening.kind === 'door'
-            ? w(new I.IfcDoor(guid(`door-${op.id}`), null, label(`문 ${op.id}`), null, null, fillPlace as never, null, null, opH as never, opW as never, null, null, null))
-            : w(new I.IfcWindow(guid(`win-${op.id}`), null, label(`창 ${op.id}`), null, null, fillPlace as never, null, null, opH as never, opW as never, null, null, null));
+            ? w(new I.IfcDoor(guid(`door-${op.id}`), null, label(`문 ${op.id}`), null, null, fillPlace as never, null, null, height0 as never, width0 as never, null, null, null))
+            : w(new I.IfcWindow(guid(`win-${op.id}`), null, label(`창 ${op.id}`), null, null, fillPlace as never, null, null, height0 as never, width0 as never, null, null, null));
         w(new I.IfcRelFillsElement(guid(`fill-${op.id}`), null, null, null, opening as never, fillEntity as never));
         contained.push(fillEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
       }
@@ -196,7 +200,9 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
     for (const slab of levelSlabs) {
       const slabType = snap.types.find((t) => t.id === slab.typeId);
       const thickness = slabType && 'thickness' in slabType ? slabType.thickness : (slab.thicknessOverride ?? 150);
-      const poly = w(new I.IfcPolyline(slab.boundary.map((p) => pt2(p[0], p[1]) as never)));
+      // ArbitraryClosed의 OuterCurve는 닫힌 곡선이어야 함 (IFC4) — 첫점을 끝에 한 번 더
+      const ring = [...slab.boundary, slab.boundary[0]!];
+      const poly = w(new I.IfcPolyline(ring.map((p) => pt2(p[0], p[1]) as never)));
       const profile = w(new I.IfcArbitraryClosedProfileDef(I.IfcProfileTypeEnum.AREA, null, poly as never));
       // 상면이 레벨 elevation → 아래로 압출
       const solid = w(
