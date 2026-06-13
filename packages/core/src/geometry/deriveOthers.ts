@@ -159,12 +159,19 @@ export function deriveGrid(grid: GridLine): DerivedGeometry {
   const mesh = buildFaces([{ profile: ribbon, map: (u, v) => [u * MM, y, -v * MM] }]);
 
   const edges = new Float32Array([ea[0] * MM, y, ea[1] * MM, eb[0] * MM, y, eb[1] * MM]);
+  const pa: [number, number, number] = [ea[0] * MM, y, ea[1] * MM];
+  const pb: [number, number, number] = [eb[0] * MM, y, eb[1] * MM];
   return {
     positions: mesh.positions,
     normals: mesh.normals,
     edges,
     // anchors = 버블 위치 (양끝 연장점)
-    anchors: { a: [ea[0] * MM, y, ea[1] * MM], b: [eb[0] * MM, y, eb[1] * MM] },
+    anchors: { a: pa, b: pb },
+    // 라벨 채널: 양끝 버블 (SceneManager가 스프라이트로)
+    labels: [
+      { text: grid.label, pos: pa, style: 'grid' },
+      { text: grid.label, pos: pb, style: 'grid' },
+    ],
   };
 }
 

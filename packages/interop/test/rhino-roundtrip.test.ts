@@ -76,6 +76,21 @@ describe('.3dm 라운드트립 (지오메트리 레벨)', () => {
     expect(skipped[structKey!]).toBe(2);
   });
 
+  it('계단/난간/지붕 — 곡선으로 export, 슬라브로 오분류·드롭 안 됨 (import v1 스킵)', async () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createStair({ levelId: SEED_IDS.level, typeId: SEED_IDS.stair, a: [0, 0], b: [3000, 0] });
+    s.createRailing({ levelId: SEED_IDS.level, typeId: SEED_IDS.railing, a: [0, 0], b: [3600, 0] });
+    s.createRoof({ levelId: SEED_IDS.level, typeId: SEED_IDS.roof, boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]] });
+    const { skipped, snapshot } = await importRhino(await exportRhino(s.snapshot()));
+    const structKey = Object.keys(skipped).find((k) => k.includes('구조요소'));
+    expect(structKey).toBeDefined();
+    // 계단 풋프린트(닫힘) + 난간 축(열림) + 지붕 경계(닫힘) = 3건 스킵
+    expect(skipped[structKey!]).toBe(3);
+    // 닫힌 곡선이 슬라브로 새지 않음
+    expect(snapshot.elements.filter((e) => e.kind === 'slab')).toHaveLength(0);
+  });
+
   it('유효 .3dm 바이트 (재오픈 가능)', async () => {
     const s = sample();
     const bytes = await exportRhino(s.snapshot());

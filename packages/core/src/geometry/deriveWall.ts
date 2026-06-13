@@ -4,9 +4,18 @@ import { resolveOpening, type WallDeriveInput } from '../schema';
 
 const MM = 0.001; // 문서 mm → 렌더 월드 m
 
+/** 씬 내 텍스트 라벨 (그리드 버블·텍스트·치수 측정값) — 명령형 스프라이트로 렌더 */
+export interface LabelSpec {
+  text: string;
+  pos: [number, number, number]; // 월드 m
+  style?: 'grid' | 'text' | 'dim';
+}
+
 export interface DerivedGeometry extends MeshData {
   /** 스냅/치수 앵커 (월드 m): 중심선 양 끝 */
   anchors: { a: [number, number, number]; b: [number, number, number] };
+  /** 씬 내 라벨 (그리드/텍스트/치수). 없으면 라벨 없음 */
+  labels?: LabelSpec[];
 }
 
 /**

@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { buildDeriveIndex, DeriveCache, type DeriveIndex, type DocStore, type Id } from '@figcad/core';
+import {
+  buildDeriveIndex,
+  DeriveCache,
+  resolveCommentPoint,
+  type DeriveIndex,
+  type DocStore,
+  type Id,
+} from '@figcad/core';
 import type { Engine } from './Engine';
 import type { DerivedGeometry } from '@figcad/core';
 
@@ -14,34 +21,86 @@ interface SceneEntry {
   baseColor: string;
   kind: string;
   levelId: Id | null; // 그리드 = null (전 층 공통, 고스팅 제외)
-  labelText: string | null; // 그리드 버블 텍스트
+  labelKey: string; // 라벨 채널 직렬화 (텍스트+스타일 변경 시만 스프라이트 재생성)
   sprites: THREE.Sprite[];
   lastGeo: DerivedGeometry | null;
 }
 
-/** 그리드 버블 — 원 + 라벨 텍스트 스프라이트 */
-function makeLabelSprite(text: string): THREE.Sprite {
-  const size = 96;
+type LabelStyle = 'grid' | 'text' | 'dim';
+
+/**
+ * 씬 라벨 스프라이트 — style별: grid=빨강 원 버블, text/dim=흰 알약+검정 글자(B&W).
+ * 캔버스 폭을 글자에 맞춰(가변), 월드 스케일은 높이 기준 고정.
+ */
+function makeLabelSprite(text: string, style: LabelStyle = 'grid'): THREE.Sprite {
+  const H = 96;
+  const measure = document.createElement('canvas').getContext('2d')!;
+  const fontPx = H * (style === 'grid' ? 0.42 : 0.5);
+  measure.font = `bold ${fontPx}px -apple-system, sans-serif`;
+  const grid = style === 'grid';
+  const textW = measure.measureText(text || ' ').width;
+  const W = grid ? H : Math.max(H, Math.ceil(textW + H * 0.5));
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
+  canvas.width = W;
+  canvas.height = H;
   const g = canvas.getContext('2d')!;
-  g.beginPath();
-  g.arc(size / 2, size / 2, size / 2 - 4, 0, Math.PI * 2);
-  g.fillStyle = 'rgba(255,255,255,0.95)';
-  g.fill();
-  g.lineWidth = 4;
-  g.strokeStyle = '#c0392b';
-  g.stroke();
-  g.fillStyle = '#1d1d1f';
-  g.font = `bold ${size * 0.42}px -apple-system, sans-serif`;
+  g.font = `bold ${fontPx}px -apple-system, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(text, size / 2, size / 2 + 2);
+  if (grid) {
+    g.beginPath();
+    g.arc(W / 2, H / 2, H / 2 - 4, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = '#c0392b';
+    g.stroke();
+  } else {
+    const r = H * 0.28;
+    const pad = 6;
+    g.beginPath();
+    g.roundRect(pad, pad, W - pad * 2, H - pad * 2, r);
+    g.fillStyle = style === 'dim' ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.85)';
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = 'rgba(0,0,0,0.12)';
+    g.stroke();
+  }
+  g.fillStyle = '#1d1d1f';
+  g.fillText(text, W / 2, H / 2 + 2);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }),
   );
-  sprite.scale.setScalar(0.5);
+  // 높이 0.5m 고정, 폭은 캔버스 비율 유지
+  const scaleH = grid ? 0.5 : 0.4;
+  sprite.scale.set((scaleH * W) / H, scaleH, 1);
   sprite.renderOrder = 5;
+  return sprite;
+}
+
+/** 코멘트 핀 스프라이트 — 열림=파랑/💬·답글수, 해결=회색/✓ */
+function makeCommentPin(resolved: boolean, replyCount: number): THREE.Sprite {
+  const S = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = S;
+  const g = canvas.getContext('2d')!;
+  g.beginPath();
+  g.arc(S / 2, S / 2, S / 2 - 5, 0, Math.PI * 2);
+  g.fillStyle = resolved ? 'rgba(140,140,140,0.95)' : 'rgba(10,132,255,0.95)';
+  g.fill();
+  g.lineWidth = 4;
+  g.strokeStyle = '#ffffff';
+  g.stroke();
+  g.fillStyle = '#ffffff';
+  g.font = `bold ${S * 0.4}px -apple-system, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(resolved ? '✓' : replyCount > 0 ? String(replyCount + 1) : '💬', S / 2, S / 2 + 1);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }),
+  );
+  sprite.scale.setScalar(0.6);
+  sprite.renderOrder = 6;
   return sprite;
 }
 
@@ -70,13 +129,58 @@ export class SceneManager {
     private engine: Engine,
   ) {
     store.observe((change) => {
+      // 빈 change = 코멘트 등 요소-아닌 변경(notifyAll) → 핀만 재동기, 전체 요소 재파생 스킵
+      // (emit은 비어있는 요소 change를 통지하지 않으므로 여기 빈 change는 코멘트뿐)
+      if (!change.added.length && !change.updated.length && !change.removed.length) {
+        this.syncComments(store);
+        engine.requestRender();
+        return;
+      }
       for (const id of change.removed) this.remove(id);
       // 조인 때문에 전체 벽 재요청 (캐시가 무변경을 걸러낸다).
       // 의존 인덱스를 변경당 1회 구축 — 없으면 요소마다 전체 스캔 = 변경당 O(n²)
       const index = buildDeriveIndex(store);
       for (const el of store.listElements()) this.upsert(el.id, index);
+      this.syncComments(store); // 요소 이동 시 앵커된 코멘트 핀도 재배치
       engine.requestRender();
     });
+  }
+
+  /** 코멘트 핀 동기화 — 루트 코멘트마다 앵커 해석 위치에 스프라이트(요소 파이프라인 밖). */
+  private commentPins = new Map<Id, THREE.Sprite>();
+  private syncComments(store: DocStore): void {
+    const comments = store.listComments();
+    const replyCount = new Map<Id, number>();
+    for (const c of comments) if (c.parentId) replyCount.set(c.parentId, (replyCount.get(c.parentId) ?? 0) + 1);
+    const seen = new Set<Id>();
+    for (const c of comments) {
+      if (c.parentId) continue; // 루트만 핀
+      seen.add(c.id);
+      const pt = resolveCommentPoint(store, c);
+      const elev = (store.getLevel(c.levelId)?.elevation ?? 0) / 1000 + 0.05;
+      const n = replyCount.get(c.id) ?? 0;
+      const key = `${c.resolved ? 'r' : 'o'}:${n}`;
+      let sprite = this.commentPins.get(c.id);
+      if (!sprite || sprite.userData['key'] !== key) {
+        if (sprite) {
+          this.engine.scene.remove(sprite);
+          sprite.material.map?.dispose();
+          sprite.material.dispose();
+        }
+        sprite = makeCommentPin(!!c.resolved, n);
+        sprite.userData['key'] = key;
+        this.engine.scene.add(sprite);
+        this.commentPins.set(c.id, sprite);
+      }
+      sprite.position.set(pt[0] / 1000, elev, pt[1] / 1000);
+    }
+    for (const [id, sprite] of this.commentPins) {
+      if (seen.has(id)) continue;
+      this.engine.scene.remove(sprite);
+      sprite.material.map?.dispose();
+      sprite.material.dispose();
+      this.commentPins.delete(id);
+    }
   }
 
   get pickables(): THREE.Object3D[] {
@@ -126,7 +230,9 @@ export class SceneManager {
   }
 
   private applyGhosting(entry: SceneEntry): void {
-    if (entry.kind === 'grid') return; // 그리드는 전 층 공통 — 고스팅 제외
+    // 그리드·주석(text/dimension)은 픽 프록시 메시가 거의 투명(생성 시 설정) — 고스팅 제외.
+    // 그리드는 전 층 공통, 주석은 메시가 픽 전용이라 불투명 처리하면 안 됨.
+    if (entry.kind === 'grid' || entry.kind === 'text' || entry.kind === 'dimension') return;
     const ghosted =
       this.viewMode === 'plan' &&
       this.activeLevelId !== null &&
@@ -168,8 +274,9 @@ export class SceneManager {
     let entry = this.entries.get(id);
     if (!entry) {
       const mat = new THREE.MeshLambertMaterial({ color });
-      if (el.kind === 'grid') {
-        // 그리드 리본 = 픽킹 전용 (거의 안 보이게)
+      if (el.kind === 'grid' || el.kind === 'text' || el.kind === 'dimension') {
+        // 픽킹 전용 프록시 메시 (거의 안 보이게) — 그리드 리본·텍스트 박스·치수선 리본.
+        // 보이는 것은 라벨 스프라이트(text/dim)와 에지(dimension 치수선)뿐.
         mat.transparent = true;
         mat.opacity = 0.04;
         mat.depthWrite = false;
@@ -187,7 +294,7 @@ export class SceneManager {
         baseColor: color,
         kind,
         levelId,
-        labelText: null,
+        labelKey: '',
         sprites: [],
         lastGeo: null,
       };
@@ -208,30 +315,33 @@ export class SceneManager {
       setBufferGeometry(entry.mesh.geometry, geo.positions, geo.normals);
       setLineGeometry(entry.edges.geometry, geo.edges);
       entry.lastGeo = geo;
-      this.updateGridBubbles(entry, el, geo);
-    } else if (el.kind === 'grid' && entry.labelText !== el.label) {
-      this.updateGridBubbles(entry, el, geo);
+      this.updateLabels(entry, geo);
     }
 
     this.applyHighlight(id);
   }
 
-  /** 그리드 양끝 버블 스프라이트 (라벨 변경/이동 시 재생성·재배치) */
-  private updateGridBubbles(entry: SceneEntry, el: { kind: string }, geo: DerivedGeometry): void {
-    if (el.kind !== 'grid') return;
-    const grid = el as { kind: 'grid'; label: string };
-    if (entry.labelText !== grid.label) {
+  /**
+   * 라벨 채널 스프라이트 (그리드 버블·텍스트·치수). 텍스트/스타일 변경 시만
+   * 스프라이트(캔버스 텍스처) 재생성, 위치는 매 geo 갱신마다 재배치 (GC 누수 방지).
+   */
+  private updateLabels(entry: SceneEntry, geo: DerivedGeometry): void {
+    const labels = geo.labels ?? [];
+    const key = labels.map((l) => `${l.style ?? 'grid'}:${l.text}`).join('|');
+    if (key !== entry.labelKey) {
       for (const s of entry.sprites) {
         this.engine.scene.remove(s);
         s.material.map?.dispose();
         s.material.dispose();
       }
-      entry.sprites = [makeLabelSprite(grid.label), makeLabelSprite(grid.label)];
-      for (const s of entry.sprites) this.engine.scene.add(s);
-      entry.labelText = grid.label;
+      entry.sprites = labels.map((l) => {
+        const s = makeLabelSprite(l.text, l.style ?? 'grid');
+        this.engine.scene.add(s);
+        return s;
+      });
+      entry.labelKey = key;
     }
-    entry.sprites[0]?.position.set(...geo.anchors.a);
-    entry.sprites[1]?.position.set(...geo.anchors.b);
+    labels.forEach((l, i) => entry.sprites[i]?.position.set(...l.pos));
   }
 
   private remove(id: Id): void {

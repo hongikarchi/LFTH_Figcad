@@ -56,6 +56,12 @@ export class CameraRig {
     return this.mode;
   }
 
+  /** 방위를 북향으로 스냅 (theta=π → 화면 위=문서 +y 북) — AI 스케치는 북향 평면에서. */
+  setNorthUp(): void {
+    this.theta = Math.PI;
+    this.apply();
+  }
+
   setMode(mode: ViewMode): void {
     if (mode === this.mode) return;
     this.mode = mode;

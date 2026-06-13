@@ -7,7 +7,12 @@ import type {
   DocSnapshot,
   OpeningElement,
   OpeningType,
+  RailingElement,
+  RailingType,
+  RoofElement,
   SlabElement,
+  StairElement,
+  StairType,
   WallElement,
   WallType,
 } from '@figcad/core';
@@ -93,6 +98,12 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
   );
   const beamTypes = new Map(
     snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
+  );
+  const stairTypes = new Map(
+    snap.types.filter((t) => t.kind === 'stair').map((t) => [t.id, t as StairType]),
+  );
+  const railingTypes = new Map(
+    snap.types.filter((t) => t.kind === 'railing').map((t) => [t.id, t as RailingType]),
   );
 
   // 타입별 MaterialLayerSetUsage (벽 두께 — Revit/ArchiCAD가 레이어드 벽으로 인식) — 두께별 dedup
@@ -316,6 +327,125 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
         new I.IfcBeam(guid(`beam-${beam.id}`), null, label(`보 ${beam.id}`), null, null, objPlace as never, shape as never, null, null),
       );
       contained.push(beamEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
+    }
+
+    // 계단 — 직선 1주행, 스텝별 수직 압출 박스(솔리드 집합) → IfcStair.
+    // v1: IfcStairFlight 분해·단높이 속성은 생략 (지오메트리 충실 + 엔티티 타입이 v1 기준).
+    const levelStairs = snap.elements.filter(
+      (e): e is StairElement => e.kind === 'stair' && e.levelId === level.id,
+    );
+    for (const stair of levelStairs) {
+      const stype = stairTypes.get(stair.typeId);
+      const dx = stair.b[0] - stair.a[0];
+      const dy = stair.b[1] - stair.a[1];
+      const run = Math.hypot(dx, dy);
+      if (run === 0) continue;
+      const ux = dx / run;
+      const uy = dy / run;
+      const totalRise = level.height;
+      const nSteps = Math.max(1, Math.round(totalRise / Math.max(stype?.riser ?? 175, 1)));
+      const tread = run / nSteps;
+      const riser = totalRise / nSteps;
+      const width = stype?.width ?? 1000;
+      const baseOffset = stair.baseOffset ?? 0;
+      const objPlace = local(storeyPlace, place3(pt3(0, 0, baseOffset)));
+      const solids: WebIFC.Handle<WebIFC.IfcLineObject>[] = [];
+      for (let i = 0; i < nSteps; i++) {
+        const cx = stair.a[0] + ux * (i + 0.5) * tread;
+        const cy = stair.a[1] + uy * (i + 0.5) * tread;
+        const solidPos = w(
+          new I.IfcAxis2Placement3D(pt3(cx, cy, 0) as never, dir3(0, 0, 1) as never, dir3(ux, uy, 0) as never),
+        );
+        const profile = w(
+          new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never, tread as never, width as never),
+        );
+        solids.push(
+          w(new I.IfcExtrudedAreaSolid(profile as never, solidPos as never, dir3(0, 0, 1) as never, ((i + 1) * riser) as never)) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>,
+        );
+      }
+      const rep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), solids as never));
+      const shape = w(new I.IfcProductDefinitionShape(null, null, [rep as never]));
+      const stairEntity = w(
+        new I.IfcStair(guid(`stair-${stair.id}`), null, label(`계단 ${stair.id}`), null, null, objPlace as never, shape as never, null, null),
+      );
+      contained.push(stairEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
+    }
+
+    // 난간 — 포스트(수직 박스) 균등 + 상부레일(축 박스) → IfcRailing
+    const levelRailings = snap.elements.filter(
+      (e): e is RailingElement => e.kind === 'railing' && e.levelId === level.id,
+    );
+    const RPOST = 50;
+    const RRAIL_W = 60;
+    const RRAIL_H = 50;
+    for (const railing of levelRailings) {
+      const rtype = railingTypes.get(railing.typeId);
+      const dx = railing.b[0] - railing.a[0];
+      const dy = railing.b[1] - railing.a[1];
+      const len = Math.hypot(dx, dy);
+      if (len === 0) continue;
+      const ux = dx / len;
+      const uy = dy / len;
+      const height = rtype?.height ?? 1100;
+      const spacingTarget = rtype?.postSpacing ?? 1200;
+      const baseOffset = railing.baseOffset ?? 0;
+      const objPlace = local(storeyPlace, place3(pt3(0, 0, baseOffset)));
+      const solids: WebIFC.Handle<WebIFC.IfcLineObject>[] = [];
+      // 포스트
+      const nGaps = Math.max(1, Math.round(len / Math.max(spacingTarget, 1)));
+      const spacing = len / nGaps;
+      for (let i = 0; i <= nGaps; i++) {
+        const px = railing.a[0] + ux * spacing * i;
+        const py = railing.a[1] + uy * spacing * i;
+        const solidPos = w(new I.IfcAxis2Placement3D(pt3(px, py, 0) as never, dir3(0, 0, 1) as never, null as never));
+        const profile = w(
+          new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never, RPOST as never, RPOST as never),
+        );
+        solids.push(
+          w(new I.IfcExtrudedAreaSolid(profile as never, solidPos as never, dir3(0, 0, 1) as never, height as never)) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>,
+        );
+      }
+      // 상부레일 (보 규약: 로컬 Z=축, 로컬 X=수직)
+      const railPos = w(
+        new I.IfcAxis2Placement3D(pt3(railing.a[0], railing.a[1], height - RRAIL_H / 2) as never, dir3(ux, uy, 0) as never, dir3(0, 0, 1) as never),
+      );
+      const railProfile = w(
+        new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never, RRAIL_H as never, RRAIL_W as never),
+      );
+      solids.push(
+        w(new I.IfcExtrudedAreaSolid(railProfile as never, railPos as never, dir3(0, 0, 1) as never, len as never)) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>,
+      );
+      const rep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), solids as never));
+      const shape = w(new I.IfcProductDefinitionShape(null, null, [rep as never]));
+      const railEntity = w(
+        new I.IfcRailing(guid(`railing-${railing.id}`), null, label(`난간 ${railing.id}`), null, null, objPlace as never, shape as never, null, null),
+      );
+      contained.push(railEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
+    }
+
+    // 지붕 — 경계 폴리곤을 벽 위에 평지붕 슬라브로 (IfcSlab ROOF).
+    // v1: 경사(slope)는 IFC에서 평지붕으로 근사 — 문서화된 지오메트리 레벨 손실(.3dm 두께 손실과 동급).
+    const levelRoofs = snap.elements.filter(
+      (e): e is RoofElement => e.kind === 'roof' && e.levelId === level.id,
+    );
+    for (const roof of levelRoofs) {
+      const rtype = snap.types.find((t) => t.id === roof.typeId);
+      const thickness = roof.thicknessOverride ?? (rtype && 'thickness' in rtype ? rtype.thickness : 200);
+      const ring = [...roof.boundary, roof.boundary[0]!];
+      const poly = w(new I.IfcPolyline(ring.map((p) => pt2(p[0], p[1]) as never)));
+      const profile = w(new I.IfcArbitraryClosedProfileDef(I.IfcProfileTypeEnum.AREA, null, poly as never));
+      // 바닥 = 벽 위(level.height) + baseOffset, 위로 두께 압출
+      const baseZ = level.height + (roof.baseOffset ?? 0);
+      const solid = w(
+        new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, 1) as never, thickness as never),
+      );
+      const rep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
+      const shape = w(new I.IfcProductDefinitionShape(null, null, [rep as never]));
+      const objPlace = local(storeyPlace, place3(pt3(0, 0, baseZ)));
+      const roofEntity = w(
+        new I.IfcSlab(guid(`roof-${roof.id}`), null, label(`지붕 ${roof.id}`), null, null, objPlace as never, shape as never, null, I.IfcSlabTypeEnum.ROOF as never),
+      );
+      contained.push(roofEntity as unknown as WebIFC.Handle<WebIFC.IfcLineObject>);
     }
 
     if (contained.length) {

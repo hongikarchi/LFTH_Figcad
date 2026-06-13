@@ -26,17 +26,29 @@ function agentUrl(): string {
   return `${base}/api/agent${key ? `?key=${encodeURIComponent(key)}` : ''}`;
 }
 
+/** 손그림 스케치 첨부 — PNG base64 + 문서공간 mm 좌표 프레임 */
+export interface SketchAttachment {
+  dataB64: string;
+  mediaType: 'image/png' | 'image/jpeg';
+  frame: { x0: number; y0: number; x1: number; y1: number };
+}
+
 export async function runAgent(opts: {
   snapshot: DocSnapshot;
   transcript: TranscriptTurn[];
   onText: (delta: string) => void;
   onOp: (summary: string) => void;
+  sketch?: SketchAttachment | null;
   signal?: AbortSignal;
 }): Promise<AgentResult> {
   const res = await fetch(agentUrl(), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ snapshot: opts.snapshot, transcript: opts.transcript }),
+    body: JSON.stringify({
+      snapshot: opts.snapshot,
+      transcript: opts.transcript,
+      ...(opts.sketch ? { sketch: opts.sketch } : {}),
+    }),
     signal: opts.signal,
   });
   if (!res.ok || !res.body) {

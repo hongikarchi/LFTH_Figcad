@@ -7,6 +7,7 @@ import {
   type ColumnType,
   type DocSnapshot,
   type Id,
+  type StairType,
   type WallType,
 } from '@figcad/core';
 
@@ -26,10 +27,11 @@ const ACI_GRAY = 8; // ACI에 GRAY 상수 없음 — 8 = dark gray
  *
  * DXF는 2D 지오메트리만 (높이/레벨/두께 없음) — 지오메트리 레벨 교환.
  * export: 평면 투영. 벽 중심선(Wall Axis)+풋프린트(Walls), 슬라브 경계(Slab),
- *         그리드(Grid)+라벨, 기둥 단면(Column), 보 중심축(Beam). 좌표 mm.
+ *         그리드(Grid)+라벨, 기둥 단면(Column), 보 중심축(Beam), 계단 풋프린트(Stair),
+ *         난간 축(Railing), 지붕 경계(Roof). 좌표 mm.
  *         모든 레벨이 한 평면에 겹쳐 그려진다(2D 한계).
  * import: Wall Axis 라인 → 벽(기본 두께, 단일 레벨), 닫힌 폴리라인 → 슬라브.
- *         Column/Beam 레이어는 v1에서 되읽지 않음(스킵+카운트 — IFC 경유). 조용한 누락 없음.
+ *         Column/Beam/Stair/Railing/Roof 레이어는 v1에서 되읽지 않음(스킵+카운트 — IFC 경유). 조용한 누락 없음.
  *         외부 DXF는 best-effort(LINE/열린→벽, 닫힌 폴리라인→슬라브). 호/원/문자 등 스킵.
  */
 
@@ -45,6 +47,9 @@ export function exportDxf(snap: DocSnapshot): string {
   d.addLayer('Grid', Drawing.ACI.RED, 'CONTINUOUS');
   d.addLayer('Column', Drawing.ACI.GREEN, 'CONTINUOUS');
   d.addLayer('Beam', Drawing.ACI.YELLOW, 'CONTINUOUS');
+  d.addLayer('Stair', Drawing.ACI.MAGENTA, 'CONTINUOUS');
+  d.addLayer('Railing', Drawing.ACI.CYAN, 'CONTINUOUS');
+  d.addLayer('Roof', ACI_GRAY, 'CONTINUOUS');
 
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
@@ -54,6 +59,9 @@ export function exportDxf(snap: DocSnapshot): string {
   );
   const beamTypes = new Map(
     snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
+  );
+  const stairTypes = new Map(
+    snap.types.filter((t) => t.kind === 'stair').map((t) => [t.id, t as StairType]),
   );
 
   for (const el of snap.elements) {
@@ -97,6 +105,34 @@ export function exportDxf(snap: DocSnapshot): string {
     } else if (el.kind === 'beam') {
       d.setActiveLayer('Beam');
       d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+    } else if (el.kind === 'stair') {
+      // 풋프린트 사각형 (주행 × 폭) + 주행 중심선
+      d.setActiveLayer('Stair');
+      const w = (stairTypes.get(el.typeId)?.width ?? 1000) / 2;
+      const dx = el.b[0] - el.a[0];
+      const dy = el.b[1] - el.a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (-dy / len) * w;
+      const ny = (dx / len) * w;
+      d.drawPolyline(
+        [
+          [el.a[0] + nx, el.a[1] + ny],
+          [el.b[0] + nx, el.b[1] + ny],
+          [el.b[0] - nx, el.b[1] - ny],
+          [el.a[0] - nx, el.a[1] - ny],
+        ],
+        true,
+      );
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+    } else if (el.kind === 'railing') {
+      d.setActiveLayer('Railing');
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+    } else if (el.kind === 'roof') {
+      d.setActiveLayer('Roof');
+      d.drawPolyline(
+        el.boundary.map((p) => [p[0], p[1]] as [number, number]),
+        true,
+      );
     }
   }
 
@@ -144,7 +180,13 @@ export function importDxf(text: string): DxfImportResult {
       continue;
     }
     if (e.layer === 'Walls') continue; // 시각용 풋프린트 — Axis에서 import
-    if (e.layer === 'Column' || e.layer === 'Beam') {
+    if (
+      e.layer === 'Column' ||
+      e.layer === 'Beam' ||
+      e.layer === 'Stair' ||
+      e.layer === 'Railing' ||
+      e.layer === 'Roof'
+    ) {
       bump('구조요소(v1 가져오기 미지원 — IFC 경유)');
       continue;
     }

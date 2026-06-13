@@ -177,6 +177,12 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
   // --- 슬라브 ---
   for (const sid of ids(WebIFC.IFCSLAB)) {
     const sl = line(sid);
+    // 지붕(PredefinedType=ROOF)은 IfcSlab로 export되지만 v1 import 미지원 — 스킵+카운트.
+    // (안 그러면 roof→slab으로 kind가 바뀌고 표고도 추락. .3dm/DXF importer의 Roof skip과 대칭)
+    if (sval(sl['PredefinedType']) === 'ROOF') {
+      bump('지붕(v1 가져오기 미지원 — IFC 경유)');
+      continue;
+    }
     const solid = bodySolid(sl);
     const profile = solid?.['SweptArea'] as AnyLine | undefined;
     const curve = profile?.['OuterCurve'] as AnyLine | undefined;

@@ -13,7 +13,17 @@ import {
   parseRhino,
 } from '../interop/ifcClient';
 
-/** 타입 인라인 에디터 — kind별 필드 (이름/두께/색/개구부 치수) */
+/** 타입 라벨 메타 (목록 우측 요약) — kind별 핵심 치수 */
+function typeMeta(t: ElemType): string {
+  if (t.kind === 'stair') return `${t.width}w·${t.riser}r`;
+  if (t.kind === 'railing') return `h${t.height}`;
+  if ('thickness' in t) return `${t.thickness}`;
+  if ('section' in t)
+    return t.section.shape === 'circle' ? `Ø${t.section.diameter}` : `${t.section.width}×${t.section.depth}`;
+  return `${t.opening.width}×${t.opening.height}`;
+}
+
+/** 타입 인라인 에디터 — kind별 필드 (이름/두께/색/단면/계단·난간 치수) */
 function TypeEditor({ store, type }: { store: DocStore; type: ElemType }) {
   const inUse = store.listElements().some((e) => 'typeId' in e && e.typeId === type.id);
   return (
@@ -37,6 +47,18 @@ function TypeEditor({ store, type }: { store: DocStore; type: ElemType }) {
       )}
       {'section' in type && type.section.shape === 'circle' && (
         <NumField label="지름(mm)" value={type.section.diameter} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'circle', diameter: v } })} />
+      )}
+      {type.kind === 'stair' && (
+        <>
+          <NumField label="폭(mm)" value={type.width} min={400} onCommit={(v) => store.updateType(type.id, { width: v })} />
+          <NumField label="단높이(mm)" value={type.riser} min={50} onCommit={(v) => store.updateType(type.id, { riser: v })} />
+        </>
+      )}
+      {type.kind === 'railing' && (
+        <>
+          <NumField label="높이(mm)" value={type.height} min={300} onCommit={(v) => store.updateType(type.id, { height: v })} />
+          <NumField label="포스트 간격(mm)" value={type.postSpacing} min={100} onCommit={(v) => store.updateType(type.id, { postSpacing: v })} />
+        </>
       )}
       <span className="infobox-field">
         <label>색</label>
@@ -75,7 +97,7 @@ export function Navigator({ store }: { store: DocStore }) {
   const levels = store.listLevels();
   const types = store.listTypes();
 
-  const KIND_ORDER = { wall: 0, opening: 1, slab: 2, column: 3, beam: 4 } as const;
+  const KIND_ORDER = { wall: 0, opening: 1, slab: 2, column: 3, beam: 4, stair: 5, railing: 6, roof: 7 } as const;
   const sortedTypes = [...types].sort(
     (a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name, 'ko'),
   );
@@ -296,13 +318,7 @@ export function Navigator({ store }: { store: DocStore }) {
               {t.name}
               <span className="nav-meta">
                 <span className="type-swatch" style={{ background: t.color }} />
-                {'thickness' in t
-                  ? `${t.thickness}`
-                  : 'section' in t
-                    ? t.section.shape === 'circle'
-                      ? `Ø${t.section.diameter}`
-                      : `${t.section.width}×${t.section.depth}`
-                    : `${t.opening.width}×${t.opening.height}`}
+                {typeMeta(t)}
               </span>
             </button>
             <button className="nav-edit" title="타입 설정" onClick={() => setEditingType(editingType === t.id ? null : t.id)}>

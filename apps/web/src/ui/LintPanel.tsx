@@ -70,18 +70,27 @@ export function useLint(store: DocStore): LintFinding[] {
 
 /** 점프 앵커 (mm) — 요소 종류별 대표점 + 레벨 */
 function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId?: string } {
-  if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam') {
+  if (
+    el.kind === 'wall' ||
+    el.kind === 'grid' ||
+    el.kind === 'beam' ||
+    el.kind === 'stair' ||
+    el.kind === 'railing'
+  ) {
     return {
       x: (el.a[0] + el.b[0]) / 2,
       y: (el.a[1] + el.b[1]) / 2,
       ...(el.kind !== 'grid' ? { levelId: el.levelId } : {}),
     };
   }
-  if (el.kind === 'slab') {
+  if (el.kind === 'slab' || el.kind === 'roof') {
     const c = el.boundary.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
     return { x: c[0] / el.boundary.length, y: c[1] / el.boundary.length, levelId: el.levelId };
   }
-  if (el.kind === 'column') {
+  if (el.kind === 'dimension') {
+    return { x: (el.a[0] + el.b[0]) / 2, y: (el.a[1] + el.b[1]) / 2, levelId: el.levelId };
+  }
+  if (el.kind === 'column' || el.kind === 'text') {
     return { x: el.at[0], y: el.at[1], levelId: el.levelId };
   }
   // opening — 호스트 중심선 위 offset 지점

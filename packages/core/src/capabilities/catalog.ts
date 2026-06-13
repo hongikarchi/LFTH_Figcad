@@ -191,6 +191,188 @@ export const CAPABILITIES: Capability[] = [
       }),
     summary: (a) => `보 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
   },
+  {
+    id: 'create_stair',
+    category: 'structure',
+    titleKo: '계단',
+    icon: 'stair',
+    descriptionKo:
+      '직선 계단 생성 — a(하단)→b(상단 평면 투영) 주행을 따라 한 층(level.height)을 오름. 단수는 주행÷타입 목표 단너비로 결정, 폭은 타입. baseOffset 생략 시 레벨 바닥.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id — 이 층 높이만큼 오름' },
+        typeId: { type: 'string', description: '계단 타입 id (kind=stair)' },
+        a: ptSchema('주행 시작점(하단)'),
+        b: ptSchema('주행 끝점(상단 평면 투영) — 방향+주행 길이'),
+        baseOffset: { type: 'integer', description: '하단 바닥 높이 mm (레벨 기준, 생략 시 0)' },
+      },
+      required: ['levelId', 'typeId', 'a', 'b'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createStair({
+        levelId: asStr(a['levelId'], 'levelId'),
+        typeId: asStr(a['typeId'], 'typeId'),
+        a: asPt(a['a']),
+        b: asPt(a['b']),
+        ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
+      }),
+    summary: (a) => `계단 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
+  },
+  {
+    id: 'create_railing',
+    category: 'structure',
+    titleKo: '난간',
+    icon: 'railing',
+    descriptionKo:
+      '난간 생성 — a→b 직선을 따라 포스트 균등 반복 + 상부레일. 높이·포스트 간격은 타입. baseOffset 생략 시 레벨 바닥.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        typeId: { type: 'string', description: '난간 타입 id (kind=railing)' },
+        a: ptSchema('시작점'),
+        b: ptSchema('끝점'),
+        baseOffset: { type: 'integer', description: '바닥 높이 mm (레벨 기준, 생략 시 0)' },
+      },
+      required: ['levelId', 'typeId', 'a', 'b'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createRailing({
+        levelId: asStr(a['levelId'], 'levelId'),
+        typeId: asStr(a['typeId'], 'typeId'),
+        a: asPt(a['a']),
+        b: asPt(a['b']),
+        ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
+      }),
+    summary: (a) => `난간 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
+  },
+  {
+    id: 'create_roof',
+    category: 'structure',
+    titleKo: '지붕',
+    icon: 'roof',
+    descriptionKo:
+      '지붕 슬라브 생성 — boundary 폴리곤이 벽 위(level.elevation+height)에 놓임. slope 지정 시 단경사(dir=경사 방향 벡터, pitch=1000mm당 상승 mm), 생략 시 평지붕.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '레벨 id — 지붕은 이 층 벽 위에 놓임' },
+        typeId: { type: 'string', description: '지붕 타입 id (kind=roof)' },
+        boundary: {
+          type: 'array',
+          items: { type: 'array', items: { type: 'integer' } },
+          description: '폴리곤 꼭짓점 [[x,y],...] mm — 3개 이상, 자가교차 금지',
+        },
+        baseOffset: { type: 'integer', description: '벽 위 기준 추가 오프셋 mm (생략 시 0)' },
+        thicknessOverride: { type: 'integer', description: '두께 오버라이드 mm' },
+        slope: {
+          type: 'object',
+          description: '단경사 — 생략 시 평지붕',
+          properties: {
+            dir: { type: 'array', items: { type: 'integer' }, description: '경사 방향 벡터 [x,y]' },
+            pitch: { type: 'integer', description: '1000mm당 상승 mm (예: 200 = 1/5 경사)' },
+          },
+          required: ['dir', 'pitch'],
+          additionalProperties: false,
+        },
+      },
+      required: ['levelId', 'typeId', 'boundary'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) => {
+      const raw = a['boundary'];
+      if (!Array.isArray(raw)) throw new Error('boundary must be [[x,y],...]');
+      let slope: { dir: [number, number]; pitch: number } | undefined;
+      const s = a['slope'];
+      if (s && typeof s === 'object') {
+        const so = s as Record<string, unknown>;
+        slope = { dir: asPt(so['dir']), pitch: asNum(so['pitch'], 'slope.pitch') };
+      }
+      return store.createRoof({
+        levelId: asStr(a['levelId'], 'levelId'),
+        typeId: asStr(a['typeId'], 'typeId'),
+        boundary: raw.map(asPt),
+        ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
+        ...(optNum(a['thicknessOverride']) !== undefined
+          ? { thicknessOverride: optNum(a['thicknessOverride'])! }
+          : {}),
+        ...(slope !== undefined ? { slope } : {}),
+      });
+    },
+    summary: (a) => {
+      const n = Array.isArray(a['boundary']) ? a['boundary'].length : 0;
+      return `지붕 생성 (꼭짓점 ${n}개${a['slope'] ? ', 경사' : ', 평'})`;
+    },
+  },
+
+  // ===== annotation =====
+  {
+    id: 'create_dimension',
+    category: 'annotation',
+    titleKo: '치수',
+    icon: 'dimension',
+    descriptionKo:
+      '치수선 생성 — a→b 두 점 측정. a/b가 요소 끝점(벽·기둥 등)과 mm-정확 일치하면 자동으로 바인딩되어 그 요소가 이동하면 치수도 따라간다(추종). 정확 좌표는 get_document로 확인. offset=치수선의 수직 standoff mm(부호, 기본 500).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        a: ptSchema('측정 시작점 — 요소 끝점과 정확히 같으면 바인딩'),
+        b: ptSchema('측정 끝점'),
+        offset: { type: 'integer', description: '치수선 수직 거리 mm (부호, 생략 시 500)' },
+      },
+      required: ['levelId', 'a', 'b'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createDimension({
+        levelId: asStr(a['levelId'], 'levelId'),
+        a: asPt(a['a']),
+        b: asPt(a['b']),
+        ...(optNum(a['offset']) !== undefined ? { offset: optNum(a['offset'])! } : {}),
+      }),
+    summary: (a) => `치수 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
+  },
+  {
+    id: 'create_text',
+    category: 'annotation',
+    titleKo: '텍스트',
+    icon: 'text',
+    descriptionKo:
+      '텍스트 주석 생성 — 평면 한 점(at)에 문자열. 방 이름·메모 등. size=글자 크기 mm(생략 시 200).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        at: ptSchema('텍스트 위치'),
+        text: { type: 'string', description: '표시할 문자열' },
+        size: { type: 'integer', description: '글자 크기 mm (생략 시 200)' },
+      },
+      required: ['levelId', 'at', 'text'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createText({
+        levelId: asStr(a['levelId'], 'levelId'),
+        at: asPt(a['at']),
+        text: asStr(a['text'], 'text'),
+        ...(optNum(a['size']) !== undefined ? { size: optNum(a['size'])! } : {}),
+      }),
+    summary: (a) => `텍스트 '${a['text']}' ${fmtPt(a['at'])}`,
+  },
 
   // ===== opening =====
   {

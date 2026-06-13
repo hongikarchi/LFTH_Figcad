@@ -71,6 +71,24 @@ describe('DXF 라운드트립 (2D 지오메트리)', () => {
     expect(snapshot.elements.filter((e) => e.kind === 'slab')).toHaveLength(0);
   });
 
+  it('계단/난간/지붕 — 전용 레이어로 export, 슬라브로 오분류·드롭 안 됨', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createStair({ levelId: SEED_IDS.level, typeId: SEED_IDS.stair, a: [0, 0], b: [3000, 0] });
+    s.createRailing({ levelId: SEED_IDS.level, typeId: SEED_IDS.railing, a: [0, 0], b: [3600, 0] });
+    s.createRoof({ levelId: SEED_IDS.level, typeId: SEED_IDS.roof, boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]] });
+    const dxf = exportDxf(s.snapshot());
+    expect(dxf).toContain('Stair');
+    expect(dxf).toContain('Railing');
+    expect(dxf).toContain('Roof');
+    const { skipped, snapshot } = importDxf(dxf);
+    const structKey = Object.keys(skipped).find((k) => k.includes('구조요소'));
+    expect(structKey).toBeDefined();
+    expect(skipped[structKey!]).toBeGreaterThanOrEqual(3);
+    // 닫힌 폴리라인(계단 풋프린트·지붕 경계)이 슬라브로 새지 않음
+    expect(snapshot.elements.filter((e) => e.kind === 'slab')).toHaveLength(0);
+  });
+
   it('외부 DXF best-effort (레이어 없이 LINE→벽, 닫힌 폴리라인→슬라브)', () => {
     // Figcad 레이어 없는 최소 DXF를 손으로 — dxf-writer로 기본 레이어(0)에 그림
     // (hasFigcadLayers=false 경로): 열린 LINE은 벽, 닫힌 폴리라인은 슬라브

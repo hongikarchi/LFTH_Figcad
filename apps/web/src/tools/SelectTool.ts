@@ -112,15 +112,20 @@ export class SelectTool implements Tool {
       this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     } else if (el.kind === 'opening') {
       this.drag = { kind: 'opening', id: hit };
-    } else if (el.kind === 'slab') {
+    } else if (el.kind === 'slab' || el.kind === 'roof') {
+      // 경계 폴리곤 mover (roof는 slab과 동일 — boundary 평행이동)
       this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
     } else if (el.kind === 'grid') {
       this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
-    } else if (el.kind === 'column') {
+    } else if (el.kind === 'column' || el.kind === 'text') {
+      // 점 mover (text는 column과 동일 — at 평행이동)
       this.drag = { kind: 'column', id: hit, startDoc: info.doc, origAt: el.at };
-    } else if (el.kind === 'beam') {
+    } else if (el.kind === 'beam' || el.kind === 'stair' || el.kind === 'railing') {
+      // a/b 세그먼트 mover (stair·railing은 beam과 동일 — a/b 평행이동)
       this.drag = { kind: 'beam', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     }
+    // dimension은 드래그 분기 없음 — 선택만(이미 setSelection). 가동 파라미터=offset(InfoBox).
+    // 바인딩된 치수의 a/b 드래그는 derive가 무시하므로 의도적으로 제외(advisor).
     if (this.drag.kind !== 'none') this.ctx.collab.setEditing(hit);
   }
 

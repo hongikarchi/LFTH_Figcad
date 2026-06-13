@@ -1,4 +1,4 @@
-import type { DocStore, Id, OpeningType } from '@figcad/core';
+import { resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
 import { useUiStore, type TypeKind } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
@@ -259,6 +259,186 @@ export function InfoBox({ store }: { store: DocStore }) {
     );
   }
 
+  if (el?.kind === 'stair') {
+    const level = store.getLevel(el.levelId);
+    const type = store.getType(el.typeId);
+    const run = Math.round(Math.hypot(el.b[0] - el.a[0], el.b[1] - el.a[1]));
+    const riser = type?.kind === 'stair' ? type.riser : 0;
+    const totalRise = level?.height ?? 0;
+    const steps = Math.max(1, Math.round(totalRise / Math.max(riser, 1)));
+    const going = Math.round(run / steps); // 디딤판 깊이 = 주행/단수
+    return (
+      <div className="infobox">
+        <span className="infobox-title">계단</span>
+        <span className="infobox-field">
+          <label>주행</label>
+          <span className="ro">{run.toLocaleString('ko-KR')}</span>
+        </span>
+        <span className="infobox-field">
+          <label>단수</label>
+          <span className="ro">{steps}</span>
+        </span>
+        <span className="infobox-field">
+          <label>디딤판</label>
+          <span className="ro">{going.toLocaleString('ko-KR')}</span>
+        </span>
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'stair'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        <span className="infobox-field">
+          <label>홈 스토리</label>
+          <span className="ro">{level?.name ?? '—'}</span>
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  if (el?.kind === 'railing') {
+    const level = store.getLevel(el.levelId);
+    const type = store.getType(el.typeId);
+    const heightMm = type?.kind === 'railing' ? type.height : 0;
+    const lengthMm = Math.round(Math.hypot(el.b[0] - el.a[0], el.b[1] - el.a[1]));
+    return (
+      <div className="infobox">
+        <span className="infobox-title">난간</span>
+        <span className="infobox-field">
+          <label>길이</label>
+          <span className="ro">{lengthMm.toLocaleString('ko-KR')}</span>
+        </span>
+        <span className="infobox-field">
+          <label>높이</label>
+          <span className="ro">{heightMm.toLocaleString('ko-KR')}</span>
+        </span>
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'railing'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        <span className="infobox-field">
+          <label>홈 스토리</label>
+          <span className="ro">{level?.name ?? '—'}</span>
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  if (el?.kind === 'roof') {
+    const level = store.getLevel(el.levelId);
+    const type = store.getType(el.typeId);
+    const thickness =
+      el.thicknessOverride ?? (type && 'thickness' in type ? type.thickness : 0) ?? 0;
+    const area =
+      Math.abs(
+        el.boundary.reduce((acc, [x, y], i) => {
+          const [nx, ny] = el.boundary[(i + 1) % el.boundary.length]!;
+          return acc + x * ny - nx * y;
+        }, 0),
+      ) / 2e6;
+    // 경사 방향 = 가장 긴 경계 변 (단경사 기본값) — 0이면 평지붕
+    const longestEdge = (): [number, number] => {
+      let best: [number, number] = [1, 0];
+      let bestLen = 0;
+      for (let i = 0; i < el.boundary.length; i++) {
+        const a = el.boundary[i]!;
+        const b = el.boundary[(i + 1) % el.boundary.length]!;
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        const l = Math.hypot(dx, dy);
+        if (l > bestLen) {
+          bestLen = l;
+          best = [dx, dy];
+        }
+      }
+      return best;
+    };
+    return (
+      <div className="infobox">
+        <span className="infobox-title">지붕</span>
+        <span className="infobox-field">
+          <label>면적</label>
+          <span className="ro">{area.toFixed(2)} m²</span>
+        </span>
+        <NumField
+          label="두께"
+          value={thickness}
+          min={50}
+          onCommit={(v) => store.updateElement(el.id, { thicknessOverride: v })}
+        />
+        <NumField
+          label="경사(1m당)"
+          value={el.slope?.pitch ?? 0}
+          min={0}
+          onCommit={(v) =>
+            store.updateElement(el.id, {
+              slope: v > 0 ? { dir: longestEdge(), pitch: v } : undefined,
+            })
+          }
+        />
+        <TypeSelect
+          store={store}
+          value={el.typeId}
+          filter={(t) => t.kind === 'roof'}
+          onChange={(id) => store.updateElement(el.id, { typeId: id })}
+        />
+        <span className="infobox-field">
+          <label>홈 스토리</label>
+          <span className="ro">{level?.name ?? '—'}</span>
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  if (el?.kind === 'dimension') {
+    // 바인딩 해석 (요소 끝점 추종) — 렌더/픽/복사와 같은 공유 헬퍼
+    const ra = resolveDimAnchor(store, el.bindA, el.a);
+    const rb = resolveDimAnchor(store, el.bindB, el.b);
+    const measured = Math.round(Math.hypot(rb[0] - ra[0], rb[1] - ra[1]));
+    const bound = !!(el.bindA || el.bindB);
+    return (
+      <div className="infobox">
+        <span className="infobox-title">치수</span>
+        <span className="infobox-field">
+          <label>측정</label>
+          <span className="ro">{measured.toLocaleString('ko-KR')}</span>
+        </span>
+        <NumField
+          label="치수선 거리"
+          value={el.offset ?? 500}
+          min={-100000}
+          onCommit={(v) => store.updateElement(el.id, { offset: v })}
+        />
+        <span className="infobox-field">
+          <label>바인딩</label>
+          <span className="ro">{bound ? '요소 추종' : '자유'}</span>
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
+  if (el?.kind === 'text') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">텍스트</span>
+        <TextField
+          label="내용"
+          value={el.text}
+          maxLength={120}
+          width={160}
+          onCommit={(v) => store.updateElement(el.id, { text: v })}
+        />
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
   if (el?.kind === 'grid') {
     return (
       <div className="infobox">
@@ -283,6 +463,9 @@ export function InfoBox({ store }: { store: DocStore }) {
     slab: 'slab',
     column: 'column',
     beam: 'beam',
+    stair: 'stair',
+    railing: 'railing',
+    roof: 'roof',
   };
   const kind = toolTypeKind[activeTool];
   if (kind) {
@@ -293,16 +476,15 @@ export function InfoBox({ store }: { store: DocStore }) {
       slab: '슬라브 도구',
       column: '기둥 도구',
       beam: '보 도구',
+      stair: '계단 도구',
+      railing: '난간 도구',
+      roof: '지붕 도구',
     }[kind];
     const filter =
-      kind === 'wall'
-        ? (t: { kind: string }) => t.kind === 'wall'
-        : kind === 'slab'
-          ? (t: { kind: string }) => t.kind === 'slab'
-          : kind === 'column' || kind === 'beam'
-            ? (t: { kind: string }) => t.kind === kind
-            : (t: { kind: string; opening?: { kind: string } }) =>
-                t.kind === 'opening' && t.opening?.kind === (kind === 'door' ? 'door' : 'window');
+      kind === 'door' || kind === 'window'
+        ? (t: { kind: string; opening?: { kind: string } }) =>
+            t.kind === 'opening' && t.opening?.kind === (kind === 'door' ? 'door' : 'window')
+        : (t: { kind: string }) => t.kind === kind;
     const current = activeTypes[kind] ?? store.listTypes().find(filter)?.id ?? '';
     return (
       <div className="infobox">
@@ -332,6 +514,15 @@ export function InfoBox({ store }: { store: DocStore }) {
         {kind === 'beam' && (
           <span className="infobox-hint">두 점 클릭 — 기둥 머리를 잇거나 그리드 따라 배치</span>
         )}
+        {kind === 'stair' && (
+          <span className="infobox-hint">하단→상단 두 점 클릭 — 이 층 높이만큼 오름(단수 자동)</span>
+        )}
+        {kind === 'railing' && (
+          <span className="infobox-hint">두 점 클릭 — 슬라브 가장자리·계단을 따라 (연속 체인)</span>
+        )}
+        {kind === 'roof' && (
+          <span className="infobox-hint">꼭짓점 클릭 · 첫 점/우클릭으로 닫기 — 벽 위에 놓임</span>
+        )}
       </div>
     );
   }
@@ -341,6 +532,33 @@ export function InfoBox({ store }: { store: DocStore }) {
       <div className="infobox">
         <span className="infobox-title">그리드 도구</span>
         <span className="infobox-hint">두 점 클릭 — 세로축은 숫자, 가로축은 알파벳 자동 라벨</span>
+      </div>
+    );
+  }
+
+  if (activeTool === 'dimension') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">치수 도구</span>
+        <span className="infobox-hint">두 점 클릭 — 끝점(벽·기둥)에 스냅하면 이동 추종 바인딩</span>
+      </div>
+    );
+  }
+
+  if (activeTool === 'text') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">텍스트 도구</span>
+        <span className="infobox-hint">점 클릭 → 입력창에 문자 입력 (Enter 확정 · Esc 취소)</span>
+      </div>
+    );
+  }
+
+  if (activeTool === 'sketch') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">AI 스케치 도구</span>
+        <span className="infobox-hint">펜으로 평면을 그린 뒤 AI 패널에서 보내면 손그림대로 생성</span>
       </div>
     );
   }

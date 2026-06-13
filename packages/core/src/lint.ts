@@ -36,6 +36,7 @@ export type LintCode =
   | 'duplicate' // 동일 지오메트리+타입 중복
   | 'overlap-wall' // 근접 평행 벽 겹침
   | 'unjoined-endpoint' // 끝점이 거의 만나지만 정확히 안 붙음 (마이터 조인 불발)
+  | 'orphan-dimension' // 치수 바인딩이 삭제된 요소를 가리킴 (추종 안 됨)
   | 'extreme-dimension'; // 극단적으로 짧은 벽/낮은 벽/작은 슬라브 등
 
 export interface LintFix {
@@ -71,6 +72,11 @@ const KIND_LABEL: Record<string, string> = {
   grid: '그리드',
   column: '기둥',
   beam: '보',
+  stair: '계단',
+  railing: '난간',
+  roof: '지붕',
+  text: '텍스트',
+  dimension: '치수',
 };
 
 const dist = (p: Pt, q: Pt): number => Math.hypot(p[0] - q[0], p[1] - q[1]);
@@ -138,14 +144,30 @@ export function lint(store: DocStore): LintFinding[] {
         elementIds: [el.id],
       });
     }
-    const type = store.getType(el.typeId);
-    if (!type || type.kind !== el.kind) {
+    // 텍스트·치수는 타입 없음 — 타입 검사 건너뜀
+    const type = 'typeId' in el ? store.getType(el.typeId) : undefined;
+    if ('typeId' in el && (!type || type.kind !== el.kind)) {
       findings.push({
         code: 'missing-ref',
         severity: 'error',
         message: `${label}의 타입 참조가 깨짐 (${type ? '종류 불일치' : '존재하지 않음'}) — 표시되지 않음`,
         elementIds: [el.id],
       });
+    }
+
+    // 치수 바인딩 고아 — 참조 요소가 삭제됨 (fallback 좌표로 표시되나 추종 안 됨)
+    if (el.kind === 'dimension') {
+      for (const bind of [el.bindA, el.bindB]) {
+        if (bind && !store.getElement(bind.id)) {
+          findings.push({
+            code: 'orphan-dimension',
+            severity: 'warning',
+            message: '치수 바인딩이 삭제된 요소를 가리킴 — 고정 좌표로 표시 (이동 추종 안 됨)',
+            elementIds: [el.id],
+          });
+          break;
+        }
+      }
     }
 
     if (el.kind === 'opening') {
@@ -207,6 +229,16 @@ export function lint(store: DocStore): LintFinding[] {
       key = `c|${el.levelId}|${el.typeId}|${el.at[0]},${el.at[1]}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
     } else if (el.kind === 'beam') {
       key = `b|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.zOffset ?? ''}`;
+    } else if (el.kind === 'stair') {
+      key = `st|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.baseOffset ?? ''}`;
+    } else if (el.kind === 'railing') {
+      key = `rl|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.baseOffset ?? ''}`;
+    } else if (el.kind === 'roof') {
+      key = `rf|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${el.baseOffset ?? ''}|${el.slope ? `${el.slope.dir[0]},${el.slope.dir[1]},${el.slope.pitch}` : ''}|${boundaryKey(el.boundary)}`;
+    } else if (el.kind === 'text') {
+      key = `txt|${el.levelId}|${el.at[0]},${el.at[1]}|${el.text}`;
+    } else if (el.kind === 'dimension') {
+      key = `dim|${el.levelId}|${segKey(el.a, el.b)}|${el.offset ?? ''}`;
     } else {
       key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
     }

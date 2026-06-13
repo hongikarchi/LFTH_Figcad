@@ -1,6 +1,29 @@
 import type { DocStore } from './store';
 import { resolveOpening } from './schema';
-import type { Element, OpeningType, Pt, WallElement } from './schema';
+import type { Comment, DimBind, Element, OpeningType, Pt, WallElement } from './schema';
+
+/**
+ * 치수 바인딩 해석 — 참조 요소의 끝점(params, 파생 아님)을 읽는다.
+ * 세그먼트형(wall/beam/grid/stair/railing/dimension)=a/b, 기둥=at, 고아(삭제됨)=fallback.
+ * derive·footprint·copy가 모두 이 단일 헬퍼를 거쳐 렌더/픽/복사 좌표가 일치한다.
+ */
+export function resolveDimAnchor(store: DocStore, bind: DimBind | undefined, fallback: Pt): Pt {
+  if (!bind) return fallback;
+  const el = store.getElement(bind.id);
+  if (!el) return fallback;
+  if ('a' in el && 'b' in el) return bind.anchor === 'a' ? el.a : el.b;
+  if (el.kind === 'column') return el.at;
+  return fallback;
+}
+
+/** 코멘트 핀 위치(mm) — 앵커 요소 추종, 삭제 시 fallback at (D2 분리 재사용) */
+export function resolveCommentPoint(store: DocStore, c: Comment): Pt {
+  return resolveDimAnchor(
+    store,
+    c.anchorId ? { id: c.anchorId, anchor: c.anchorWhich ?? 'a' } : undefined,
+    c.at,
+  );
+}
 
 /**
  * 박스 선택 판정 (M8) — Rhino window/crossing 의미론.
@@ -109,10 +132,23 @@ export type Footprint =
 
 /** 문서 좌표(mm) 기준 풋프린트. 앱이 화면 판정 시엔 각 점을 투영해 사용 */
 export function elementFootprint(el: Element, store: DocStore): Footprint {
-  if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam')
+  if (
+    el.kind === 'wall' ||
+    el.kind === 'grid' ||
+    el.kind === 'beam' ||
+    el.kind === 'stair' ||
+    el.kind === 'railing'
+  )
     return { kind: 'segment', a: el.a, b: el.b };
-  if (el.kind === 'slab') return { kind: 'polygon', pts: el.boundary };
-  if (el.kind === 'column') return { kind: 'point', p: el.at };
+  if (el.kind === 'slab' || el.kind === 'roof') return { kind: 'polygon', pts: el.boundary };
+  if (el.kind === 'dimension')
+    // 바인딩 해석 — 렌더/클릭픽과 같은 좌표(이동된 바인딩 치수도 박스선택 일치)
+    return {
+      kind: 'segment',
+      a: resolveDimAnchor(store, el.bindA, el.a),
+      b: resolveDimAnchor(store, el.bindB, el.b),
+    };
+  if (el.kind === 'column' || el.kind === 'text') return { kind: 'point', p: el.at };
   if (el.kind === 'opening') {
     const host = store.getElement(el.hostId);
     if (host?.kind !== 'wall') return null;

@@ -16,6 +16,13 @@ import { SlabTool } from './tools/SlabTool';
 import { GridTool } from './tools/GridTool';
 import { ColumnTool } from './tools/ColumnTool';
 import { BeamTool } from './tools/BeamTool';
+import { StairTool } from './tools/StairTool';
+import { RailingTool } from './tools/RailingTool';
+import { RoofTool } from './tools/RoofTool';
+import { DimensionTool } from './tools/DimensionTool';
+import { TextTool } from './tools/TextTool';
+import { SketchTool } from './tools/SketchTool';
+import { CommentTool } from './tools/CommentTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
@@ -34,6 +41,9 @@ const seed = seedDocument(store); // 고정 id 시드 — 동시 시드해도 �
   ui.setActiveType('slab', seed.slabTypeId);
   ui.setActiveType('column', seed.columnTypeId);
   ui.setActiveType('beam', seed.beamTypeId);
+  ui.setActiveType('stair', seed.stairTypeId);
+  ui.setActiveType('railing', seed.railingTypeId);
+  ui.setActiveType('roof', seed.roofTypeId);
   ui.setActiveLevel(seed.levelId);
 }
 
@@ -45,8 +55,18 @@ store.observe(() => {
     const first = store.listLevels()[0];
     if (first) ui.setActiveLevel(first.id);
   }
-  const typeKindOf = { wall: 'wall', door: 'opening', window: 'opening', slab: 'slab', column: 'column', beam: 'beam' } as const;
-  for (const k of ['wall', 'door', 'window', 'slab', 'column', 'beam'] as const) {
+  const typeKindOf = {
+    wall: 'wall',
+    door: 'opening',
+    window: 'opening',
+    slab: 'slab',
+    column: 'column',
+    beam: 'beam',
+    stair: 'stair',
+    railing: 'railing',
+    roof: 'roof',
+  } as const;
+  for (const k of ['wall', 'door', 'window', 'slab', 'column', 'beam', 'stair', 'railing', 'roof'] as const) {
     const id = ui.activeTypes[k];
     if (id && !store.getType(id)) {
       const candidates = store.listTypes(typeKindOf[k]);
@@ -81,6 +101,9 @@ const seedTypeByKind = {
   slab: seed.slabTypeId,
   column: seed.columnTypeId,
   beam: seed.beamTypeId,
+  stair: seed.stairTypeId,
+  railing: seed.railingTypeId,
+  roof: seed.roofTypeId,
 } as const;
 const ctx: EditorContext = {
   store,
@@ -102,6 +125,13 @@ tools.register('slab', new SlabTool(ctx));
 tools.register('grid', new GridTool(ctx));
 tools.register('column', new ColumnTool(ctx));
 tools.register('beam', new BeamTool(ctx));
+tools.register('stair', new StairTool(ctx));
+tools.register('railing', new RailingTool(ctx));
+tools.register('roof', new RoofTool(ctx));
+tools.register('dimension', new DimensionTool(ctx));
+tools.register('text', new TextTool(ctx));
+tools.register('sketch', new SketchTool(ctx));
+tools.register('comment', new CommentTool(ctx));
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---
@@ -236,18 +266,21 @@ engine.requestRender();
 
 // 데브 전용: E2E·스트레스 테스트가 실제 브라우저 경로로 문서/렌더를 조작할 수 있게 노출
 if (import.meta.env.DEV) {
-  void Promise.all([import('@figcad/core'), import('./interop/ifcClient')]).then(
-    ([{ lint }, ifc]) => {
-      (window as unknown as Record<string, unknown>)['__figcad'] = {
-        store,
-        ydoc,
-        seed,
-        engine,
-        rig,
-        lint,
-        ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
-        ui: useUiStore,
-      };
-    },
-  );
+  void Promise.all([
+    import('@figcad/core'),
+    import('./interop/ifcClient'),
+    import('./ai/sketchCapture'),
+  ]).then(([{ lint }, ifc, sketch]) => {
+    (window as unknown as Record<string, unknown>)['__figcad'] = {
+      store,
+      ydoc,
+      seed,
+      engine,
+      rig,
+      lint,
+      ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
+      sketch, // { rasterizeSketch, hasSketch, clearSketch, getStrokes } — E2E용
+      ui: useUiStore,
+    };
+  });
 }

@@ -1,8 +1,32 @@
 import { create } from 'zustand';
 import type { Id } from '@figcad/core';
 
-export type ToolName = 'select' | 'wall' | 'door' | 'window' | 'slab' | 'grid' | 'column' | 'beam';
-export type TypeKind = 'wall' | 'door' | 'window' | 'slab' | 'column' | 'beam';
+export type ToolName =
+  | 'select'
+  | 'wall'
+  | 'door'
+  | 'window'
+  | 'slab'
+  | 'grid'
+  | 'column'
+  | 'beam'
+  | 'stair'
+  | 'railing'
+  | 'roof'
+  | 'dimension'
+  | 'text'
+  | 'sketch'
+  | 'comment';
+export type TypeKind =
+  | 'wall'
+  | 'door'
+  | 'window'
+  | 'slab'
+  | 'column'
+  | 'beam'
+  | 'stair'
+  | 'railing'
+  | 'roof';
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
@@ -31,6 +55,8 @@ interface UiState {
   lintOpen: boolean;
   /** 버전 타임라인 패널 표시 (M6) — 검사 패널과 같은 슬롯(상호 배타) */
   versionOpen: boolean;
+  /** 협업 코멘트 패널 표시 (M9-B) */
+  commentsOpen: boolean;
   setTool: (t: ToolName) => void;
   setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
@@ -39,6 +65,7 @@ interface UiState {
   setAiOpen: (open: boolean) => void;
   setLintOpen: (open: boolean) => void;
   setVersionOpen: (open: boolean) => void;
+  setCommentsOpen: (open: boolean) => void;
   setViewMode: (m: ViewModeUi) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
@@ -50,7 +77,17 @@ export const useUiStore = create<UiState>((set) => ({
   activeTool: 'wall',
   selection: [],
   viewMode: '3d',
-  activeTypes: { wall: null, door: null, window: null, slab: null, column: null, beam: null },
+  activeTypes: {
+    wall: null,
+    door: null,
+    window: null,
+    slab: null,
+    column: null,
+    beam: null,
+    stair: null,
+    railing: null,
+    roof: null,
+  },
   activeLevelId: null,
   connection: 'connecting',
   peerCount: 0,
@@ -60,7 +97,17 @@ export const useUiStore = create<UiState>((set) => ({
   aiOpen: false,
   lintOpen: false,
   versionOpen: false,
-  setTool: (activeTool) => set({ activeTool, selection: [], editAction: null }),
+  commentsOpen: false,
+  setTool: (activeTool) =>
+    set(
+      activeTool === 'sketch'
+        ? // 스케치 = AI 입력 → AI 패널 + 북향 평면(SketchTool.activate가 theta 스냅)
+          { activeTool, selection: [], editAction: null, aiOpen: true, viewMode: 'plan' }
+        : activeTool === 'comment'
+          ? // 코멘트 도구 = 코멘트 패널 표시
+            { activeTool, selection: [], editAction: null, commentsOpen: true }
+          : { activeTool, selection: [], editAction: null },
+    ),
   setSelection: (selection) =>
     set((s) => ({ selection, editAction: selection.length ? s.editAction : null })),
   setEditAction: (editAction) => set({ editAction }),
@@ -70,6 +117,7 @@ export const useUiStore = create<UiState>((set) => ({
   setLintOpen: (lintOpen) => set((s) => ({ lintOpen, versionOpen: lintOpen ? false : s.versionOpen })),
   setVersionOpen: (versionOpen) =>
     set((s) => ({ versionOpen, lintOpen: versionOpen ? false : s.lintOpen })),
+  setCommentsOpen: (commentsOpen) => set({ commentsOpen }),
   setViewMode: (viewMode) => set({ viewMode }),
   setActiveType: (kind, id) =>
     set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),

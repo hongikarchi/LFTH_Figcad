@@ -6,6 +6,7 @@ import {
   type ColumnType,
   type DocSnapshot,
   type Id,
+  type StairType,
   type WallType,
 } from '@figcad/core';
 
@@ -18,10 +19,11 @@ import {
  * Rhino 사용자가 보고 스냅·모델링할 수 있는 형태. 좌표는 mm(문서 단위 그대로).
  *
  * export: Wall Axis(중심선)·Walls(풋프린트 사각형)·Slab(경계)·Grid·Column(단면
- *         풋프린트)·Beam(중심축) 레이어 — 모든 1차 요소의 지오메트리를 곡선으로.
+ *         풋프린트)·Beam(중심축)·Stair(주행 풋프린트)·Railing(축)·Roof(경계) 레이어 —
+ *         모든 1차 요소의 지오메트리를 곡선으로.
  * import: Wall Axis 라인 → 벽(기본 두께), Slab 닫힌 폴리라인 → 슬라브.
- *         Column/Beam 레이어는 v1에서 되읽지 않음(스킵+카운트 — 구조요소 파라메트릭
- *         복원은 IFC 경유). 조용한 누락 없음.
+ *         Column/Beam/Stair/Railing/Roof 레이어는 v1에서 되읽지 않음(스킵+카운트 —
+ *         구조요소 파라메트릭 복원은 IFC 경유). 조용한 누락 없음.
  *         외부 .3dm은 레이어가 달라도 best-effort(열린 곡선→벽, 닫힌→슬라브),
  *         메시/B-rep/서피스는 매핑 대상이 없어 스킵+카운트.
  */
@@ -71,6 +73,9 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   const gridLayer = layers.addLayer('Grid', { r: 200, g: 60, b: 60 });
   const columnLayer = layers.addLayer('Column', { r: 90, g: 90, b: 120 });
   const beamLayer = layers.addLayer('Beam', { r: 110, g: 110, b: 90 });
+  const stairLayer = layers.addLayer('Stair', { r: 150, g: 90, b: 150 });
+  const railingLayer = layers.addLayer('Railing', { r: 90, g: 150, b: 150 });
+  const roofLayer = layers.addLayer('Roof', { r: 130, g: 120, b: 90 });
   const attr = (idx: number) => {
     const a = new rhino.ObjectAttributes();
     a.layerIndex = idx;
@@ -87,6 +92,9 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   );
   const beamTypes = new Map(
     snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
+  );
+  const stairTypes = new Map(
+    snap.types.filter((t) => t.kind === 'stair').map((t) => [t.id, t as StairType]),
   );
 
   for (const el of snap.elements) {
@@ -149,6 +157,43 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
         ]),
         attr(beamLayer),
       );
+    } else if (el.kind === 'stair') {
+      // 주행 풋프린트 사각형 (폭 양옆) — 베이스 z
+      const z = (elev.get(el.levelId) ?? 0) + (el.baseOffset ?? 0);
+      const w = (stairTypes.get(el.typeId)?.width ?? 1000) / 2;
+      const dx = el.b[0] - el.a[0];
+      const dy = el.b[1] - el.a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (-dy / len) * w;
+      const ny = (dx / len) * w;
+      objects.add(
+        new rhino.PolylineCurve([
+          [el.a[0] + nx, el.a[1] + ny, z],
+          [el.b[0] + nx, el.b[1] + ny, z],
+          [el.b[0] - nx, el.b[1] - ny, z],
+          [el.a[0] - nx, el.a[1] - ny, z],
+          [el.a[0] + nx, el.a[1] + ny, z],
+        ]),
+        attr(stairLayer),
+      );
+    } else if (el.kind === 'railing') {
+      // 상부레일 축 (height z)
+      const rt = snap.types.find((t) => t.id === el.typeId);
+      const h = rt && rt.kind === 'railing' ? rt.height : 1100;
+      const z = (elev.get(el.levelId) ?? 0) + (el.baseOffset ?? 0) + h;
+      objects.add(
+        new rhino.PolylineCurve([
+          [el.a[0], el.a[1], z],
+          [el.b[0], el.b[1], z],
+        ]),
+        attr(railingLayer),
+      );
+    } else if (el.kind === 'roof') {
+      // 경계 폴리라인 — 벽 위(level.height) z (평지붕 근사, 경사는 .3dm 미보존)
+      const z = (elev.get(el.levelId) ?? 0) + (levelH.get(el.levelId) ?? 3000) + (el.baseOffset ?? 0);
+      const pts = el.boundary.map((p) => [p[0], p[1], z] as number[]);
+      pts.push(pts[0]!);
+      objects.add(new rhino.PolylineCurve(pts), attr(roofLayer));
     }
   }
 
@@ -238,7 +283,13 @@ export async function importRhino(bytes: Uint8Array, opts?: RhinoOpts): Promise<
     const isSlab = hasFigcadLayers ? c.layer === 'Slab' : c.closed;
     const isGrid = c.layer === 'Grid';
     if (c.layer === 'Walls') continue; // 시각용 풋프린트 — import는 Axis에서
-    if (c.layer === 'Column' || c.layer === 'Beam') {
+    if (
+      c.layer === 'Column' ||
+      c.layer === 'Beam' ||
+      c.layer === 'Stair' ||
+      c.layer === 'Railing' ||
+      c.layer === 'Roof'
+    ) {
       bump('구조요소(v1 가져오기 미지원 — IFC 경유)');
       continue;
     }

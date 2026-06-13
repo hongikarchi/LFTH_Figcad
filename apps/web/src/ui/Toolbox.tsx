@@ -27,9 +27,9 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
       { label: '그리드', icon: 'grid', tool: 'grid' },
       { label: '기둥', icon: 'column', tool: 'column' },
       { label: '보', icon: 'beam', tool: 'beam' },
-      { label: '지붕', icon: 'roof', planned: '추후' },
-      { label: '계단', icon: 'stair', planned: '추후' },
-      { label: '난간', icon: 'railing', planned: '추후' },
+      { label: '계단', icon: 'stair', tool: 'stair' },
+      { label: '난간', icon: 'railing', tool: 'railing' },
+      { label: '지붕', icon: 'roof', tool: 'roof' },
       { label: '커튼월', icon: 'window', planned: '추후' },
       { label: '존', icon: 'box', planned: '추후' },
       { label: '오브젝트', icon: 'box', planned: '추후' },
@@ -38,10 +38,17 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
   {
     title: '문서',
     items: [
-      { label: '치수', icon: 'dimension', planned: '2D 도면 단계' },
-      { label: '텍스트', icon: 'text', planned: '2D 도면 단계' },
+      { label: '치수', icon: 'dimension', tool: 'dimension' },
+      { label: '텍스트', icon: 'text', tool: 'text' },
       { label: '레이블', icon: 'pencil', planned: '2D 도면 단계' },
       { label: '해치', icon: 'hatch', planned: '2D 도면 단계' },
+    ],
+  },
+  {
+    title: 'AI · 협업',
+    items: [
+      { label: '스케치', icon: 'ai', tool: 'sketch' },
+      { label: '코멘트', icon: 'comment', tool: 'comment' },
     ],
   },
 ];

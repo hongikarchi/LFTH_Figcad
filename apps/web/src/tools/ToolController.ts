@@ -17,6 +17,8 @@ export interface Tool {
   cancel(): void;
   /** Rhino RMB 클릭(드래그 없음) = Enter 의미론 — 체인 종료/확정 */
   enter?(): void;
+  /** 이 도구로 전환됐을 때 (활성화) — 카메라 정렬 등 */
+  activate?(): void;
 }
 
 /** 활성 도구 라우터. InputManager가 펜/마우스좌클릭 이벤트를 여기로 보낸다. */
@@ -32,6 +34,7 @@ export class ToolController {
     if (name === this.activeName) return;
     this.tools.get(this.activeName)?.cancel();
     this.activeName = name;
+    this.tools.get(name)?.activate?.();
   }
 
   get active(): Tool | undefined {

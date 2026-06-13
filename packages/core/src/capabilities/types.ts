@@ -17,8 +17,9 @@ export type CapabilityCategory =
   | 'structure' // 벽·그리드·슬라브
   | 'opening' // 문·창
   | 'edit' // 이동/복사/배열/분할/연장/대칭/회전/수정/삭제
-  | 'level'; // 레벨(층)
-// 확장: 'annotation' | 'interop' | 'version' (별 패키지/계약이라 강제 통합 금지)
+  | 'level' // 레벨(층)
+  | 'annotation'; // 치수·텍스트
+// 확장: 'interop' | 'version' (별 패키지/계약이라 강제 통합 금지)
 
 export interface Capability {
   /** 안정 식별자 = AI 도구명·op명·UI 연결 키 (현 op 이름과 1:1, 예 'create_wall') */

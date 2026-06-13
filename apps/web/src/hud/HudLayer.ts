@@ -137,6 +137,53 @@ export class HudLayer {
     this.dragBox.style.display = 'none';
   }
 
+  /**
+   * 떠있는 텍스트 입력 (텍스트 주석용) — 캔버스에 타이핑 불가하므로 DOM input.
+   * 월드 앵커 위치에 클린 B&W 알약. Enter=확정, Esc/빈값=취소. Promise로 결과.
+   * keydown stopPropagation으로 전역 단축키(undo 등) 오발 방지.
+   */
+  promptText(world: THREE.Vector3, camera: THREE.Camera, initial = ''): Promise<string | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = initial;
+      input.style.cssText = [
+        'position:fixed',
+        'transform:translate(-50%,-50%)',
+        'padding:4px 10px',
+        'border-radius:8px',
+        'border:1px solid rgba(10,132,255,0.9)',
+        'background:rgba(255,255,255,0.98)',
+        'color:#1d1d1f',
+        'font-size:14px',
+        'font-weight:500',
+        'outline:none',
+        'box-shadow:0 2px 10px rgba(0,0,0,0.18)',
+        'z-index:40',
+        'min-width:80px',
+      ].join(';');
+      const { x, y } = worldToScreen(world, camera);
+      input.style.left = `${x}px`;
+      input.style.top = `${y}px`;
+      document.body.appendChild(input);
+      input.focus();
+      input.select();
+      let done = false;
+      const finish = (val: string | null) => {
+        if (done) return;
+        done = true;
+        input.remove();
+        resolve(val);
+      };
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(input.value.trim() || null);
+        else if (e.key === 'Escape') finish(null);
+      });
+      input.addEventListener('blur', () => finish(input.value.trim() || null));
+    });
+  }
+
   toast(text: string): void {
     this.toastEl.textContent = text;
     this.toastEl.style.display = 'block';

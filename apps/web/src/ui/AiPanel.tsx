@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { applyOpLog, opSummary, type DocStore, type OpLogEntry } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { runAgent, type TranscriptTurn } from '../ai/agentClient';
+import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
 
 /**
  * AI 모드 채팅 패널 — 우하단 도킹.
@@ -28,7 +29,10 @@ export function AiPanel({ store }: { store: DocStore }) {
   const [running, setRunning] = useState(false);
   const [liveOps, setLiveOps] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [sketchOn, setSketchOn] = useState(hasSketch());
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => onSketchChange(() => setSketchOn(hasSketch())), []);
 
   if (!aiOpen) return null;
 
@@ -39,8 +43,11 @@ export function AiPanel({ store }: { store: DocStore }) {
     });
 
   const send = async () => {
-    const text = input.trim();
-    if (!text || running) return;
+    if (running) return;
+    // 스케치가 있으면 래스터화해 첨부(소비 후 지움 — 재전송 방지·프리뷰 정리)
+    const sketch = hasSketch() ? rasterizeSketch() : null;
+    const text = input.trim() || (sketch ? '첨부한 스케치대로 평면을 만들어줘.' : '');
+    if (!text) return; // 텍스트도 스케치도 없음
     setInput('');
     setPlan(null);
     setLiveOps([]);
@@ -54,14 +61,18 @@ export function AiPanel({ store }: { store: DocStore }) {
       { role: 'user', text },
     ];
 
-    // 스트리밍 어시스턴트 메시지를 자리에 추가하고 델타로 갱신
-    setMsgs((prev) => [...prev, { role: 'user', text }, { role: 'assistant', text: '' }]);
+    // 스트리밍 어시스턴트 메시지를 자리에 추가하고 델타로 갱신.
+    // 스케치는 여기서 지우지 않는다 — 모델 역질문(opLog 빈)·오류·거부 시 재첨부해야 하므로
+    // 승인(approve) 시에만 소비. (전송 실패로 손그림이 사라지는 것 방지)
+    const userText = sketch ? `✏ ${text}` : text;
+    setMsgs((prev) => [...prev, { role: 'user', text: userText }, { role: 'assistant', text: '' }]);
     scrollDown();
 
     try {
       const result = await runAgent({
         snapshot: store.snapshot(),
         transcript,
+        sketch,
         onText: (delta) => {
           setMsgs((prev) => {
             const next = [...prev];
@@ -101,6 +112,7 @@ export function AiPanel({ store }: { store: DocStore }) {
 
   const approve = () => {
     if (!plan) return;
+    clearSketch(); // 계획 승인 = 스케치 소비 (프리뷰 정리)
     const result = applyOpLog(store, plan.opLog);
     const failNote = result.failed.length
       ? ` (${result.failed.length}건 실패: ${result.failed[0]!.error})`
@@ -132,6 +144,8 @@ export function AiPanel({ store }: { store: DocStore }) {
         {msgs.length === 0 && (
           <div className="ai-empty">
             예: "3m×4m 방 하나 만들어줘. 남쪽 벽에 문, 동쪽 벽에 창 하나."
+            <br />
+            ✏ 스케치 도구로 평면을 그린 뒤 보내면 손그림대로 만들어줍니다.
           </div>
         )}
         {msgs.map((m, i) => (
@@ -166,10 +180,16 @@ export function AiPanel({ store }: { store: DocStore }) {
           </div>
         )}
       </div>
+      {sketchOn && (
+        <div className="ai-sketch-chip">
+          <span>✏ 스케치 첨부됨 — 보내면 손그림대로 생성</span>
+          <button onClick={() => clearSketch()}>지우기</button>
+        </div>
+      )}
       <div className="ai-input">
         <input
           value={input}
-          placeholder={running ? '계획 작성 중…' : '무엇을 모델링할까요?'}
+          placeholder={running ? '계획 작성 중…' : sketchOn ? '스케치 설명(선택) 후 보내기' : '무엇을 모델링할까요?'}
           disabled={running}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -177,7 +197,7 @@ export function AiPanel({ store }: { store: DocStore }) {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) void send();
           }}
         />
-        <button disabled={running || !input.trim()} onClick={() => void send()}>
+        <button disabled={running || (!input.trim() && !sketchOn)} onClick={() => void send()}>
           보내기
         </button>
       </div>

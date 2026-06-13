@@ -7,7 +7,25 @@ import {
   openingDeriveKey,
   slabDeriveKey,
 } from './deriveOthers';
-import { beamDeriveKey, columnDeriveKey, deriveBeam, deriveColumn } from './deriveStructure';
+import {
+  beamDeriveKey,
+  columnDeriveKey,
+  deriveBeam,
+  deriveColumn,
+  deriveRailing,
+  deriveRoof,
+  deriveStair,
+  railingDeriveKey,
+  roofDeriveKey,
+  stairDeriveKey,
+} from './deriveStructure';
+import {
+  deriveDimension,
+  deriveText,
+  dimensionDeriveKey,
+  textDeriveKey,
+} from './deriveAnnotations';
+import { resolveDimAnchor } from '../select';
 import type { JoinInfo } from './joins';
 import type { DocStore } from '../store';
 import type {
@@ -17,7 +35,10 @@ import type {
   OpeningElement,
   OpeningType,
   Pt,
+  RailingType,
+  RoofType,
   SlabType,
+  StairType,
   WallDeriveInput,
   WallElement,
   WallType,
@@ -27,6 +48,7 @@ export * from './meshBuilder';
 export * from './deriveWall';
 export * from './deriveOthers';
 export * from './deriveStructure';
+export * from './deriveAnnotations';
 export * from './joins';
 
 interface CacheEntry {
@@ -192,6 +214,42 @@ export class DeriveCache {
       const input = { beam: el, type: type as BeamType, level };
       key = `b:${beamDeriveKey(input)}`;
       compute = () => deriveBeam(input);
+    } else if (el.kind === 'stair') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'stair' || !level) return null;
+      const input = { stair: el, type: type as StairType, level };
+      key = `st:${stairDeriveKey(input)}`;
+      compute = () => deriveStair(input);
+    } else if (el.kind === 'railing') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'railing' || !level) return null;
+      const input = { railing: el, type: type as RailingType, level };
+      key = `rl:${railingDeriveKey(input)}`;
+      compute = () => deriveRailing(input);
+    } else if (el.kind === 'roof') {
+      const type = store.getType(el.typeId);
+      const level = store.getLevel(el.levelId);
+      if (type?.kind !== 'roof' || !level) return null;
+      const input = { roof: el, type: type as RoofType, level };
+      key = `rf:${roofDeriveKey(input)}`;
+      compute = () => deriveRoof(input);
+    } else if (el.kind === 'text') {
+      const level = store.getLevel(el.levelId);
+      if (!level) return null;
+      const input = { text: el, level };
+      key = `txt:${textDeriveKey(input)}`;
+      compute = () => deriveText(input);
+    } else if (el.kind === 'dimension') {
+      const level = store.getLevel(el.levelId);
+      if (!level) return null;
+      // 바인딩 해석: 참조 요소의 끝점(params)을 읽어 a/b 결정. 고아면 stored fallback.
+      const a = resolveDimAnchor(store, el.bindA, el.a);
+      const b = resolveDimAnchor(store, el.bindB, el.b);
+      const input = { dim: el, level, a, b };
+      key = `dim:${dimensionDeriveKey(input)}`;
+      compute = () => deriveDimension(input);
     }
 
     if (!key || !compute) return null;

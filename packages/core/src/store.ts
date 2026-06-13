@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { nanoid } from 'nanoid';
 import {
+  CommentSchema,
   CORE_SCHEMA_VERSION,
   ElementSchema,
   ElemTypeSchema,
@@ -14,11 +15,19 @@ import {
   type GridLine,
   type Id,
   type Level,
+  type DimBind,
+  type DimensionElement,
   type OpeningElement,
   type Pt,
+  type RailingElement,
+  type RoofElement,
   type SlabElement,
+  type Comment,
+  type StairElement,
+  type TextElement,
   type WallElement,
 } from './schema';
+import { resolveDimAnchor } from './select';
 
 /** 좌표쌍 양자화 단축 */
 const q2 = (p: readonly [number, number] | [number, number]): Pt => [
@@ -122,6 +131,8 @@ export interface DocSnapshot {
   levels: Level[];
   types: ElemType[];
   elements: Element[];
+  /** 협업 코멘트 (v2). v1 스냅샷엔 부재 — 읽을 때 [] 기본 */
+  comments?: Comment[];
 }
 
 export type DocObserver = (change: DocChange) => void;
@@ -155,11 +166,13 @@ export class DocStore {
   private yLevels: Y.Map<unknown>;
   private yTypes: Y.Map<unknown>;
   private yElements: Y.Map<unknown>;
+  private yComments: Y.Map<unknown>;
 
   // 읽기 미러 (Yjs 이벤트로만 갱신)
   private levels = new Map<Id, Level>();
   private types = new Map<Id, ElemType>();
   private elements = new Map<Id, Element>();
+  private comments = new Map<Id, Comment>();
   private observers = new Set<DocObserver>();
 
   constructor(ydoc?: Y.Doc) {
@@ -168,11 +181,13 @@ export class DocStore {
     this.yLevels = this.ydoc.getMap('levels');
     this.yTypes = this.ydoc.getMap('types');
     this.yElements = this.ydoc.getMap('elements');
+    this.yComments = this.ydoc.getMap('comments');
 
     // 기존 콘텐츠(프로바이더/캐시에서 온 doc) 미러 초기화
     for (const id of this.yLevels.keys()) this.mirrorLevel(id);
     for (const id of this.yTypes.keys()) this.mirrorType(id);
     for (const id of this.yElements.keys()) this.mirrorElement(id);
+    for (const id of this.yComments.keys()) this.mirrorComment(id);
 
     this.yLevels.observe((e) => {
       const change: DocChange = { added: [], updated: [], removed: [] };
@@ -227,6 +242,20 @@ export class DocStore {
       }
       this.emit(change);
     });
+    // 코멘트 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 DocChange로 emit해
+    // 웹이 패널·핀을 재동기화하게 한다 (요소 diff엔 안 섞임).
+    this.yComments.observe((e) => {
+      for (const [id, c] of e.changes.keys) {
+        if (c.action === 'delete') this.comments.delete(id);
+        else this.mirrorComment(id);
+      }
+      this.notifyAll(); // 코멘트 변경 → 옵저버 강제 통지 (emit은 빈 change를 무시함)
+    });
+  }
+
+  private mirrorComment(id: Id): void {
+    const parsed = CommentSchema.safeParse(this.yComments.get(id));
+    if (parsed.success) this.comments.set(id, parsed.data);
   }
 
   private mirrorLevel(id: Id): void {
@@ -532,6 +561,141 @@ export class DocStore {
     return id;
   }
 
+  createStair(params: { levelId: Id; typeId: Id; a: Pt; b: Pt; baseOffset?: number }): Id {
+    if (
+      quantize(params.a[0]) === quantize(params.b[0]) &&
+      quantize(params.a[1]) === quantize(params.b[1])
+    ) {
+      throw new Error('zero-length stair');
+    }
+    const id = nanoid(12);
+    const stair = ElementSchema.parse({
+      id,
+      kind: 'stair',
+      levelId: params.levelId,
+      typeId: params.typeId,
+      a: [quantize(params.a[0]), quantize(params.a[1])],
+      b: [quantize(params.b[0]), quantize(params.b[1])],
+      ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+    }) as StairElement;
+    this.setElement(id, stair);
+    return id;
+  }
+
+  createRailing(params: { levelId: Id; typeId: Id; a: Pt; b: Pt; baseOffset?: number }): Id {
+    if (
+      quantize(params.a[0]) === quantize(params.b[0]) &&
+      quantize(params.a[1]) === quantize(params.b[1])
+    ) {
+      throw new Error('zero-length railing');
+    }
+    const id = nanoid(12);
+    const railing = ElementSchema.parse({
+      id,
+      kind: 'railing',
+      levelId: params.levelId,
+      typeId: params.typeId,
+      a: [quantize(params.a[0]), quantize(params.a[1])],
+      b: [quantize(params.b[0]), quantize(params.b[1])],
+      ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+    }) as RailingElement;
+    this.setElement(id, railing);
+    return id;
+  }
+
+  createRoof(params: {
+    levelId: Id;
+    typeId: Id;
+    boundary: Pt[];
+    baseOffset?: number;
+    thicknessOverride?: number;
+    slope?: { dir: Pt; pitch: number };
+  }): Id {
+    const boundary = params.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+    if (!isSimplePolygon(boundary)) throw new Error('self-intersecting roof boundary');
+    const id = nanoid(12);
+    const roof = ElementSchema.parse({
+      id,
+      kind: 'roof',
+      levelId: params.levelId,
+      typeId: params.typeId,
+      boundary,
+      ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+      ...(params.thicknessOverride !== undefined
+        ? { thicknessOverride: quantize(params.thicknessOverride) }
+        : {}),
+      ...(params.slope !== undefined
+        ? {
+            slope: {
+              dir: [quantize(params.slope.dir[0]), quantize(params.slope.dir[1])] as Pt,
+              pitch: quantize(params.slope.pitch),
+            },
+          }
+        : {}),
+    }) as RoofElement;
+    this.setElement(id, roof);
+    return id;
+  }
+
+  createText(params: { levelId: Id; at: Pt; text: string; size?: number }): Id {
+    const id = nanoid(12);
+    const el = ElementSchema.parse({
+      id,
+      kind: 'text',
+      levelId: params.levelId,
+      at: [quantize(params.at[0]), quantize(params.at[1])],
+      text: params.text,
+      ...(params.size !== undefined ? { size: quantize(params.size) } : {}),
+    }) as TextElement;
+    this.setElement(id, el);
+    return id;
+  }
+
+  createDimension(params: {
+    levelId: Id;
+    a: Pt;
+    b: Pt;
+    offset?: number;
+    bindA?: DimBind;
+    bindB?: DimBind;
+  }): Id {
+    const a: Pt = [quantize(params.a[0]), quantize(params.a[1])];
+    const b: Pt = [quantize(params.b[0]), quantize(params.b[1])];
+    if (a[0] === b[0] && a[1] === b[1]) throw new Error('zero-length dimension');
+    const id = nanoid(12);
+    // 바인딩 미지정 시 끝점과 mm-정확 일치하는 요소를 찾아 자동 캡처 (이동 추종)
+    const bindA = params.bindA ?? this.bindFor(a, params.levelId);
+    const bindB = params.bindB ?? this.bindFor(b, params.levelId);
+    const el = ElementSchema.parse({
+      id,
+      kind: 'dimension',
+      levelId: params.levelId,
+      a,
+      b,
+      ...(params.offset !== undefined ? { offset: quantize(params.offset) } : {}),
+      ...(bindA ? { bindA } : {}),
+      ...(bindB ? { bindB } : {}),
+    }) as DimensionElement;
+    this.setElement(id, el);
+    return id;
+  }
+
+  /** 점과 mm-정확 일치하는 요소 끝점 찾기 (치수 바인딩 캡처) — 마이터 조인의 정확일치 철학 */
+  private bindFor(p: Pt, levelId: Id): DimBind | undefined {
+    for (const el of this.elements.values()) {
+      if (el.kind === 'dimension' || el.kind === 'text' || el.kind === 'opening') continue;
+      // 그리드는 levelId 없음(전층) → 'levelId' in el 이 false라 자연히 통과
+      if ('levelId' in el && el.levelId !== levelId) continue;
+      if ('a' in el && 'b' in el) {
+        if (el.a[0] === p[0] && el.a[1] === p[1]) return { id: el.id, anchor: 'a' };
+        if (el.b[0] === p[0] && el.b[1] === p[1]) return { id: el.id, anchor: 'b' };
+      } else if (el.kind === 'column') {
+        if (el.at[0] === p[0] && el.at[1] === p[1]) return { id: el.id, anchor: 'a' };
+      }
+    }
+    return undefined;
+  }
+
   /** 그리드 자동 라벨 — 세로축(상하 주행)은 숫자, 가로축은 알파벳 (한국 실무 관례) */
   private nextGridLabel(a: Pt, b: Pt): string {
     const vertical = Math.abs(b[1] - a[1]) >= Math.abs(b[0] - a[0]);
@@ -583,6 +747,29 @@ export class DocStore {
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
       if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
       if (next.zOffset !== undefined) next.zOffset = quantize(next.zOffset);
+    } else if (next.kind === 'stair' || next.kind === 'railing') {
+      next.a = [quantize(next.a[0]), quantize(next.a[1])];
+      next.b = [quantize(next.b[0]), quantize(next.b[1])];
+      if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
+      if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
+    } else if (next.kind === 'roof') {
+      next.boundary = next.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+      if (!isSimplePolygon(next.boundary)) return;
+      if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
+      if (next.thicknessOverride !== undefined)
+        next.thicknessOverride = quantize(next.thicknessOverride);
+      if (next.slope !== undefined)
+        next.slope = {
+          dir: [quantize(next.slope.dir[0]), quantize(next.slope.dir[1])] as Pt,
+          pitch: quantize(next.slope.pitch),
+        };
+    } else if (next.kind === 'text') {
+      next.at = [quantize(next.at[0]), quantize(next.at[1])];
+      if (next.size !== undefined) next.size = quantize(next.size);
+    } else if (next.kind === 'dimension') {
+      next.a = [quantize(next.a[0]), quantize(next.a[1])];
+      next.b = [quantize(next.b[0]), quantize(next.b[1])];
+      if (next.offset !== undefined) next.offset = quantize(next.offset);
     }
     const parsed = ElementSchema.parse(next) as unknown as Record<string, unknown>;
     const ymap = this.yElements.get(id);
@@ -619,6 +806,74 @@ export class DocStore {
       for (const [k, v] of Object.entries(el)) ymap.set(k, v);
       this.yElements.set(id, ymap);
     });
+  }
+
+  // ===== 협업 코멘트 (M9-B) — 별도 'comments' 채널. 평면 엔트리(루트+답글),
+  // 엔트리별 LWW라 동시 답글 무클로버. undo 비추적(지오메트리 undo와 분리). =====
+
+  /** 루트 코멘트 — at(평면 fallback)·levelId 필수. anchorId 지정 시 그 요소 추종(삭제 시 at) */
+  addComment(params: {
+    levelId: Id;
+    at: Pt;
+    author: string;
+    text: string;
+    anchorId?: Id;
+    anchorWhich?: 'a' | 'b';
+  }): Id {
+    const id = nanoid(12);
+    const c = CommentSchema.parse({
+      id,
+      levelId: params.levelId,
+      at: [quantize(params.at[0]), quantize(params.at[1])],
+      author: params.author,
+      text: params.text,
+      ts: Date.now(),
+      ...(params.anchorId ? { anchorId: params.anchorId } : {}),
+      ...(params.anchorWhich ? { anchorWhich: params.anchorWhich } : {}),
+    });
+    this.transact(() => this.yComments.set(id, c));
+    return id;
+  }
+
+  /** 답글 — 루트(parentId)에 매단다. at/levelId는 부모 복사(스키마 균일) */
+  replyComment(parentId: Id, params: { author: string; text: string }): Id | null {
+    const parent = this.comments.get(parentId);
+    if (!parent || parent.parentId) return null; // 루트만 답글 대상
+    const id = nanoid(12);
+    const c = CommentSchema.parse({
+      id,
+      parentId,
+      at: parent.at,
+      levelId: parent.levelId,
+      author: params.author,
+      text: params.text,
+      ts: Date.now(),
+    });
+    this.transact(() => this.yComments.set(id, c));
+    return id;
+  }
+
+  /** 해결/미해결 토글 (루트만) */
+  resolveComment(id: Id, resolved: boolean): void {
+    const c = this.comments.get(id);
+    if (!c || c.parentId) return;
+    this.transact(() => this.yComments.set(id, { ...c, resolved }));
+  }
+
+  /** 코멘트 삭제 — 루트면 답글 연쇄 삭제 */
+  deleteComment(id: Id): void {
+    const replies = [...this.comments.values()].filter((c) => c.parentId === id).map((c) => c.id);
+    this.transact(() => {
+      this.yComments.delete(id);
+      for (const r of replies) this.yComments.delete(r);
+    });
+  }
+
+  listComments(): Comment[] {
+    return [...this.comments.values()];
+  }
+  getComment(id: Id): Comment | undefined {
+    return this.comments.get(id);
   }
 
   // ===== 편집 ops (M3.5) — 전부 단일 transact = undo 1스텝, 협업 원자적 =====
@@ -669,10 +924,36 @@ export class DocStore {
           const a = q2(xform(el.a));
           const b = q2(xform(el.b));
           created.push(this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) }));
-        } else if (el.kind === 'column') {
+        } else if (el.kind === 'column' || el.kind === 'text') {
           created.push(this.writeNew({ ...el, at: q2(xform(el.at)) }));
-        } else if (el.kind === 'beam') {
+        } else if (el.kind === 'beam' || el.kind === 'stair' || el.kind === 'railing') {
           created.push(this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) }));
+        } else if (el.kind === 'dimension') {
+          // 복사본은 바인딩 해제 → 변환된 위치의 자유 치수. 단 출처는 stored가 아닌
+          // 해석된(렌더에 보이는) 좌표 — 바인딩 요소가 이미 이동했어도 보이는 위치를 복사.
+          const ra = resolveDimAnchor(this, el.bindA, el.a);
+          const rb = resolveDimAnchor(this, el.bindB, el.b);
+          created.push(
+            this.writeNew({
+              ...el,
+              a: q2(xform(ra)),
+              b: q2(xform(rb)),
+              bindA: undefined,
+              bindB: undefined,
+            }),
+          );
+        } else if (el.kind === 'roof') {
+          const next: Record<string, unknown> = {
+            ...el,
+            boundary: el.boundary.map((p) => q2(xform(p))),
+          };
+          if (el.slope) {
+            // 경사 방향은 벡터 — 변환의 선형부만 적용 (xform(v) - xform(0))
+            const o = xform([0, 0]);
+            const td = xform(el.slope.dir);
+            next['slope'] = { dir: q2([td[0] - o[0], td[1] - o[1]]), pitch: el.slope.pitch };
+          }
+          created.push(this.writeNew(next));
         }
       }
       // 개구부는 벽 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
@@ -699,18 +980,26 @@ export class DocStore {
       for (const el of els) {
         const ymap = this.yElements.get(el.id);
         if (!(ymap instanceof Y.Map)) continue;
-        if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam') {
+        if (
+          el.kind === 'wall' ||
+          el.kind === 'grid' ||
+          el.kind === 'beam' ||
+          el.kind === 'stair' ||
+          el.kind === 'railing' ||
+          el.kind === 'dimension'
+        ) {
           ymap.set('a', q2([el.a[0] + delta[0], el.a[1] + delta[1]]));
           ymap.set('b', q2([el.b[0] + delta[0], el.b[1] + delta[1]]));
-        } else if (el.kind === 'slab') {
+        } else if (el.kind === 'slab' || el.kind === 'roof') {
           ymap.set(
             'boundary',
             el.boundary.map((p) => q2([p[0] + delta[0], p[1] + delta[1]])),
           );
-        } else if (el.kind === 'column') {
+        } else if (el.kind === 'column' || el.kind === 'text') {
           ymap.set('at', q2([el.at[0] + delta[0], el.at[1] + delta[1]]));
         }
         // opening 단독 이동은 SelectTool 드래그(offset)로
+        // 주의: 바인딩된 치수는 a/b가 fallback일 뿐 — derive가 참조 요소 좌표 사용(이동 무시)
       }
     });
   }
@@ -745,15 +1034,29 @@ export class DocStore {
       for (const el of els) {
         const ymap = this.yElements.get(el.id);
         if (!(ymap instanceof Y.Map)) continue;
-        if (el.kind === 'wall' || el.kind === 'grid' || el.kind === 'beam') {
+        if (
+          el.kind === 'wall' ||
+          el.kind === 'grid' ||
+          el.kind === 'beam' ||
+          el.kind === 'stair' ||
+          el.kind === 'railing' ||
+          el.kind === 'dimension'
+        ) {
           ymap.set('a', q2(rotatePoint(el.a, center, angleRad)));
           ymap.set('b', q2(rotatePoint(el.b, center, angleRad)));
-        } else if (el.kind === 'slab') {
+        } else if (el.kind === 'slab' || el.kind === 'roof') {
           ymap.set(
             'boundary',
             el.boundary.map((p) => q2(rotatePoint(p, center, angleRad))),
           );
-        } else if (el.kind === 'column') {
+          if (el.kind === 'roof' && el.slope) {
+            // 경사 방향 벡터도 원점 기준 회전 (위치 평행이동 영향 없음)
+            ymap.set('slope', {
+              dir: q2(rotatePoint(el.slope.dir, [0, 0], angleRad)),
+              pitch: el.slope.pitch,
+            });
+          }
+        } else if (el.kind === 'column' || el.kind === 'text') {
           ymap.set('at', q2(rotatePoint(el.at, center, angleRad)));
         }
       }
@@ -793,6 +1096,17 @@ export class DocStore {
         }
       }
       for (const o of openings) this.yElements.delete(o.id);
+      // 원본 벽 끝점에 바인딩된 치수 재바인딩 — 끝점은 보존되므로 추종 유지
+      // (a끝 = id1.a, b끝 = id2.b). 안 하면 원본 id 삭제로 고아화.
+      for (const el of this.elements.values()) {
+        if (el.kind !== 'dimension') continue;
+        const ymap = this.yElements.get(el.id);
+        if (!(ymap instanceof Y.Map)) continue;
+        if (el.bindA?.id === id)
+          ymap.set('bindA', el.bindA.anchor === 'a' ? { id: id1, anchor: 'a' } : { id: id2, anchor: 'b' });
+        if (el.bindB?.id === id)
+          ymap.set('bindB', el.bindB.anchor === 'a' ? { id: id1, anchor: 'a' } : { id: id2, anchor: 'b' });
+      }
       this.yElements.delete(id);
     });
     return [id1, id2];
@@ -842,6 +1156,7 @@ export class DocStore {
       levels: [...this.levels.values()],
       types: [...this.types.values()],
       elements: [...this.elements.values()],
+      comments: [...this.comments.values()],
     };
   }
 
@@ -871,6 +1186,11 @@ export class DocStore {
       const p = ElementSchema.safeParse(v.toJSON());
       if (p.success) elements.push(p.data as Element);
     }
+    const comments: Comment[] = [];
+    for (const v of ydoc.getMap('comments').values()) {
+      const p = CommentSchema.safeParse(v);
+      if (p.success) comments.push(p.data);
+    }
     return {
       meta: {
         schemaVersion: (yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
@@ -880,6 +1200,7 @@ export class DocStore {
       levels,
       types,
       elements,
+      comments,
     };
   }
 
@@ -898,6 +1219,7 @@ export class DocStore {
         for (const [k, v] of Object.entries(parsed)) ymap.set(k, v);
         store.yElements.set(el.id, ymap);
       }
+      for (const c of snap.comments ?? []) store.yComments.set(c.id, CommentSchema.parse(c));
     }, LOCAL_ORIGIN);
     return store;
   }
@@ -917,6 +1239,10 @@ export class DocStore {
     const levels = snap.levels.map((l) => LevelSchema.parse(l));
     const types = snap.types.map((t) => ElemTypeSchema.parse(t));
     const elements = snap.elements.map((e) => ElementSchema.parse(e) as Element);
+    // 코멘트는 직교 협업 채널 — 커밋 복원(comments 필드 부재)은 라이브 코멘트를 보존,
+    // JSON 백업 복원(comments 명시, [] 포함)만 교체. (커밋 blob엔 코멘트 미포함 — 의도)
+    const replaceComments = snap.comments !== undefined;
+    const comments = replaceComments ? snap.comments!.map((c) => CommentSchema.parse(c)) : [];
     this.transact(() => {
       for (const k of [...this.yElements.keys()]) this.yElements.delete(k);
       for (const k of [...this.yLevels.keys()]) this.yLevels.delete(k);
@@ -930,6 +1256,10 @@ export class DocStore {
         const ymap = new Y.Map<unknown>();
         for (const [k, v] of Object.entries(el)) ymap.set(k, v);
         this.yElements.set(el.id, ymap);
+      }
+      if (replaceComments) {
+        for (const k of [...this.yComments.keys()]) this.yComments.delete(k);
+        for (const c of comments) this.yComments.set(c.id, c);
       }
     });
   }
@@ -953,6 +1283,12 @@ export class DocStore {
     if (!change.added.length && !change.updated.length && !change.removed.length) return;
     for (const cb of this.observers) cb(change);
   }
+
+  /** 빈-change 가드를 우회한 강제 통지 (코멘트 등 요소-아닌 변경용) */
+  private notifyAll(): void {
+    const empty: DocChange = { added: [], updated: [], removed: [] };
+    for (const cb of this.observers) cb(empty);
+  }
 }
 
 /**
@@ -969,6 +1305,9 @@ export const SEED_IDS = {
   slab150: 'T-s150',
   column400: 'T-c400',
   beam300: 'T-b300',
+  stair: 'T-st1',
+  railing: 'T-rl1',
+  roof: 'T-rf1',
 } as const;
 
 export interface SeedRefs {
@@ -979,6 +1318,9 @@ export interface SeedRefs {
   slabTypeId: Id;
   columnTypeId: Id;
   beamTypeId: Id;
+  stairTypeId: Id;
+  railingTypeId: Id;
+  roofTypeId: Id;
 }
 
 export function seedDocument(store: DocStore): SeedRefs {
@@ -1033,6 +1375,18 @@ export function seedDocument(store: DocStore): SeedRefs {
         },
         SEED_IDS.beam300,
       );
+      store.addType(
+        { kind: 'stair', name: '직선계단 1000', width: 1000, riser: 175, color: '#c9c4ba' },
+        SEED_IDS.stair,
+      );
+      store.addType(
+        { kind: 'railing', name: '난간 1100', height: 1100, postSpacing: 1200, color: '#bdb8ae' },
+        SEED_IDS.railing,
+      );
+      store.addType(
+        { kind: 'roof', name: '지붕 슬라브 200', thickness: 200, color: '#c4bfb4' },
+        SEED_IDS.roof,
+      );
     });
   } else {
     // 구버전 문서(M2 이전 시드)에 새 타입 보충 — 고정 id라 멱등
@@ -1082,6 +1436,21 @@ export function seedDocument(store: DocStore): SeedRefs {
           },
           SEED_IDS.beam300,
         );
+      if (!store.getType(SEED_IDS.stair))
+        store.addType(
+          { kind: 'stair', name: '직선계단 1000', width: 1000, riser: 175, color: '#c9c4ba' },
+          SEED_IDS.stair,
+        );
+      if (!store.getType(SEED_IDS.railing))
+        store.addType(
+          { kind: 'railing', name: '난간 1100', height: 1100, postSpacing: 1200, color: '#bdb8ae' },
+          SEED_IDS.railing,
+        );
+      if (!store.getType(SEED_IDS.roof))
+        store.addType(
+          { kind: 'roof', name: '지붕 슬라브 200', thickness: 200, color: '#c4bfb4' },
+          SEED_IDS.roof,
+        );
     });
   }
   return {
@@ -1092,5 +1461,8 @@ export function seedDocument(store: DocStore): SeedRefs {
     slabTypeId: SEED_IDS.slab150,
     columnTypeId: SEED_IDS.column400,
     beamTypeId: SEED_IDS.beam300,
+    stairTypeId: SEED_IDS.stair,
+    railingTypeId: SEED_IDS.railing,
+    roofTypeId: SEED_IDS.roof,
   };
 }

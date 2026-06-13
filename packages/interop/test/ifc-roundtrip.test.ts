@@ -190,6 +190,57 @@ describe('IFC 라운드트립', () => {
     api.CloseModel(m);
   });
 
+  it('계단 — IfcStair로 export (스텝 솔리드 집합)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createStair({ levelId: SEED_IDS.level, typeId: SEED_IDS.stair, a: [0, 0], b: [3000, 0] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCSTAIR).size()).toBe(1);
+    api.CloseModel(m);
+  });
+
+  it('난간 — IfcRailing으로 export (포스트+레일)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createRailing({ levelId: SEED_IDS.level, typeId: SEED_IDS.railing, a: [0, 0], b: [3600, 0] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCRAILING).size()).toBe(1);
+    api.CloseModel(m);
+  });
+
+  it('지붕 — IfcSlab(ROOF)로 export, 재import 시 슬라브로 부활 안 함(스킵+카운트)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createRoof({
+      levelId: SEED_IDS.level,
+      typeId: SEED_IDS.roof,
+      boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]],
+    });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    // 슬라브 없이 지붕만 → IfcSlab 1개 (PredefinedType ROOF)
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCSLAB).size()).toBe(1);
+    api.CloseModel(m);
+    // 재import: 지붕은 v1 미지원 → 스킵+카운트, 슬라브로 오분류 안 됨 (kind 변경 방지)
+    const { snapshot, skipped } = importIfc(api, bytes);
+    expect(snapshot.elements.filter((e) => e.kind === 'slab')).toHaveLength(0);
+    const roofKey = Object.keys(skipped).find((k) => k.includes('지붕'));
+    expect(roofKey).toBeDefined();
+    expect(skipped[roofKey!]).toBe(1);
+  });
+
+  it('지붕+바닥슬라브 공존 — 왕복 시 진짜 슬라브만 살아남음', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createSlab({ levelId: SEED_IDS.level, typeId: SEED_IDS.slab150, boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]] });
+    s.createRoof({ levelId: SEED_IDS.level, typeId: SEED_IDS.roof, boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]] });
+    const { snapshot } = roundtrip(s);
+    // 바닥 슬라브 1개만 import (지붕은 유령 슬라브로 오염 안 됨)
+    expect(snapshot.elements.filter((e) => e.kind === 'slab')).toHaveLength(1);
+  });
+
   it('IFC 파일이 유효 (재오픈 가능)', () => {
     const s = sample();
     const { bytes } = roundtrip(s);
