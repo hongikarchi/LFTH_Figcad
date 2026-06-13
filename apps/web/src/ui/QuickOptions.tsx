@@ -2,6 +2,7 @@ import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { useLint } from './LintPanel';
+import { Icon } from './icons/Icon';
 
 export interface ViewActions {
   zoomIn: () => void;
@@ -48,10 +49,10 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
       <span className="qo-label">활성 스토리: {level?.name ?? '—'}</span>
       <span className="qo-sep" />
       <button onClick={actions.zoomOut} title="줌아웃 (PageDown)">
-        −
+        <Icon name="minus" size={15} />
       </button>
       <button onClick={actions.zoomIn} title="줌인 (PageUp)">
-        +
+        <Icon name="plus" size={15} />
       </button>
       <span className="qo-sep" />
       <button
@@ -59,6 +60,7 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
         title="버전 — 커밋 타임라인, 비교, 복원"
         onClick={() => useUiStore.getState().setVersionOpen(!versionOpen)}
       >
+        <Icon name="version" size={14} />
         버전
       </button>
       <button
@@ -66,6 +68,7 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
         title="데이터 위생 검사 — 겹침·미접합·중복·고아 요소"
         onClick={() => useUiStore.getState().setLintOpen(!lintOpen)}
       >
+        <Icon name="lint" size={14} />
         검사{findings.length > 0 ? ` ${findings.length}` : ''}
       </button>
       <button
@@ -73,6 +76,7 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
         title="AI 모드 — 자연어로 모델링 (계획 승인 방식)"
         onClick={() => useUiStore.getState().setAiOpen(!aiOpen)}
       >
+        <Icon name="ai" size={14} />
         AI
       </button>
     </div>

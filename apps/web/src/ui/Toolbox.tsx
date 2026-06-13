@@ -1,11 +1,13 @@
 import { useUiStore, type ToolName } from '../state/uiStore';
+import { Icon } from './icons/Icon';
 
 /**
  * ArchiCAD Toolbox의 웹 경량판 (help.graphisoft.com: 4그룹 — Select/Design/Document/More).
- * 미구현 도구는 비활성 표시 — 로드맵 가시화 겸 레이아웃 고정.
+ * 아이콘(lucide+건축 커스텀) + 라벨. 미구현 도구는 비활성 표시(로드맵 가시화).
  */
 interface ToolItem {
   label: string;
+  icon: string;
   tool?: ToolName; // 구현된 도구만
   planned?: string; // 비활성 사유/마일스톤
 }
@@ -13,33 +15,33 @@ interface ToolItem {
 const GROUPS: { title: string; items: ToolItem[] }[] = [
   {
     title: '선택',
-    items: [{ label: '선택', tool: 'select' }],
+    items: [{ label: '선택', icon: 'select', tool: 'select' }],
   },
   {
     title: '디자인',
     items: [
-      { label: '벽', tool: 'wall' },
-      { label: '문', tool: 'door' },
-      { label: '창', tool: 'window' },
-      { label: '슬라브', tool: 'slab' },
-      { label: '그리드', tool: 'grid' },
-      { label: '기둥', planned: '추후' },
-      { label: '보', planned: '추후' },
-      { label: '지붕', planned: '추후' },
-      { label: '계단', planned: '추후' },
-      { label: '난간', planned: '추후' },
-      { label: '커튼월', planned: '추후' },
-      { label: '존', planned: '추후' },
-      { label: '오브젝트', planned: '추후' },
+      { label: '벽', icon: 'wall', tool: 'wall' },
+      { label: '문', icon: 'door', tool: 'door' },
+      { label: '창', icon: 'window', tool: 'window' },
+      { label: '슬라브', icon: 'slab', tool: 'slab' },
+      { label: '그리드', icon: 'grid', tool: 'grid' },
+      { label: '기둥', icon: 'column', planned: '추후' },
+      { label: '보', icon: 'beam', planned: '추후' },
+      { label: '지붕', icon: 'roof', planned: '추후' },
+      { label: '계단', icon: 'stair', planned: '추후' },
+      { label: '난간', icon: 'railing', planned: '추후' },
+      { label: '커튼월', icon: 'window', planned: '추후' },
+      { label: '존', icon: 'box', planned: '추후' },
+      { label: '오브젝트', icon: 'box', planned: '추후' },
     ],
   },
   {
     title: '문서',
     items: [
-      { label: '치수', planned: '2D 도면 단계' },
-      { label: '텍스트', planned: '2D 도면 단계' },
-      { label: '레이블', planned: '2D 도면 단계' },
-      { label: '해치', planned: '2D 도면 단계' },
+      { label: '치수', icon: 'dimension', planned: '2D 도면 단계' },
+      { label: '텍스트', icon: 'text', planned: '2D 도면 단계' },
+      { label: '레이블', icon: 'pencil', planned: '2D 도면 단계' },
+      { label: '해치', icon: 'hatch', planned: '2D 도면 단계' },
     ],
   },
 ];
@@ -58,13 +60,16 @@ export function Toolbox() {
               <button
                 key={item.label}
                 className={activeTool === item.tool ? 'active' : ''}
+                title={item.label}
                 onClick={() => setTool(item.tool!)}
               >
-                {item.label}
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
               </button>
             ) : (
               <button key={item.label} disabled title={`${item.planned} 예정`}>
-                {item.label}
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
               </button>
             ),
           )}

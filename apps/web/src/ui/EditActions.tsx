@@ -1,6 +1,17 @@
 import type { DocStore } from '@figcad/core';
 import { useUiStore, type EditAction } from '../state/uiStore';
 import { useDocVersion } from './App';
+import { Icon } from './icons/Icon';
+
+const ACTION_ICON: Record<EditAction, string> = {
+  move: 'move',
+  copy: 'copy',
+  array: 'grid-2x2',
+  split: 'scissors',
+  trim: 'move-horizontal',
+  mirror: 'flip-horizontal',
+  rotate: 'rotate-cw',
+};
 
 /**
  * 편집 액션 팔레트 — ArchiCAD 펫팔레트의 경량판.
@@ -52,9 +63,11 @@ export function EditActions({ store }: { store: DocStore }) {
           <button
             key={x.a}
             className={editAction === x.a ? 'active' : ''}
+            title={x.label}
             onClick={() => toggle(x.a)}
           >
-            {x.label}
+            <Icon name={ACTION_ICON[x.a]} size={15} />
+            <span>{x.label}</span>
           </button>
         ))}
       <span className="ea-param">

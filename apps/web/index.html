@@ -100,6 +100,9 @@
         letter-spacing: 0.08em;
       }
       .toolbox button {
+        display: flex;
+        align-items: center;
+        gap: 9px;
         padding: 7px 10px;
         border: none;
         border-radius: 8px;
@@ -110,6 +113,13 @@
         text-align: left;
         cursor: pointer;
         transition: background 0.12s;
+      }
+      .toolbox button svg {
+        flex-shrink: 0;
+        color: var(--ink-soft);
+      }
+      .toolbox button.active svg {
+        color: #fff;
       }
       .toolbox button:hover:not(:disabled) {
         background: rgba(0, 0, 0, 0.05);
@@ -208,6 +218,9 @@
         padding: 5px 10px;
       }
       .edit-actions button {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         padding: 6px 11px;
         border: none;
         border-radius: 7px;
@@ -216,6 +229,12 @@
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
+      }
+      .edit-actions button svg {
+        color: var(--ink-soft);
+      }
+      .edit-actions button.active svg {
+        color: #fff;
       }
       .edit-actions button:hover {
         background: rgba(0, 0, 0, 0.05);
@@ -341,6 +360,22 @@
       .nav-edit:hover {
         background: rgba(0, 0, 0, 0.05);
       }
+      .nav-edit svg,
+      .navigator .nav-item svg {
+        color: var(--ink-soft);
+        flex-shrink: 0;
+        vertical-align: -2px;
+      }
+      .navigator .nav-item.active svg {
+        color: #fff;
+      }
+      .nav-interop {
+        justify-content: flex-start;
+        gap: 7px;
+      }
+      .nav-interop .nav-meta {
+        margin-left: auto;
+      }
       .nav-editor {
         margin: 2px 8px 6px 16px;
         padding: 8px;
@@ -445,16 +480,34 @@
         background: #ff3b30;
       }
       .quick-options button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
         width: 26px;
         height: 26px;
         border: 1px solid var(--hairline);
         border-radius: 7px;
         background: rgba(255, 255, 255, 0.9);
         color: var(--ink);
-        font-size: 15px;
+        font-size: 12px;
         font-weight: 600;
         cursor: pointer;
         line-height: 1;
+      }
+      .quick-options button svg {
+        color: var(--ink-soft);
+      }
+      .quick-options button.active svg,
+      .quick-options button.qo-ai.active svg,
+      .quick-options button.qo-lint.active svg {
+        color: #fff;
+      }
+      .quick-options button.qo-lint.error svg {
+        color: #d70015;
+      }
+      .quick-options button.qo-lint.warning svg {
+        color: #b25000;
       }
       .quick-options button:hover {
         background: rgba(0, 0, 0, 0.05);

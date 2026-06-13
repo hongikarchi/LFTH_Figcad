@@ -3,6 +3,7 @@ import type { DocSnapshot, DocStore, ElemType } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
+import { Icon } from './icons/Icon';
 import {
   downloadDxf,
   downloadIfc,
@@ -229,7 +230,7 @@ export function Navigator({ store }: { store: DocStore }) {
               title="스토리 설정"
               onClick={() => setEditing(editing === l.id ? null : l.id)}
             >
-              ✎
+              <Icon name="pencil" size={14} />
             </button>
           </div>
           {editing === l.id && (
@@ -290,7 +291,7 @@ export function Navigator({ store }: { store: DocStore }) {
               </span>
             </button>
             <button className="nav-edit" title="타입 설정" onClick={() => setEditingType(editingType === t.id ? null : t.id)}>
-              ✎
+              <Icon name="pencil" size={14} />
             </button>
           </div>
           {editingType === t.id && <TypeEditor store={store} type={t} />}
@@ -313,12 +314,13 @@ export function Navigator({ store }: { store: DocStore }) {
       {(['ifc', 'rhino', 'dxf'] as const).map((fmt) => (
         <div key={fmt} className="nav-row">
           <button
-            className="nav-item"
+            className="nav-item nav-interop"
             disabled={!!ifcBusy}
             title={`${FORMATS[fmt].label} 내보내기`}
             onClick={() => void exportFile(fmt)}
           >
-            {ifcBusy === 'export' ? '…' : '↓'} {FORMATS[fmt].label}
+            <Icon name={ifcBusy === 'export' ? 'download' : 'download'} size={14} />
+            {FORMATS[fmt].label}
             <span className="nav-meta">{FORMATS[fmt].ext}</span>
           </button>
           <button
@@ -327,7 +329,7 @@ export function Navigator({ store }: { store: DocStore }) {
             title={`${FORMATS[fmt].label} 가져오기 (문서 교체)`}
             onClick={() => importFile(fmt)}
           >
-            ↑
+            <Icon name="upload" size={14} />
           </button>
         </div>
       ))}
