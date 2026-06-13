@@ -33,12 +33,55 @@ interface CacheEntry {
 const ptEq = (p: Pt, q: Pt): boolean => p[0] === q[0] && p[1] === q[1];
 
 /**
+ * 파생 의존 인덱스 — 문서 변경당 1회 O(n)으로 구축해 derive 호출들이 공유.
+ * 없으면 derive가 요소마다 전체 스캔(findJoin×2 + 개구부 조회)을 해서
+ * 변경당 O(n²)이 된다 (2K 벽 실측: 변경당 ~30ms → 인덱스로 ~1ms).
+ */
+export interface DeriveIndex {
+  /** `${levelId}:${x},${y}` → 그 끝점을 갖는 벽들 */
+  joints: Map<string, WallElement[]>;
+  /** 호스트 벽 id → 호스트된 개구부(타입 포함) */
+  openingsByHost: Map<Id, { el: OpeningElement; type: OpeningType }[]>;
+}
+
+export function buildDeriveIndex(store: DocStore): DeriveIndex {
+  const joints = new Map<string, WallElement[]>();
+  const openingsByHost = new Map<Id, { el: OpeningElement; type: OpeningType }[]>();
+  for (const el of store.listElements()) {
+    if (el.kind === 'wall') {
+      for (const p of [el.a, el.b]) {
+        const k = `${el.levelId}:${p[0]},${p[1]}`;
+        const list = joints.get(k);
+        if (list) list.push(el);
+        else joints.set(k, [el]);
+      }
+    } else if (el.kind === 'opening') {
+      const type = store.getType(el.typeId);
+      if (type?.kind !== 'opening') continue;
+      const list = openingsByHost.get(el.hostId);
+      const item = { el, type: type as OpeningType };
+      if (list) list.push(item);
+      else openingsByHost.set(el.hostId, [item]);
+    }
+  }
+  return { joints, openingsByHost };
+}
+
+/**
  * 끝점 p를 공유하는 이웃 벽이 정확히 1개면 JoinInfo (Revit식 L자 자동 결합).
  * 0개(자유 끝) 또는 2개 이상(교차점 복잡) → null = butt 캡.
  */
-function findJoin(store: DocStore, wall: WallElement, p: Pt): JoinInfo | null {
+function findJoin(
+  store: DocStore,
+  wall: WallElement,
+  p: Pt,
+  index?: DeriveIndex,
+): JoinInfo | null {
+  const candidates = index
+    ? (index.joints.get(`${wall.levelId}:${p[0]},${p[1]}`) ?? [])
+    : store.listElements();
   let found: JoinInfo | null = null;
-  for (const el of store.listElements()) {
+  for (const el of candidates) {
     if (el.kind !== 'wall' || el.id === wall.id || el.levelId !== wall.levelId) continue;
     let other: Pt | null = null;
     if (ptEq(el.a, p)) other = el.b;
@@ -61,7 +104,9 @@ function findJoin(store: DocStore, wall: WallElement, p: Pt): JoinInfo | null {
 function hostedOpenings(
   store: DocStore,
   wallId: Id,
+  index?: DeriveIndex,
 ): { el: OpeningElement; type: OpeningType }[] {
+  if (index) return index.openingsByHost.get(wallId) ?? [];
   const out: { el: OpeningElement; type: OpeningType }[] = [];
   for (const el of store.listElements()) {
     if (el.kind !== 'opening' || el.hostId !== wallId) continue;
@@ -80,7 +125,7 @@ function hostedOpenings(
 export class DeriveCache {
   private cache = new Map<Id, CacheEntry>();
 
-  derive(store: DocStore, id: Id): DerivedGeometry | null {
+  derive(store: DocStore, id: Id, index?: DeriveIndex): DerivedGeometry | null {
     const el = store.getElement(id);
     if (!el) {
       this.cache.delete(id);
@@ -98,8 +143,8 @@ export class DeriveCache {
         wall: el,
         type: type as WallType,
         level,
-        joins: { a: findJoin(store, el, el.a), b: findJoin(store, el, el.b) },
-        openings: hostedOpenings(store, el.id),
+        joins: { a: findJoin(store, el, el.a, index), b: findJoin(store, el, el.b, index) },
+        openings: hostedOpenings(store, el.id, index),
       };
       key = `w:${wallDeriveKey(input)}`;
       compute = () => deriveWall(input);

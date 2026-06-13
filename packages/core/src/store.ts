@@ -349,6 +349,33 @@ export class DocStore {
     return id;
   }
 
+  /** 타입 수정 — kind/id 변경 불가, 수치 양자화. 참조 인스턴스는 자동 반영(파생이 타입을 읽음) */
+  updateType(id: Id, patch: Record<string, unknown>): void {
+    const prev = this.types.get(id);
+    if (!prev) return;
+    const next: Record<string, unknown> = { ...prev, ...patch, id, kind: prev.kind };
+    if (typeof next['thickness'] === 'number') next['thickness'] = quantize(next['thickness']);
+    if (prev.kind === 'opening' && typeof next['opening'] === 'object' && next['opening']) {
+      const o = next['opening'] as Record<string, unknown>;
+      for (const k of ['width', 'height', 'sillHeight']) {
+        if (typeof o[k] === 'number') o[k] = quantize(o[k] as number);
+      }
+      next['opening'] = { ...(prev as { opening: object }).opening, ...o };
+    }
+    const parsed = ElemTypeSchema.parse(next);
+    this.transact(() => this.yTypes.set(id, parsed));
+  }
+
+  /** 타입 삭제 — 참조하는 요소가 있으면 거부(false). 고아 참조 방지 */
+  deleteType(id: Id): boolean {
+    if (!this.types.has(id)) return false;
+    for (const el of this.elements.values()) {
+      if ('typeId' in el && el.typeId === id) return false;
+    }
+    this.transact(() => this.yTypes.delete(id));
+    return true;
+  }
+
   createWall(params: {
     levelId: Id;
     typeId: Id;
@@ -760,6 +787,38 @@ export class DocStore {
       }
     }, LOCAL_ORIGIN);
     return store;
+  }
+
+  /**
+   * 스냅샷으로 문서 내용 전체 교체 — JSON import(백업 복원)용.
+   * 전체 검증 후 단일 transact: 부분 적용 없음, undo 1스텝, 협업 전파.
+   */
+  importSnapshot(snap: DocSnapshot): void {
+    if (
+      typeof snap?.meta?.schemaVersion !== 'number' ||
+      snap.meta.schemaVersion > CORE_SCHEMA_VERSION
+    ) {
+      throw new Error(`지원하지 않는 schemaVersion: ${snap?.meta?.schemaVersion}`);
+    }
+    // 검증을 transact 밖에서 전부 — 중간 실패 시 문서 무변경
+    const levels = snap.levels.map((l) => LevelSchema.parse(l));
+    const types = snap.types.map((t) => ElemTypeSchema.parse(t));
+    const elements = snap.elements.map((e) => ElementSchema.parse(e) as Element);
+    this.transact(() => {
+      for (const k of [...this.yElements.keys()]) this.yElements.delete(k);
+      for (const k of [...this.yLevels.keys()]) this.yLevels.delete(k);
+      for (const k of [...this.yTypes.keys()]) this.yTypes.delete(k);
+      this.yMeta.set('schemaVersion', snap.meta.schemaVersion);
+      this.yMeta.set('projectName', snap.meta.projectName);
+      this.yMeta.set('units', snap.meta.units);
+      for (const lv of levels) this.yLevels.set(lv.id, lv);
+      for (const t of types) this.yTypes.set(t.id, t);
+      for (const el of elements) {
+        const ymap = new Y.Map<unknown>();
+        for (const [k, v] of Object.entries(el)) ymap.set(k, v);
+        this.yElements.set(el.id, ymap);
+      }
+    });
   }
 
   /** 사용자별 undo — 이 클라이언트(LOCAL_ORIGIN)의 변경만 되돌린다 (Figma 의미론) */

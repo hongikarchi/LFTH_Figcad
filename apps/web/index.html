@@ -8,6 +8,10 @@
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#f2f3f5" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>Figcad</title>
     <style>
       /* ---- 라이트 테마 (Apple/ArchiCAD 풍 블랙&화이트) ---- */
@@ -378,6 +382,28 @@
         font-size: 10px;
         color: var(--ink-soft);
         font-variant-numeric: tabular-nums;
+      }
+      .type-swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        border: 1px solid var(--hairline);
+        margin-right: 4px;
+        vertical-align: -1px;
+      }
+      .nav-editor input[type='color'] {
+        width: 40px;
+        height: 24px;
+        padding: 1px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+      }
+      .nav-delete:disabled {
+        color: rgba(0, 0, 0, 0.25);
+        cursor: default;
       }
 
       /* ---- Quick Options Bar: 하단 ---- */

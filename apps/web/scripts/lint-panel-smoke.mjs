@@ -56,9 +56,13 @@ try {
     { timeout: 5000 },
     before,
   );
-  const itemsAfter = await page.evaluate(() => document.querySelectorAll('.lint-item').length);
-  if (itemsAfter !== items.length - 1) throw new Error(`수정 후 ${itemsAfter}건 — ${items.length - 1}건 기대`);
-  console.log(`PASS  원클릭 수정 — 중복 삭제, 발견 ${items.length}→${itemsAfter}건`);
+  // 패널은 400ms 디바운스 후 갱신
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('.lint-item').length === n - 1,
+    { timeout: 5000 },
+    items.length,
+  );
+  console.log(`PASS  원클릭 수정 — 중복 삭제, 발견 ${items.length}→${items.length - 1}건`);
 
   // 요소 점프 — 행 클릭 시 해당 요소 선택
   await page.click('.lint-item');

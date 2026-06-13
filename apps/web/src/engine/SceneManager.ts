@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DeriveCache, type DocStore, type Id } from '@figcad/core';
+import { buildDeriveIndex, DeriveCache, type DeriveIndex, type DocStore, type Id } from '@figcad/core';
 import type { Engine } from './Engine';
 import type { DerivedGeometry } from '@figcad/core';
 
@@ -71,8 +71,10 @@ export class SceneManager {
   ) {
     store.observe((change) => {
       for (const id of change.removed) this.remove(id);
-      // 조인 때문에 전체 벽 재요청 (캐시가 무변경을 걸러낸다)
-      for (const el of store.listElements()) this.upsert(el.id);
+      // 조인 때문에 전체 벽 재요청 (캐시가 무변경을 걸러낸다).
+      // 의존 인덱스를 변경당 1회 구축 — 없으면 요소마다 전체 스캔 = 변경당 O(n²)
+      const index = buildDeriveIndex(store);
+      for (const el of store.listElements()) this.upsert(el.id, index);
       engine.requestRender();
     });
   }
@@ -139,8 +141,8 @@ export class SceneManager {
     entry.edges.material = ghosted ? this.ghostEdgeMat : this.edgeMat;
   }
 
-  private upsert(id: Id): void {
-    const geo = this.derive.derive(this.store, id);
+  private upsert(id: Id, index?: DeriveIndex): void {
+    const geo = this.derive.derive(this.store, id, index);
     if (!geo) {
       this.remove(id);
       return;

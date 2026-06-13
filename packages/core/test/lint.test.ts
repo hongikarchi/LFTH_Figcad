@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
 import { DocStore, lint, seedDocument, SEED_IDS, LINT_SEVERITY_RANK } from '../src';
 
 /** 시드 + 정상 방(모서리 공유 벽 4 + 문 + 슬라브) — 깨끗한 기준 문서 */
@@ -37,6 +38,15 @@ describe('lint — 깨끗한 문서', () => {
     const store = new DocStore();
     seedDocument(store);
     expect(lint(store)).toEqual([]);
+  });
+
+  it('lint()는 순수 — 문서 상태 무변경', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [40, 0] });
+    const before = Y.encodeStateAsUpdate(store.ydoc);
+    lint(store);
+    expect(Y.encodeStateAsUpdate(store.ydoc)).toEqual(before);
   });
 });
 
@@ -149,6 +159,31 @@ describe('lint — 중복', () => {
     expect(found).toHaveLength(1);
   });
 
+  it('fix 삭제 → undo로 복원 가능 (LOCAL_ORIGIN)', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    const undo = store.createUndoManager();
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    undo.stopCapturing(); // captureTimeout 배칭 차단 — 실사용 타이밍 재현
+    const dup = store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [4000, 0], b: [0, 0] });
+    undo.stopCapturing();
+    const finding = lint(store).find((f) => f.code === 'duplicate');
+    expect(finding?.fix?.deleteIds).toEqual([dup]);
+    store.deleteElements(finding!.fix!.deleteIds);
+    expect(lint(store).filter((f) => f.code === 'duplicate')).toHaveLength(0);
+    undo.undo();
+    expect(store.getElement(dup)).toBeDefined();
+    expect(lint(store).filter((f) => f.code === 'duplicate')).toHaveLength(1);
+  });
+
+  it('같은 자리 그리드 — 라벨이 달라도 중복', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    store.createGridLine({ a: [0, 0], b: [0, 10000], label: 'A' });
+    store.createGridLine({ a: [0, 0], b: [0, 10000], label: 'B' });
+    expect(lint(store).filter((f) => f.code === 'duplicate')).toHaveLength(1);
+  });
+
   it('높이가 다르면 중복 아님', () => {
     const { store } = cleanRoom();
     store.createWall({
@@ -186,6 +221,16 @@ describe('lint — 겹침 벽', () => {
       b: [8000, 0],
     });
     expect(lint(store).filter((f) => f.code === 'overlap-wall')).toHaveLength(0);
+  });
+
+  it('같은 선상 완전 일치 — 타입이 다르면 duplicate 대신 overlap으로 잡음 (미탐 방지)', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall100, a: [0, 0], b: [4000, 0] });
+    const found = lint(store);
+    expect(found.filter((f) => f.code === 'duplicate')).toHaveLength(0);
+    expect(found.filter((f) => f.code === 'overlap-wall')).toHaveLength(1);
   });
 
   it('수직 분리된 같은 자리 벽(문 위 인방벽)은 겹침 아님', () => {
@@ -235,6 +280,17 @@ describe('lint — 미접합 끝점', () => {
     expect(found[0]!.message).toContain('15mm');
   });
 
+  it('중복 벽이 있어도 인접 15mm 갭은 계속 잡힘 (일치 끝점이 갭을 가리면 안 됨)', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [3000, 0] });
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [3015, 0], b: [3015, 3000] });
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [3000, 0] }); // 중복
+    const found = lint(store);
+    expect(found.filter((f) => f.code === 'duplicate')).toHaveLength(1);
+    expect(found.filter((f) => f.code === 'unjoined-endpoint')).toHaveLength(1);
+  });
+
   it('벽 몸체 15mm 미달 (T자 미접합) → warning', () => {
     const store = new DocStore();
     seedDocument(store);
@@ -248,6 +304,19 @@ describe('lint — 미접합 끝점', () => {
     const found = lint(store).filter((f) => f.code === 'unjoined-endpoint');
     expect(found).toHaveLength(1);
     expect(found[0]!.message).toContain('몸체');
+  });
+
+  it('정확한 T자 접합이 다른 벽 모서리 250mm 이내여도 오탐 없음', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    store.createWall({
+      levelId: SEED_IDS.level,
+      typeId: SEED_IDS.wall200,
+      a: [200, 0], // 첫 벽 몸체 위 정확히 (d=0) — 유효한 T자, 단 w1.a에서 200mm
+      b: [200, 3000],
+    });
+    expect(lint(store).filter((f) => f.code === 'unjoined-endpoint')).toHaveLength(0);
   });
 
   it('정확한 모서리 공유·정확한 T자·250mm 초과 갭은 무발견', () => {
@@ -274,6 +343,24 @@ describe('lint — 극단 치수', () => {
     const found = lint(store).filter((f) => f.code === 'extreme-dimension');
     expect(found.length).toBeGreaterThanOrEqual(1);
     expect(found[0]!.fix?.deleteIds).toEqual([stub]);
+  });
+
+  it('극소 슬라브 (0.0025㎡) → warning', () => {
+    const store = new DocStore();
+    seedDocument(store);
+    store.createSlab({
+      levelId: SEED_IDS.level,
+      typeId: SEED_IDS.slab150,
+      boundary: [
+        [0, 0],
+        [50, 0],
+        [50, 50],
+        [0, 50],
+      ],
+    });
+    const found = lint(store).filter((f) => f.code === 'extreme-dimension');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain('슬라브');
   });
 
   it('높이 100mm 벽 → warning, 15000mm 벽 → info', () => {

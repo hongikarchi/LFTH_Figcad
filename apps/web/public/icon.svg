@@ -1,0 +1,13 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Figcad 아이콘 — 평면도 모티프: 방 외곽 + 문 개구부 + 마이터 모서리 강조 -->
+  <rect width="512" height="512" rx="0" fill="#1d1d1f"/>
+  <g stroke="#f5f3ee" stroke-width="30" fill="none" stroke-linecap="square">
+    <!-- 방 외곽 (아래 변에 문 개구부 갭) -->
+    <path d="M 150 362 L 150 150 L 362 150 L 362 362 L 296 362"/>
+    <path d="M 150 362 L 210 362"/>
+    <!-- 문 스윙 호 -->
+    <path d="M 296 362 A 86 86 0 0 0 210 276" stroke-width="12"/>
+  </g>
+  <!-- 마이터 조인 모서리 포인트 -->
+  <circle cx="150" cy="150" r="26" fill="#0a84ff"/>
+</svg>

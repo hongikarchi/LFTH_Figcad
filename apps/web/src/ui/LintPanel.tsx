@@ -1,7 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useReducer } from 'react';
 import { lint, type DocStore, type Element, type LintFinding, type LintSeverity } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
-import { useDocVersion } from './App';
 import type { ViewActions } from './QuickOptions';
 
 /**
@@ -16,32 +15,57 @@ const SEVERITY_META: Record<LintSeverity, { icon: string; label: string }> = {
   info: { icon: 'ℹ️', label: '정보' },
 };
 
-// 패널(LintPanel)과 배지(QuickOptions)가 같은 문서 버전에서 lint()를 두 번 돌리지
-// 않도록 스토어별 dirty 캐시 공유 — 변경당 전체 검사 1회
-const lintCache = new WeakMap<DocStore, { dirty: boolean; result: LintFinding[] }>();
+// 디바운스 비동기 lint — 변경마다 동기 실행하면 대형 문서(2K 벽 기준 수백 ms)에서
+// 드래그·일괄 생성이 O(n³)으로 죽는다 (스트레스 실측: 벽 2000개 생성 63s→디바운스 후 정상).
+// 패널·배지가 같은 캐시를 공유: 즉시 stale 결과 반환 + 유휴 시 재계산 → 리스너 통지.
+const LINT_DEBOUNCE_MS = 400;
 
-function cachedLint(store: DocStore): LintFinding[] {
+interface LintCacheEntry {
+  result: LintFinding[];
+  dirty: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+  listeners: Set<() => void>;
+}
+
+const lintCache = new WeakMap<DocStore, LintCacheEntry>();
+
+function lintEntry(store: DocStore): LintCacheEntry {
   let entry = lintCache.get(store);
   if (!entry) {
-    const created = { dirty: true, result: [] as LintFinding[] };
+    const created: LintCacheEntry = {
+      result: lint(store),
+      dirty: false,
+      timer: null,
+      listeners: new Set(),
+    };
     lintCache.set(store, created);
     store.observe(() => {
       created.dirty = true;
+      if (created.timer) return; // 연속 변경은 기존 타이머로 합침
+      created.timer = setTimeout(() => {
+        created.timer = null;
+        if (!created.dirty) return;
+        created.dirty = false;
+        created.result = lint(store);
+        for (const l of created.listeners) l();
+      }, LINT_DEBOUNCE_MS);
     });
     entry = created;
   }
-  if (entry.dirty) {
-    entry.result = lint(store);
-    entry.dirty = false;
-  }
-  return entry.result;
+  return entry;
 }
 
-/** 문서 버전에 메모이즈된 lint 결과 — 패널·배지가 공유하는 단일 계산 경로 */
+/** lint 결과 구독 — 문서 변경 후 ≤400ms 내 갱신 (계산 중에는 직전 결과 유지) */
 export function useLint(store: DocStore): LintFinding[] {
-  const v = useDocVersion(store);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- v가 문서 변경 카운터
-  return useMemo(() => cachedLint(store), [store, v]);
+  const [, bump] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const entry = lintEntry(store);
+    entry.listeners.add(bump);
+    return () => {
+      entry.listeners.delete(bump);
+    };
+  }, [store]);
+  return lintEntry(store).result;
 }
 
 /** 점프 앵커 (mm) — 요소 종류별 대표점 + 레벨 */

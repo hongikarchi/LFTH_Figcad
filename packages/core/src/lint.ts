@@ -58,6 +58,7 @@ const OVERLAP_LATERAL_MAX = 50; // 겹침 벽: 중심선 측면 간격 한계
 const OVERLAP_PARALLEL_SIN = 0.035; // ≈ 2° — 이하면 평행 취급
 const OVERLAP_MIN = 10; // 종방향 겹침 최소 길이
 const GAP_MAX = 250; // 미접합 끝점: 이 이하 갭만 "거의 만남"으로 경고
+const GRID_CELL = 4000; // 공간 버킷 셀 크기 — 쌍 검사 후보 프루닝용
 const WALL_LEN_MIN = 100; // 극단적으로 짧은 벽
 const WALL_HEIGHT_MIN = 300; // 극단적으로 낮은 벽
 const WALL_HEIGHT_INFO = 12000; // 비정상적으로 높은 벽 (정보)
@@ -191,6 +192,7 @@ export function lint(store: DocStore): LintFinding[] {
 
   // --- 2. 중복 요소 (동일 지오메트리+타입+레벨) ---
   const dupKeys = new Map<string, Id>();
+  const dupPairs = new Set<string>(); // 겹침 검사에서 이중 보고 방지용
   for (const el of els) {
     let key: string;
     if (el.kind === 'wall') {
@@ -204,6 +206,7 @@ export function lint(store: DocStore): LintFinding[] {
     }
     const first = dupKeys.get(key);
     if (first) {
+      dupPairs.add([el.id, first].sort().join('|'));
       findings.push({
         code: 'duplicate',
         severity: 'warning',
@@ -232,12 +235,46 @@ export function lint(store: DocStore): LintFinding[] {
       return [base, base + (w.height ?? levelHeight)];
     };
 
+    // 공간 그리드 버킷팅 — 전수 O(n²) 대신 셀(GRID_CELL)을 공유하는 쌍만 정밀 검사.
+    // 각 벽 bbox를 최대 상호작용 거리(GAP_MAX)만큼 패딩해 등록하므로,
+    // 250mm 이내의 모든 쌍은 반드시 최소 한 셀을 공유한다 (후보 누락 없음).
+    const neighborSets: Set<number>[] = group.map(() => new Set<number>());
+    {
+      const cellMap = new Map<number, number[]>();
+      for (let i = 0; i < group.length; i++) {
+        const w = group[i]!;
+        const x0 = Math.floor((Math.min(w.a[0], w.b[0]) - GAP_MAX) / GRID_CELL);
+        const x1 = Math.floor((Math.max(w.a[0], w.b[0]) + GAP_MAX) / GRID_CELL);
+        const y0 = Math.floor((Math.min(w.a[1], w.b[1]) - GAP_MAX) / GRID_CELL);
+        const y1 = Math.floor((Math.max(w.a[1], w.b[1]) + GAP_MAX) / GRID_CELL);
+        for (let ix = x0; ix <= x1; ix++) {
+          for (let iy = y0; iy <= y1; iy++) {
+            const key = ix * 0x40000 + iy; // 셀 좌표 합성 키 (±13만 셀 = ±5km 문서까지 충돌 없음)
+            const list = cellMap.get(key);
+            if (list) list.push(i);
+            else cellMap.set(key, [i]);
+          }
+        }
+      }
+      for (const list of cellMap.values()) {
+        for (let a = 0; a < list.length; a++) {
+          for (let b = a + 1; b < list.length; b++) {
+            neighborSets[list[a]!]!.add(list[b]!);
+            neighborSets[list[b]!]!.add(list[a]!);
+          }
+        }
+      }
+    }
+
     // 3a. 근접 평행 겹침
     for (let i = 0; i < group.length; i++) {
-      for (let j = i + 1; j < group.length; j++) {
+      for (const j of neighborSets[i]!) {
+        if (j <= i) continue; // 쌍당 1회
         const w1 = group[i]!;
         const w2 = group[j]!;
-        if (segKey(w1.a, w1.b) === segKey(w2.a, w2.b)) continue; // 완전 중복은 위에서
+        // duplicate로 이미 보고된 쌍만 제외 — 같은 선상이라도 타입이 다르면
+        // 중복이 아니므로 여기서 겹침으로 잡아야 함 (미탐 방지)
+        if (dupPairs.has([w1.id, w2.id].sort().join('|'))) continue;
         // 수직 구간이 안 겹치면 평면상 같은 자리여도 정상 (문 위 인방벽, 고창 아래 허리벽)
         const [z1a, z1b] = zRange(w1);
         const [z2a, z2b] = zRange(w2);
@@ -266,20 +303,39 @@ export function lint(store: DocStore): LintFinding[] {
       }
     }
 
-    // 3b. 미접합 끝점 — 정확히 붙으면 마이터 조인, 거의 붙으면(≤250mm) 미접합 경고
+    // 3b. 미접합 끝점 — 정확히 붙으면 마이터/T자 조인, 거의 붙으면(≤250mm) 미접합 경고
+    // 끝점이 조인됨 = 다른 벽 끝점과 정확히 일치(마이터) 또는 몸체 위 정확히 위치(T자)
+    // (접촉 거리 0 ≤ GAP_MAX 패딩이므로 그리드 이웃만 보면 충분)
+    const isJoined = (idx: number, p: Pt): boolean => {
+      for (const oi of neighborSets[idx]!) {
+        const o = group[oi]!;
+        if (dist(o.a, p) === 0 || dist(o.b, p) === 0 || pointSegment(p, o.a, o.b).d === 0)
+          return true;
+      }
+      return false;
+    };
+    const joinedEnds = new Map<string, boolean>();
+    for (let i = 0; i < group.length; i++) {
+      const w = group[i]!;
+      joinedEnds.set(`${w.id}:a`, isJoined(i, w.a));
+      joinedEnds.set(`${w.id}:b`, isJoined(i, w.b));
+    }
+
     const reported = new Set<string>();
-    for (const w of group) {
+    for (let wi = 0; wi < group.length; wi++) {
+      const w = group[wi]!;
       for (const end of ['a', 'b'] as const) {
         const p = w[end];
-        // 다른 벽 끝점과 정확히 일치 → 조인됨, 통과
-        if (group.some((o) => o.id !== w.id && (dist(o.a, p) === 0 || dist(o.b, p) === 0)))
-          continue;
-        // 가장 가까운 후보 (다른 벽의 끝점 또는 몸체)
+        if (joinedEnds.get(`${w.id}:${end}`)) continue;
+        // 가장 가까운 후보 — 단, 이 벽 자신의 몸체 위에 정확히 닿아 있는 끝점은
+        // 제외 (T자 교차점을 지나 뻗은 자유 끝이 그 교차점을 "거의 만남"으로
+        // 오인하는 것 방지 — 이미 이 벽과 접합된 점이므로)
         let best: { d: number; other: WallElement; kind: 'end' | 'body'; key: string } | null =
           null;
-        for (const o of group) {
-          if (o.id === w.id) continue;
+        for (const oi of neighborSets[wi]!) {
+          const o = group[oi]!;
           for (const oEnd of ['a', 'b'] as const) {
+            if (pointSegment(o[oEnd], w.a, w.b).d === 0) continue;
             const d = dist(o[oEnd], p);
             if (d > 0 && (!best || d < best.d)) {
               const key = [`${w.id}:${end}`, `${o.id}:${oEnd}`].sort().join('|');

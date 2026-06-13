@@ -133,3 +133,25 @@ describe('DeriveCache 조인 자동 감지', () => {
     expect(minX).toBeCloseTo(0, 5); // 마이터 없음
   });
 });
+
+describe('DeriveIndex — 인덱스 경로 = 전체 스캔 경로', () => {
+  it('조인·개구부가 있는 문서에서 두 경로가 같은 캐시 키/지오메트리를 낸다', async () => {
+    const { buildDeriveIndex } = await import('../src/geometry');
+    const { SEED_IDS } = await import('../src/store');
+    const store = new DocStore();
+    seedDocument(store);
+    // L자 조인 2벽 + 자유 끝 1벽 + 개구부
+    const w1 = store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    const w2 = store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [4000, 0], b: [4000, 3000] });
+    const w3 = store.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall100, a: [0, 6000], b: [3000, 6000] });
+    store.createOpening({ hostId: w1, typeId: SEED_IDS.door900, offset: 2000 });
+
+    const index = buildDeriveIndex(store);
+    for (const id of [w1, w2, w3]) {
+      const plain = new DeriveCache().derive(store, id); // 전체 스캔 폴백
+      const indexed = new DeriveCache().derive(store, id, index); // 인덱스 경로
+      expect(indexed?.positions).toEqual(plain?.positions);
+      expect(indexed?.anchors).toEqual(plain?.anchors);
+    }
+  });
+});
