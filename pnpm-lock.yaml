@@ -59,6 +59,9 @@ importers:
       '@figcad/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@figcad/interop':
+        specifier: workspace:*
+        version: link:../../packages/interop
       nanoid:
         specifier: ^5.1.11
         version: 5.1.11
@@ -71,6 +74,9 @@ importers:
       three:
         specifier: ^0.184.0
         version: 0.184.0
+      web-ifc:
+        specifier: ^0.0.71
+        version: 0.0.71
       y-indexeddb:
         specifier: ^9.0.12
         version: 9.0.12(yjs@13.6.31)

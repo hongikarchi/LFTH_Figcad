@@ -3,6 +3,7 @@ import type { DocSnapshot, DocStore, ElemType } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
+import { downloadIfc, parseIfc } from '../interop/ifcClient';
 
 /** 타입 인라인 에디터 — kind별 필드 (이름/두께/색/개구부 치수) */
 function TypeEditor({ store, type }: { store: DocStore; type: ElemType }) {
@@ -52,6 +53,7 @@ export function Navigator({ store }: { store: DocStore }) {
   const { setViewMode, setActiveLevel } = useUiStore.getState();
   const [editing, setEditing] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<string | null>(null);
+  const [ifcBusy, setIfcBusy] = useState<'export' | 'import' | null>(null);
 
   const levels = store.listLevels();
   const types = store.listTypes();
@@ -96,6 +98,50 @@ export function Navigator({ store }: { store: DocStore }) {
           store.importSnapshot(snap);
         } catch (e) {
           window.alert(`가져오기 실패: ${e instanceof Error ? e.message : e}`);
+        }
+      });
+    };
+    input.click();
+  };
+
+  const exportIfcFile = async () => {
+    setIfcBusy('export');
+    try {
+      await downloadIfc(store.snapshot());
+    } catch (e) {
+      window.alert(`IFC 내보내기 실패: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setIfcBusy(null);
+    }
+  };
+
+  const importIfcFile = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.ifc';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      void file.arrayBuffer().then(async (buf) => {
+        setIfcBusy('import');
+        try {
+          const { snapshot, skipped } = await parseIfc(new Uint8Array(buf));
+          const elems = snapshot.elements.length;
+          const skipNote = Object.keys(skipped).length
+            ? `\n무시된 항목: ${Object.entries(skipped).map(([k, n]) => `${k} ${n}`).join(', ')}`
+            : '';
+          const n = store.listElements().length;
+          if (
+            !window.confirm(
+              `'${file.name}'에서 요소 ${elems}개를 가져와 현재 문서(요소 ${n}개)를 교체합니다.${skipNote}\n협업 중인 모든 사용자에게 적용됩니다 (Ctrl+Z 가능). 계속할까요?`,
+            )
+          )
+            return;
+          store.importSnapshot(snapshot);
+        } catch (e) {
+          window.alert(`IFC 가져오기 실패: ${e instanceof Error ? e.message : e}`);
+        } finally {
+          setIfcBusy(null);
         }
       });
     };
@@ -230,6 +276,14 @@ export function Navigator({ store }: { store: DocStore }) {
       <button className="nav-item indent" onClick={importJson}>
         JSON 가져오기
         <span className="nav-meta">교체</span>
+      </button>
+      <button className="nav-item indent" disabled={!!ifcBusy} onClick={() => void exportIfcFile()}>
+        {ifcBusy === 'export' ? 'IFC 내보내는 중…' : 'IFC 내보내기'}
+        <span className="nav-meta">.ifc</span>
+      </button>
+      <button className="nav-item indent" disabled={!!ifcBusy} onClick={importIfcFile}>
+        {ifcBusy === 'import' ? 'IFC 읽는 중…' : 'IFC 가져오기'}
+        <span className="nav-meta">.ifc</span>
       </button>
     </div>
   );

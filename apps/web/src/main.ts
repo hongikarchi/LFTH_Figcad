@@ -228,14 +228,17 @@ engine.requestRender();
 
 // 데브 전용: E2E·스트레스 테스트가 실제 브라우저 경로로 문서/렌더를 조작할 수 있게 노출
 if (import.meta.env.DEV) {
-  void import('@figcad/core').then(({ lint }) => {
-    (window as unknown as Record<string, unknown>)['__figcad'] = {
-      store,
-      ydoc,
-      seed,
-      engine,
-      rig,
-      lint,
-    };
-  });
+  void Promise.all([import('@figcad/core'), import('./interop/ifcClient')]).then(
+    ([{ lint }, ifc]) => {
+      (window as unknown as Record<string, unknown>)['__figcad'] = {
+        store,
+        ydoc,
+        seed,
+        engine,
+        rig,
+        lint,
+        ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
+      };
+    },
+  );
 }
