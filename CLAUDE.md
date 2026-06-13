@@ -47,6 +47,18 @@ node apps/web/scripts/ai-panel-smoke.mjs [포트|URL]
 - Anthropic strict tool use 금지 (도구 16종 = grammar too large 400) — executeOp 런타임 검증으로 충분.
 - 협업 의미론: 필드 단위 LWW, 삭제가 편집을 이김, undo는 자기 변경만(LOCAL_ORIGIN). 새 ops는 단일 `transact` = undo 1스텝.
 
-## 진행 상황
+## 영역별 상세 규칙 (path-scoped, 해당 경로 작업 시 로드)
 
-플랜·로드맵: `C:\Users\user\.claude\plans\figma-lazy-milner.md` (M0~M5 완료, 다음 M6 git식 버전 관리).
+`.claude/rules/core-geometry.md`(신규 kind 배선 체크리스트)·`ops-store.md`·`interop.md`·`web-tools.md`.
+
+## 진행 상황 / 로드맵
+
+@docs/ROADMAP.md
+
+- repo 내 lean SoT = `docs/ROADMAP.md` (현재 위치·마일스톤 상태). **M0~M9 완료**, 현재 **M11 Phase 0~5**(잔여기능+도면생성+검증).
+- 전체 히스토리: `~/.claude/plans/figma-lazy-milner.md`(M0~M10) · 현 작업: `wondrous-hugging-pebble.md`.
+- 메모리: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
+
+## Compact instructions
+
+압축 시 보존: 수정 파일 목록 · 테스트/빌드/배포 명령 · 현재 Phase·하위 슬라이스 · 미해결 멀티에이전트 리뷰 항목 · 최근 배포 Version ID. 4대 불변 규칙은 항상 유지.
