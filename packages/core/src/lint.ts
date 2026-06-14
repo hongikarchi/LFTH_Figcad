@@ -1,4 +1,5 @@
 import {
+  KIND_LABEL,
   resolveOpening,
   type Id,
   type OpeningType,
@@ -65,23 +66,6 @@ const WALL_LEN_MIN = 100; // 극단적으로 짧은 벽
 const WALL_HEIGHT_MIN = 300; // 극단적으로 낮은 벽
 const WALL_HEIGHT_INFO = 12000; // 비정상적으로 높은 벽 (정보)
 const SLAB_AREA_MIN = 10000; // 0.01㎡ — 극단적으로 작은 슬라브
-
-const KIND_LABEL: Record<string, string> = {
-  wall: '벽',
-  opening: '개구부',
-  slab: '슬라브',
-  grid: '그리드',
-  column: '기둥',
-  beam: '보',
-  stair: '계단',
-  railing: '난간',
-  roof: '지붕',
-  curtainwall: '커튼월',
-  zone: '존',
-  text: '텍스트',
-  label: '레이블',
-  dimension: '치수',
-};
 
 const dist = (p: Pt, q: Pt): number => Math.hypot(p[0] - q[0], p[1] - q[1]);
 

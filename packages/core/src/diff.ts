@@ -1,4 +1,5 @@
 import type { Element, Level, ElemType } from './schema';
+import { KIND_LABEL } from './schema';
 import type { DocSnapshot } from './store';
 
 /**
@@ -93,22 +94,6 @@ export function diffSnapshots(before: DocSnapshot, after: DocSnapshot): Snapshot
   };
 }
 
-export const KIND_LABEL: Record<Element['kind'], string> = {
-  wall: '벽',
-  opening: '개구부',
-  slab: '슬라브',
-  grid: '그리드',
-  column: '기둥',
-  beam: '보',
-  stair: '계단',
-  railing: '난간',
-  roof: '지붕',
-  curtainwall: '커튼월',
-  zone: '존',
-  text: '텍스트',
-  label: '레이블',
-  dimension: '치수',
-};
 
 export const countByKind = (els: Element[]): string =>
   Object.entries(

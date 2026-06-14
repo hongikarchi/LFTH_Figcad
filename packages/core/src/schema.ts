@@ -356,6 +356,28 @@ export const ElementSchema = z.discriminatedUnion('kind', [
 export type Element = z.infer<typeof ElementSchema>;
 
 /**
+ * Element kind → 한국어 라벨 (lint·diff·UI 공유 단일 소스).
+ * `Record<Element['kind'], …>` 타입이 신규 kind 추가 시 컴파일 에러를 강제 —
+ * silent-if-chain의 KIND_LABEL 항목을 런타임 fallback 대신 컴파일타임 가드로.
+ */
+export const KIND_LABEL: Record<Element['kind'], string> = {
+  wall: '벽',
+  opening: '개구부',
+  slab: '슬라브',
+  grid: '그리드',
+  column: '기둥',
+  beam: '보',
+  stair: '계단',
+  railing: '난간',
+  roof: '지붕',
+  curtainwall: '커튼월',
+  zone: '존',
+  text: '텍스트',
+  label: '레이블',
+  dimension: '치수',
+};
+
+/**
  * 협업 코멘트 — 요소가 아닌 별도 채널(ydoc 'comments' 맵). 평면 id 엔트리:
  * 루트(parentId 없음) = 앵커 있는 코멘트, 답글 = parentId 참조.
  * 평면 구조라 동시 답글이 서로 클로버되지 않음(각 답글 = 새 키, 엔트리별 LWW).
