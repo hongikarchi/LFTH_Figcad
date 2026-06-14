@@ -83,10 +83,10 @@
 | 항목 | 판정 |
 |---|---|
 | BCF 이슈 왕복(G4) | 워크플로-게이트(외부사 openBIM 교환 실수요 시). 재료 보유(Comment·`ifcGuidFromId` 안정 GUID·viewpoint). 파일 `.bcfzip`=데스크톱 표준 |
-| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain 9파일. `def.positional`(move/rotate/transformCopy/footprint→1)부터 점진. **코어 taxonomy=감독 필수** |
+| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain 9파일. **KIND_LABEL 슬라이스 ✅**(`9301d3c`, schema 단일소스+컴파일 가드). 남은 `def.positional`(move/rotate/transformCopy/footprint→1) = **코어 taxonomy 감독 필수** |
 | F6 전체 federation | C 설계문서가 스펙. F9 3D-Tiles HLOD(436MB 웹뷰 유일 검증답)와 페어 |
 | F2 branch/merge | 스파이크 선행 — CRDT가 라이브 자동해결 → offline-divergent 버전에만 |
-| G2 Cloud2BIM scan→BIM · G3 Speckle-Automate 룰QA(B 후속) · G5 IFC Pset 패스스루 · F5 파라 역-import · F7 USD 레인 · H2 멀티에이전트(입증 시만) | CONSIDER |
+| G2 Cloud2BIM scan→BIM · G3 Speckle-Automate 룰QA(B 후속) · G5 IFC Pset 패스스루 · **F5 파라 역-import(기둥+보 ✅ `f13b771`, 남은 kind=기하베이크 skip)** · F7 USD 레인 · H2 멀티에이전트(입증 시만) | CONSIDER |
 
 **REJECT (실수 빌드 금지):** H5 op 위 free-form 코드레이어(불변② 우회) · H6 메시bake 생성AI(불변① — ops/파라미터만) · pascal 플러그인 마켓(YAGNI, 소비자 0).
 **미답 = 딥리서치 부적합(§6):** 생성/개념설계 AI(dim4 약한절반) · 경쟁지형 Arcol/Motif/Qonic/Forma(dim6) — 포지셔닝 맵+불변 엣지 렌즈 필요(3패스 다 생존 claim 0).
