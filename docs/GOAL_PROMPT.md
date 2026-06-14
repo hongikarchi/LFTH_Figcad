@@ -2,8 +2,8 @@
 
 > 사용 법: 아래 **각 Task를 별도 `/goal` 호출**로 실행 (단일 메가 프롬프트는 컨텍스트 드리프트로 실패 — Anthropic prompt-eng 가이드). 각 Task는 자체 검증·커밋으로 끝남.
 >
-> **완료(자율 run에서 구현·배포 727fabc0)**: ~~Task A 커튼월~~ ✅ · ~~Task C fork~~ ✅ · 도면생성(평면/단면/입면+DXF) · 존. 신규 kind 템플릿 = `git show 7c649e7`(존) / `git show 4503355`(커튼월, typed kind).
-> **남음**: Task B 라벨(이 저장소 빌드 가능) · Task D connector(.NET/Rhino) · Task E 검증(416MB 파일).
+> **완료**: ~~Task A 커튼월~~ ✅ · ~~Task B 라벨~~ ✅(커밋 bc45a73, 배포 대기) · ~~Task C fork~~ ✅ · 도면생성(평면/단면/입면+DXF) · 존. 신규 kind 템플릿 = `git show 7c649e7`(존) / `git show 4503355`(커튼월, typed kind).
+> **남음**: Task D connector(.NET/Rhino) · Task E 검증(416MB 파일). 둘 다 이 환경 밖(네이티브 툴 필요). + 라벨 배포(사용자 승인 1줄).
 
 ## 공통 컨텍스트 (모든 Task 앞에 둘 것)
 
@@ -24,7 +24,7 @@ cadence(필수): advisor(설계 전·완료 전) → 구현 → corepack pnpm -F
 
 ## ~~Task A — 커튼월~~ ✅ 완료 (커밋 4503355, 배포 727fabc0) — typed kind 템플릿
 
-## Task B — 라벨 (Label) [이 저장소에서 빌드]
+## ~~Task B — 라벨 (Label)~~ ✅ 완료 (커밋 bc45a73) — type-less kind, targetId 바인딩+template+leader. 배포만 대기(사용자 승인).
 
 ```
 목표: 새 kind 'label' — 요소 속성/존 면적을 자동 표기하는 주석(Revit 태그). 텍스트(TextElement)+치수 바인딩(DimBind, bindFor) 패턴 재사용.
