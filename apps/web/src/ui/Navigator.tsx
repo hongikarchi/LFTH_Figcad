@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { DocSnapshot, DocStore, ElemType } from '@figcad/core';
+import type { DocSnapshot, DocStore, DrawingView, ElemType } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
@@ -93,13 +93,34 @@ export function Navigator({ store }: { store: DocStore }) {
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
-  const { setViewMode, setActiveLevel } = useUiStore.getState();
+  const activeViewId = useUiStore((s) => s.activeViewId);
+  const drawingOpen = useUiStore((s) => s.drawingOpen);
+  const { setViewMode, setActiveLevel, setActiveViewId, setDrawingOpen } = useUiStore.getState();
   const [editing, setEditing] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<string | null>(null);
   const [ifcBusy, setIfcBusy] = useState<'export' | 'import' | null>(null);
 
   const levels = store.listLevels();
   const types = store.listTypes();
+  const VIEW_ORDER = { plan: 0, section: 1, elevation: 2 } as const;
+  const views = [...store.listViews()].sort(
+    (a, b) => VIEW_ORDER[a.type] - VIEW_ORDER[b.type] || a.name.localeCompare(b.name, 'ko'),
+  );
+
+  // 도면 뷰 클릭 = 해당 뷰 열기 (Revit Project Browser / ArchiCAD Project Map 관례)
+  const openView = (v: DrawingView) => {
+    setActiveViewId(v.id);
+    if (v.type === 'plan' && v.levelId) setActiveLevel(v.levelId);
+    setDrawingOpen(true);
+  };
+  // 스토리 평면도 — 있으면 열고, 없으면 생성 후 열기 (멱등)
+  const openOrCreatePlan = (levelId: string, levelName: string) => {
+    const existing = store.listViews().find((v) => v.type === 'plan' && v.levelId === levelId);
+    const id = existing?.id ?? store.createView({ name: `평면 · ${levelName}`, type: 'plan', levelId, cutHeight: 1200 });
+    setActiveViewId(id);
+    setActiveLevel(levelId);
+    setDrawingOpen(true);
+  };
 
   const KIND_ORDER = { wall: 0, opening: 1, slab: 2, column: 3, beam: 4, stair: 5, railing: 6, roof: 7, curtainwall: 8 } as const;
   const sortedTypes = [...types].sort(
@@ -262,6 +283,13 @@ export function Navigator({ store }: { store: DocStore }) {
             </button>
             <button
               className="nav-edit"
+              title="평면도 열기/생성"
+              onClick={() => openOrCreatePlan(l.id, l.name)}
+            >
+              <Icon name="slab" size={14} />
+            </button>
+            <button
+              className="nav-edit"
               title="스토리 설정"
               onClick={() => setEditing(editing === l.id ? null : l.id)}
             >
@@ -309,10 +337,26 @@ export function Navigator({ store }: { store: DocStore }) {
         일반 원근
       </button>
 
-      <div className="nav-subsection dim">단면 · 입면</div>
-      <button className="nav-item indent" disabled title="2D 도면 단계 예정">
-        (도면 생성 단계)
-      </button>
+      <div className="nav-subsection">도면 (2D)</div>
+      {views.length === 0 ? (
+        <button className="nav-item indent" disabled title="스토리의 도면 아이콘 또는 단면/입면 도구로 생성">
+          아직 도면 없음
+        </button>
+      ) : (
+        views.map((v) => (
+          <button
+            key={v.id}
+            className={`nav-item indent ${drawingOpen && activeViewId === v.id ? 'active' : ''}`}
+            title={`${v.name} 열기`}
+            onClick={() => openView(v)}
+          >
+            {v.name}
+            <span className="nav-meta">
+              {v.type === 'plan' ? '평면' : v.type === 'section' ? '단면' : '입면'}
+            </span>
+          </button>
+        ))
+      )}
 
       <div className="nav-section">타입</div>
       {sortedTypes.map((t) => (

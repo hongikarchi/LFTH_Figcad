@@ -60,6 +60,10 @@ export class SlabTool implements Tool {
     if (last && Math.hypot(snap[0] - last[0], snap[1] - last[1]) < 50) return;
 
     this.points.push(snap); // 자가교차는 commit 시 isSimplePolygon으로 최종 검증
+    // 펜/터치 탭은 후속 move가 없어 미리보기가 stale — 커밋한 정점까지 즉시 재렌더
+    this.updatePreview();
+    this.updateMarker(snap, info.mmPerPixel);
+    this.ctx.engine.requestRender();
   }
 
   cancel(): void {
@@ -102,18 +106,22 @@ export class SlabTool implements Tool {
     }).point;
   }
 
-  private updatePreview(current: Pt): void {
+  // current 생략(커밋 직후) = 확정 정점들만 그림 — 중복점/0mm 치수칩 방지
+  private updatePreview(current?: Pt): void {
     if (!this.points.length) {
       this.preview.visible = false;
       return;
     }
     const elev = (this.ctx.store.getLevel(this.ctx.levelId())?.elevation ?? 0) / 1000;
-    const pts = [...this.points, current].map(
-      ([x, y]) => new THREE.Vector3(x / 1000, elev + 0.03, y / 1000),
-    );
+    const ptsMm = current ? [...this.points, current] : this.points;
+    const pts = ptsMm.map(([x, y]) => new THREE.Vector3(x / 1000, elev + 0.03, y / 1000));
     this.preview.geometry.setFromPoints(pts);
     this.preview.visible = true;
 
+    if (!current) {
+      this.ctx.hud.hideDimension();
+      return;
+    }
     const last = this.points[this.points.length - 1]!;
     const lenMm = Math.hypot(current[0] - last[0], current[1] - last[1]);
     const mid = new THREE.Vector3(

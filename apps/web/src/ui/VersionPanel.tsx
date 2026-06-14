@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { nanoid } from 'nanoid';
-import { diffSnapshots, diffSummary, type DocStore } from '@figcad/core';
+import {
+  countByKind,
+  diffSnapshots,
+  diffSummary,
+  KIND_LABEL,
+  type DocStore,
+  type SnapshotDiff,
+} from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { commitVersion, fetchCommit, fetchLog, type CommitMeta } from '../version/versionClient';
 
@@ -24,7 +31,7 @@ export function VersionPanel({ store }: { store: DocStore }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [diffs, setDiffs] = useState<Record<string, string>>({}); // 항목 키 → 현재와의 diff 요약
+  const [diffs, setDiffs] = useState<Record<string, SnapshotDiff>>({}); // 항목 키 → 현재와의 구조화 diff
 
   // 복원→재커밋이면 같은 해시가 타임라인에 두 번 등장할 수 있다 — ts와 합성해 유일화
   const itemKey = (c: CommitMeta): string => `${c.hash}:${c.ts}`;
@@ -74,9 +81,9 @@ export function VersionPanel({ store }: { store: DocStore }) {
     }
     try {
       const snap = await fetchCommit(c.hash);
-      // 커밋 → 현재 방향: "그때 이후 무엇이 달라졌나"
-      const summary = diffSummary(diffSnapshots(snap, store.snapshot()));
-      setDiffs((prev) => ({ ...prev, [key]: summary }));
+      // 커밋 → 현재 방향: "그때 이후 무엇이 달라졌나". 구조화 객체 보존(요약 버리지 않음).
+      const d = diffSnapshots(snap, store.snapshot());
+      setDiffs((prev) => ({ ...prev, [key]: d }));
     } catch (e) {
       setNotice(`비교 실패: ${e instanceof Error ? e.message : e}`);
     }
@@ -170,7 +177,35 @@ export function VersionPanel({ store }: { store: DocStore }) {
                 <button onClick={() => void fork(c)} title="이 버전에서 새 프로젝트 생성">fork</button>
               </span>
             </div>
-            {diffs[itemKey(c)] && <div className="ver-diff">이후 변경: {diffs[itemKey(c)]}</div>}
+            {diffs[itemKey(c)] &&
+              (() => {
+                const d = diffs[itemKey(c)]!;
+                return (
+                  <div className="ver-diff">
+                    <div className="ver-diff-summary">이후 변경: {diffSummary(d)}</div>
+                    {d.added.length > 0 && (
+                      <div className="diff-added">+ 추가: {countByKind(d.added)}</div>
+                    )}
+                    {d.removed.length > 0 && (
+                      <div className="diff-removed">− 삭제: {countByKind(d.removed)}</div>
+                    )}
+                    {d.changed.slice(0, 20).map((ch) => (
+                      <div key={ch.id} className="diff-changed">
+                        ~ {KIND_LABEL[ch.kind]}: {ch.fields.join(', ')}
+                      </div>
+                    ))}
+                    {d.changed.length > 20 && (
+                      <div className="diff-changed">~ 외 {d.changed.length - 20}건 수정</div>
+                    )}
+                    {(d.levelChanges > 0 || d.typeChanges > 0) && (
+                      <div className="diff-changed">
+                        {d.levelChanges ? `레벨 ${d.levelChanges}건 ` : ''}
+                        {d.typeChanges ? `타입 ${d.typeChanges}건` : ''}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
           </div>
         ))}
       </div>

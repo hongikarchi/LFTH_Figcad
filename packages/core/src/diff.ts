@@ -93,7 +93,7 @@ export function diffSnapshots(before: DocSnapshot, after: DocSnapshot): Snapshot
   };
 }
 
-const KIND_LABEL: Record<Element['kind'], string> = {
+export const KIND_LABEL: Record<Element['kind'], string> = {
   wall: '벽',
   opening: '개구부',
   slab: '슬라브',
@@ -110,7 +110,7 @@ const KIND_LABEL: Record<Element['kind'], string> = {
   dimension: '치수',
 };
 
-const countByKind = (els: Element[]): string =>
+export const countByKind = (els: Element[]): string =>
   Object.entries(
     els.reduce<Record<string, number>>((acc, e) => {
       acc[KIND_LABEL[e.kind]] = (acc[KIND_LABEL[e.kind]] ?? 0) + 1;

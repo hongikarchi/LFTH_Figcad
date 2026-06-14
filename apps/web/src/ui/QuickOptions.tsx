@@ -47,14 +47,19 @@ export function QuickOptions({ store, actions }: { store: DocStore; actions: Vie
       <span className="qo-sep" />
       <span className="qo-view">{viewName}</span>
       <span className="qo-sep" />
-      <span className="qo-label">활성 스토리: {level?.name ?? '—'}</span>
-      <span className="qo-sep" />
-      <button onClick={actions.zoomOut} title="줌아웃 (PageDown)">
-        <Icon name="minus" size={15} />
-      </button>
-      <button onClick={actions.zoomIn} title="줌인 (PageUp)">
-        <Icon name="plus" size={15} />
-      </button>
+      <label className="qo-story" title="활성 스토리 변경 (뷰 모드 유지 — 3D에서도 전환)">
+        활성 스토리
+        <select
+          value={activeLevelId ?? ''}
+          onChange={(e) => useUiStore.getState().setActiveLevel(e.target.value)}
+        >
+          {store.listLevels().map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <span className="qo-sep" />
       <button
         className={`qo-lint ${drawingOpen ? 'active' : ''}`}
