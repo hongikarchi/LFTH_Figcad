@@ -18,14 +18,14 @@ description: core 지오메트리 파생·단위·신규 Element kind 배선 체
 ## 신규 Element kind 배선 체크리스트 (silent if-chain — 누락 = 조용한 버그)
 새 kind 추가 시 **전부** 배선. tsc+단위만 통과시키지 말고 **실제로 move/copy/rotate/lint/export로 행사해 검증** (advisor 교훈 — D1a에서 .3dm/DXF 조용한 누락 사고).
 
-1. `schema.ts` — Element union + (타입 있으면) ElemType/TypeKind + DeriveInput union.
+1. `schema.ts` — Element union + (타입 있으면) ElemType/TypeKind + DeriveInput union + **`KIND_LABEL` 항목**(타입이 `Record<Element['kind']>`라 누락 시 컴파일 에러 = lint·diff 공유 단일 소스).
 2. `geometry/deriveX.ts` — `deriveX()` + `deriveKey` (바인딩 시 해석 좌표를 키에 폴드).
 3. `geometry/index.ts` — DeriveCache 분기.
 4. `store.ts` — create / update(quantize) / move / rotate / transformCopy / deleteElements 정책 / seed.
 5. `select.ts` — `elementFootprint` (+ 바인딩 있으면 `resolveDimAnchor`류 공유 헬퍼).
 6. `capabilities/catalog.ts` — capability 항목 (+ `aiExposed` 의도 명시).
-7. `lint.ts` — dup 검사 + `KIND_LABEL` + typeId 가드 (+ 바인딩 고아 검사).
-8. `diff.ts` — `KIND_LABEL`.
+7. `lint.ts` — dup 검사 + typeId 가드 (+ 바인딩 고아 검사). (`KIND_LABEL`은 schema.ts 단일 소스서 import — step 1.)
+8. `diff.ts` — (`KIND_LABEL` schema.ts에서 import; 신규 dup-key·countByKind는 자동.)
 9. interop 3종 — `ifcExport.ts` / `rhino3dm.ts` / `dxf.ts` (export + 필요시 import). 누락 = 조용한 데이터 손실.
 10. web — Tool · InfoBox(에디터+컨텍스트) · Navigator(KIND_ORDER+typeMeta+TypeEditor) · LintPanel anchorOf · SelectTool(드래그 정책) · Toolbox · main.ts 배선 · uiStore(ToolName/TypeKind) · context.ts.
 
