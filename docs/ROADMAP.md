@@ -51,9 +51,9 @@
 | **2** | 요소: 존 ✅ · 커튼월 ✅ · 라벨 ✅ | ✅ 완료 (라벨=goal 자율 run) |
 | **3** | M6.5 fork (스냅샷→새 룸) | ✅ 완료 |
 | 4 | M10 connector — D-1 라이브쓰기 ✅ · D-2 Rhino 커넥터 코어 ✅(MCP 검증, `.rhp` 셸만 남음) | 양방향 왕복 동작 |
-| 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
+| 5 | 검증 (260416 MODELING.3dm 436MB) — 커넥터로 실증 ✅ | `docs/VALIDATION_260416.md` |
 
-**현재 위치: M11.5(UX 7건) + M10-D1(라이브쓰기 API) 완료·배포 — Version `73eef3be`.** 남은 figcad 작업 = 전부 이 환경 밖(D-2 Rhino 플러그인 .NET · Task E 검증 416MB+네이티브). 직전 배포 `d5daa8c2`(라벨).
+**현재 위치: M10 커넥터 양방향 작동 + 416MB 실파일 검증까지 완료.** D-1 배포 `73eef3be`. D-2 커넥터 코어(`connectors/rhino/`, Rhino MCP 라이브 검증) · Task E(436MB→커넥터로 4초 read+1.5초 push, `docs/VALIDATION_260416.md`). 남음 = `.rhp` 패키징(.NET 밖) · v1.5(brep 시맨틱 리프팅·IFC 갭 등).
 - Phase 1 ✅: 평면(절단/투영/해치 even-odd) + 단면(cut (u,z)) + 입면(박스매싱 painter HLR) + DXF + views(schemaVersion 3). 멀티에이전트 리뷰 1건(해치) 수정.
 - Phase 2 ✅: 존(IfcSpace, 면적/부피) + 커튼월(UV 멀리언 그리드) + **라벨**(Revit 태그 — targetId 바인딩+template[name/area/custom]+leader, 타깃 추종/고아 fallback). 신규 kind 완전 배선(커밋 7c649e7 존 = **템플릿**). interop=주석류 의도적 스킵(텍스트는 drawing DXF 경유).
 - Phase 3 ✅: fork(클라 주도 — 한 버전 스냅샷→새 룸. 서버 DO storage 격리라 클라 importSnapshot).

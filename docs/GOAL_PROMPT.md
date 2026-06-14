@@ -3,7 +3,7 @@
 > 사용 법: 아래 **각 Task를 별도 `/goal` 호출**로 실행 (단일 메가 프롬프트는 컨텍스트 드리프트로 실패 — Anthropic prompt-eng 가이드). 각 Task는 자체 검증·커밋으로 끝남.
 >
 > **완료**: ~~Task A 커튼월~~ ✅ · ~~Task B 라벨~~ ✅(커밋 bc45a73, 배포 d5daa8c2) · ~~Task C fork~~ ✅ · 도면생성(평면/단면/입면+DXF) · 존. 신규 kind 템플릿 = `git show 7c649e7`(존) / `git show 4503355`(커튼월, typed kind).
-> **남음**: ~~D-1 라이브쓰기 API~~ ✅(a7cff19) · **Task D-2 Rhino 플러그인**(.NET/Rhino 환경) · **Task E 검증**(416MB 파일). D-2·E는 이 환경 밖(네이티브 툴). + 미배포분(M11.5·M10-D1) 배포(사용자 승인).
+> **남음**: ~~D-1~~ ✅ · ~~D-2 커넥터 코어~~ ✅(MCP 검증, `connectors/rhino/`) · ~~Task E 검증~~ ✅(436MB→커넥터, `docs/VALIDATION_260416.md`). 잔여 = **`.rhp` 패키징**(.NET8 SDK+VS+Yak, 모노레포 밖) · v1.5(brep 시맨틱 리프팅·IFC 신규kind·커넥터 압출솔리드).
 
 ## 공통 컨텍스트 (모든 Task 앞에 둘 것)
 

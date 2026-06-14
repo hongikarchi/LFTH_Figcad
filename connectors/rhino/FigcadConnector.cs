@@ -203,20 +203,32 @@ namespace Figcad
             }
             if (ops.Count == 0) return "Push: 보낼 Rhino 작도 객체 없음 (스킵 " + skipped + ")";
 
-            var content = new StringContent("{\"ops\":[" + string.Join(",", ops) + "]}", Encoding.UTF8, "application/json");
-            var resp = Http.PostAsync(Url(cfg, "apply"), content).GetAwaiter().GetResult();
-            var res = (Dictionary<string, object>)Json.Parse(resp.Content.ReadAsStringAsync().GetAwaiter().GetResult());
-            var createdIds = (List<object>)res["createdIds"];
-            var failed = (List<object>)res["failed"];
-            // createdIds writeback: pushed[i] ← createdIds[i] (다음 Pull 무중복의 핵심)
-            for (int i = 0; i < pushed.Count && i < createdIds.Count; i++)
+            // 배치 전송 — D-1 바운드(ops≤2000) 회피. 큰 모델(예: 416MB grid 111개, 향후 수천)도 분할 POST.
+            const int BATCH = 1500;
+            int applied = 0, failedTotal = 0;
+            var allCreated = new List<string>();
+            for (int off = 0; off < ops.Count; off += BATCH)
             {
-                var ob = doc.Objects.FindId(pushed[i]);
-                if (ob == null) continue;
-                ob.Attributes.SetUserString(IdKey, (string)createdIds[i]);
-                ob.CommitChanges();
+                var slice = ops.GetRange(off, Math.Min(BATCH, ops.Count - off));
+                var content = new StringContent("{\"ops\":[" + string.Join(",", slice) + "]}", Encoding.UTF8, "application/json");
+                var resp = Http.PostAsync(Url(cfg, "apply"), content).GetAwaiter().GetResult();
+                var res = (Dictionary<string, object>)Json.Parse(resp.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                applied += Convert.ToInt32(D(res["applied"]));
+                failedTotal += ((List<object>)res["failed"]).Count;
+                foreach (var cid in (List<object>)res["createdIds"]) allCreated.Add((string)cid);
             }
-            return "Push: 적용 " + Convert.ToInt32(D(res["applied"])) + " · 실패 " + failed.Count + " · 스킵 " + skipped;
+            // createdIds writeback: pushed[i] ← allCreated[i] (다음 Pull 무중복의 핵심).
+            // 정렬은 create_* op이 op당 정확히 id 1개를 내고 실패 0일 때만 보장 — 실패 시 스킵(재-Pull로 화해).
+            if (failedTotal == 0)
+                for (int i = 0; i < pushed.Count && i < allCreated.Count; i++)
+                {
+                    var ob = doc.Objects.FindId(pushed[i]);
+                    if (ob == null) continue;
+                    ob.Attributes.SetUserString(IdKey, allCreated[i]);
+                    ob.CommitChanges();
+                }
+            return "Push: 적용 " + applied + " · 실패 " + failedTotal + " · 스킵 " + skipped +
+                   " · 배치 " + ((ops.Count + BATCH - 1) / BATCH) + (failedTotal > 0 ? " (실패로 writeback 보류)" : "");
         }
 
         // --- helpers ---
