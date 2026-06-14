@@ -2,10 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   DocStore,
   AI_TOOLS,
+  critiqueOpLog,
   executeOp,
   isMutatingOp,
   opSummary,
   type DocSnapshot,
+  type LintFinding,
   type OpLogEntry,
 } from '@figcad/core';
 
@@ -48,6 +50,10 @@ const MAX_SKETCH_B64 = 8_000_000; // ~6MB 디코드 — 클라는 ≤1024px PNG�
 const MODEL = 'claude-opus-4-8';
 const MAX_ITERATIONS = 12;
 const MAX_TOKENS = 16000;
+// lint-in-loop critic — 모델이 끝났다고 선언하면 결정적 lint로 자기 변경을 검사하고
+// error가 있으면 재프롬프트한다. 이 상한이 무한 critic 루프를 막는다 (H3/H4: 외부
+// 결정적 검증자만 사용, LLM 판사 없음 — CRITIC/Kamoi 근거).
+const MAX_CRITIC_ROUNDS = 2;
 
 const SYSTEM_PROMPT = `당신은 Figcad(웹 기반 협업 건축 BIM 모델러)의 AI 모델링 어시스턴트다. 한국 소규모 건축사무소의 건축사들이 사용한다.
 
@@ -86,6 +92,27 @@ const json = (status: number, body: unknown): Response =>
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
+
+const serializeFinding = (f: LintFinding) => ({
+  code: f.code,
+  severity: f.severity,
+  message: f.message,
+  elementIds: f.elementIds,
+  fix: f.fix ? { label: f.fix.label, deleteIds: f.fix.deleteIds } : undefined,
+});
+
+/** critic 재프롬프트 — error finding을 관찰로 환류 (lint message는 이미 한국어). */
+function criticPrompt(errors: LintFinding[]): string {
+  const lines = errors
+    .map(
+      (f) =>
+        `- [${f.code}] ${f.message} · 요소 id: ${f.elementIds.join(', ')}${
+          f.fix ? ` · 제안: ${f.fix.label}` : ''
+        }`,
+    )
+    .join('\n');
+  return `<자동검증_lint>\n방금 만들거나 수정한 요소에서 결정적 규칙 위반(error)이 발견됐다. 아래를 실제로 고친 뒤 작업을 마쳐라(좌표·호스트·중복을 도구 호출로 수정 — 추측 금지). 정말 못 고치면 한국어로 이유를 한 줄 설명하라:\n${lines}\n</자동검증_lint>`;
+}
 
 export async function handleAgentRequest(request: Request, env: AgentEnv): Promise<Response> {
   if (request.method !== 'POST') return json(405, { error: 'POST only' });
@@ -168,6 +195,8 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
   }));
 
   const opLog: OpLogEntry[] = [];
+  let criticRounds = 0;
+  let sentDone = false; // 스트림이 done 없이 닫히면 클라가 throw — 모든 종료 경로 커버 안전망
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream<Uint8Array>();
   const writer = writable.getWriter();
@@ -203,7 +232,32 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
           continue;
         }
         if (msg.stop_reason !== 'tool_use') {
-          await send({ type: 'done', opLog, stopReason: msg.stop_reason });
+          // lint-in-loop critic — 모델이 끝났다 선언: 승인 게이트 직전 결정적 검증.
+          // 마지막 iteration(i===MAX-1)에선 재프롬프트 금지 — 고칠 예산이 없는데
+          // continue하면 루프가 done 없이 종료된다. 대신 미해결 error를 done에 실어 통지.
+          const critique = critiqueOpLog(dryStore, opLog);
+          if (
+            critique.errors.length > 0 &&
+            criticRounds < MAX_CRITIC_ROUNDS &&
+            i < MAX_ITERATIONS - 1
+          ) {
+            criticRounds++;
+            await send({
+              type: 'lint',
+              round: criticRounds,
+              findings: critique.errors.map(serializeFinding),
+            });
+            messages.push({ role: 'assistant', content: msg.content });
+            messages.push({ role: 'user', content: criticPrompt(critique.errors) });
+            continue; // 모델에 수정 기회 (end-of-loop 재프롬프트)
+          }
+          await send({
+            type: 'done',
+            opLog,
+            stopReason: msg.stop_reason,
+            lintFindings: [...critique.errors, ...critique.warnings].map(serializeFinding),
+          });
+          sentDone = true;
           break;
         }
 
@@ -237,14 +291,19 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
         messages.push({ role: 'user', content: results });
 
         if (i === MAX_ITERATIONS - 1) {
+          const critique = critiqueOpLog(dryStore, opLog);
           await send({
             type: 'done',
             opLog,
             stopReason: 'max_iterations',
             note: '루프 상한 도달 — 계획이 잘렸을 수 있음',
+            lintFindings: [...critique.errors, ...critique.warnings].map(serializeFinding),
           });
+          sentDone = true;
         }
       }
+      // 안전망 — 어떤 종료 경로도 done을 못 보냈으면(예: 마지막 턴 pause_turn) 여기서 보냄
+      if (!sentDone) await send({ type: 'done', opLog, stopReason: 'incomplete' });
     } catch (e) {
       await send({ type: 'error', error: e instanceof Error ? e.message : String(e) }).catch(
         () => {},

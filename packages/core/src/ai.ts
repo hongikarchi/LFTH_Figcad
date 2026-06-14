@@ -1,5 +1,6 @@
 import type { DocStore } from './store';
 import type { Id } from './schema';
+import { lint, type LintFinding } from './lint';
 import {
   buildAiTools,
   isMutatingCapability,
@@ -106,4 +107,54 @@ export function applyOpLog(store: DocStore, log: OpLogEntry[]): ApplyResult {
 /** opLog 엔트리 → 계획 카드용 한 줄 한글 요약 (레지스트리 summary 위임) */
 export function opSummary(entry: OpLogEntry): string {
   return capabilitySummary(entry.op, entry.args);
+}
+
+// --- lint-in-loop critic (H3/H4) ---
+
+/** opLog가 만든/건드린 요소 id 수집 (result 전체 + args.id/ids) — critic 범위 한정. */
+function touchedFromOpLog(log: OpLogEntry[]): Set<string> {
+  const out = new Set<string>();
+  const walk = (v: unknown): void => {
+    if (typeof v === 'string') out.add(v);
+    else if (Array.isArray(v)) for (const x of v) walk(x);
+    else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (typeof o.id === 'string') out.add(o.id);
+      if (Array.isArray(o.ids)) for (const x of o.ids) if (typeof x === 'string') out.add(x);
+    }
+  };
+  for (const entry of log) {
+    walk(entry.result);
+    const a = entry.args;
+    if (typeof a.id === 'string') out.add(a.id);
+    if (Array.isArray(a.ids)) for (const x of a.ids) if (typeof x === 'string') out.add(x);
+  }
+  return out;
+}
+
+export interface Critique {
+  errors: LintFinding[];
+  warnings: LintFinding[];
+}
+
+/**
+ * lint-in-loop critic 코어 — 결정적 lint로 스토어를 검사하되 opLog가 이번 턴
+ * 건드린 요소만 비평한다(기존 이슈 잔소리 금지). 외부 결정적 검증자만 — LLM 판사 없음.
+ * lint 예외는 빈 결과로 흡수(critic은 additive, 계획을 깨면 안 됨). 읽기전용 순수.
+ */
+export function critiqueOpLog(store: DocStore, log: OpLogEntry[]): Critique {
+  if (log.length === 0) return { errors: [], warnings: [] };
+  const touched = touchedFromOpLog(log);
+  if (touched.size === 0) return { errors: [], warnings: [] };
+  let findings: LintFinding[];
+  try {
+    findings = lint(store);
+  } catch {
+    return { errors: [], warnings: [] };
+  }
+  const mine = findings.filter((f) => f.elementIds.some((id) => touched.has(id)));
+  return {
+    errors: mine.filter((f) => f.severity === 'error'),
+    warnings: mine.filter((f) => f.severity !== 'error'),
+  };
 }

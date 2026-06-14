@@ -10,10 +10,21 @@ export interface TranscriptTurn {
   text: string;
 }
 
+/** 서버 lint-in-loop critic이 직렬화해 보내는 결정적 검증 결과 (LintFinding 미러). */
+export interface AiLintFinding {
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  elementIds: string[];
+  fix?: { label: string; deleteIds: string[] };
+}
+
 export interface AgentResult {
   opLog: OpLogEntry[];
   stopReason: string;
   note?: string;
+  /** 승인 게이트 직전 검증 결과 (warning/info + 미해결 error). */
+  lintFindings?: AiLintFinding[];
 }
 
 function agentUrl(): string {
@@ -38,6 +49,7 @@ export async function runAgent(opts: {
   transcript: TranscriptTurn[];
   onText: (delta: string) => void;
   onOp: (summary: string) => void;
+  onLint?: (round: number, findings: AiLintFinding[]) => void;
   sketch?: SketchAttachment | null;
   signal?: AbortSignal;
 }): Promise<AgentResult> {
@@ -77,11 +89,20 @@ export async function runAgent(opts: {
       case 'op':
         opts.onOp(String(ev['summary'] ?? ev['op'] ?? ''));
         break;
+      case 'lint':
+        opts.onLint?.(
+          Number(ev['round'] ?? 0),
+          Array.isArray(ev['findings']) ? (ev['findings'] as AiLintFinding[]) : [],
+        );
+        break;
       case 'done':
         result = {
           opLog: (ev['opLog'] as OpLogEntry[]) ?? [],
           stopReason: String(ev['stopReason'] ?? 'end_turn'),
           ...(ev['note'] ? { note: String(ev['note']) } : {}),
+          ...(Array.isArray(ev['lintFindings']) && ev['lintFindings'].length
+            ? { lintFindings: ev['lintFindings'] as AiLintFinding[] }
+            : {}),
         };
         break;
       case 'error':

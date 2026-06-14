@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { applyOpLog, opSummary, type DocStore, type OpLogEntry } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
-import { runAgent, type TranscriptTurn } from '../ai/agentClient';
+import { runAgent, type AiLintFinding, type TranscriptTurn } from '../ai/agentClient';
 import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
 
 /**
@@ -20,6 +20,7 @@ interface Plan {
   opLog: OpLogEntry[];
   summaries: string[];
   note?: string;
+  lintFindings?: AiLintFinding[];
 }
 
 export function AiPanel({ store }: { store: DocStore }) {
@@ -76,8 +77,14 @@ export function AiPanel({ store }: { store: DocStore }) {
         onText: (delta) => {
           setMsgs((prev) => {
             const next = [...prev];
-            const lastIdx = next.length - 1;
-            next[lastIdx] = { role: 'assistant', text: next[lastIdx]!.text + delta };
+            const last = next[next.length - 1];
+            // critic notice가 중간에 끼면 마지막이 assistant가 아닐 수 있음 →
+            // 새 assistant 버블 시작(델타가 notice를 덮어쓰지 않게)
+            if (last && last.role === 'assistant') {
+              next[next.length - 1] = { role: 'assistant', text: last.text + delta };
+            } else {
+              next.push({ role: 'assistant', text: delta });
+            }
             return next;
           });
           scrollDown();
@@ -86,12 +93,26 @@ export function AiPanel({ store }: { store: DocStore }) {
           setLiveOps((prev) => [...prev, summary]);
           scrollDown();
         },
+        onLint: (round, findings) => {
+          // critic이 결정적 lint error를 발견해 모델에 수정 재요청 중
+          setMsgs((prev) => [
+            ...prev,
+            {
+              role: 'notice',
+              text: `🔍 자동검증 ${round}회 — ${findings.length}건 수정 요청: ${findings
+                .map((f) => f.message)
+                .join('; ')}`,
+            },
+          ]);
+          scrollDown();
+        },
       });
       if (result.opLog.length > 0) {
         setPlan({
           opLog: result.opLog,
           summaries: result.opLog.map(opSummary),
           ...(result.note ? { note: result.note } : {}),
+          ...(result.lintFindings?.length ? { lintFindings: result.lintFindings } : {}),
         });
       }
     } catch (e) {
@@ -169,6 +190,15 @@ export function AiPanel({ store }: { store: DocStore }) {
                 <li key={i}>{s}</li>
               ))}
             </ol>
+            {plan.lintFindings?.length ? (
+              <div className="ai-plan-lint">
+                {plan.lintFindings.map((f, i) => (
+                  <div key={i} className={`ai-lint-${f.severity}`}>
+                    {f.severity === 'error' ? '✖' : '⚠'} {f.message}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="ai-plan-actions">
               <button className="ai-approve" onClick={approve}>
                 승인 — 문서에 적용
