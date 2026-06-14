@@ -307,7 +307,8 @@ if (import.meta.env.DEV) {
     import('@figcad/core'),
     import('./interop/ifcClient'),
     import('./ai/sketchCapture'),
-  ]).then(([{ lint }, ifc, sketch]) => {
+    import('./engine/ReferenceLayer'),
+  ]).then(([{ lint }, ifc, sketch, { ReferenceLayer }]) => {
     (window as unknown as Record<string, unknown>)['__figcad'] = {
       store,
       ydoc,
@@ -319,6 +320,8 @@ if (import.meta.env.DEV) {
       lint,
       ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
       sketch, // { rasterizeSketch, hasSketch, clearSketch, getStrokes } — E2E용
+      // F6 스파이크: 읽기전용 레퍼런스 채널(개발 전용 — 기본 UI 밖). store·ops 무관.
+      referenceLayer: new ReferenceLayer(engine),
       ui: useUiStore,
     };
   });
