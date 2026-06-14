@@ -17,6 +17,7 @@ export type ToolName =
   | 'zone'
   | 'dimension'
   | 'text'
+  | 'label'
   | 'sketch'
   | 'comment'
   | 'section'

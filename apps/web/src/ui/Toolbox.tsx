@@ -40,7 +40,7 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
     items: [
       { label: '치수', icon: 'dimension', tool: 'dimension' },
       { label: '텍스트', icon: 'text', tool: 'text' },
-      { label: '레이블', icon: 'pencil', planned: '2D 도면 단계' },
+      { label: '레이블', icon: 'pencil', tool: 'label' },
       { label: '해치', icon: 'hatch', planned: '2D 도면 단계' },
     ],
   },

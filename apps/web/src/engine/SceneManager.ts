@@ -230,9 +230,10 @@ export class SceneManager {
   }
 
   private applyGhosting(entry: SceneEntry): void {
-    // 그리드·주석(text/dimension)은 픽 프록시 메시가 거의 투명(생성 시 설정) — 고스팅 제외.
-    // 그리드는 전 층 공통, 주석은 메시가 픽 전용이라 불투명 처리하면 안 됨.
-    if (entry.kind === 'grid' || entry.kind === 'text' || entry.kind === 'dimension') return;
+    // 그리드·주석(text/label/dimension)은 픽 프록시 메시가 거의 투명(생성 시 설정) — 고스팅 제외.
+    // 그리드는 전 층 공통, 주석은 메시가 픽 전용이라 불투명 처리하면 안 됨(불투명화 시 텍스트 위 솔리드 박스).
+    if (entry.kind === 'grid' || entry.kind === 'text' || entry.kind === 'label' || entry.kind === 'dimension')
+      return;
     const ghosted =
       this.viewMode === 'plan' &&
       this.activeLevelId !== null &&
@@ -274,9 +275,9 @@ export class SceneManager {
     let entry = this.entries.get(id);
     if (!entry) {
       const mat = new THREE.MeshLambertMaterial({ color });
-      if (el.kind === 'grid' || el.kind === 'text' || el.kind === 'dimension') {
-        // 픽킹 전용 프록시 메시 (거의 안 보이게) — 그리드 리본·텍스트 박스·치수선 리본.
-        // 보이는 것은 라벨 스프라이트(text/dim)와 에지(dimension 치수선)뿐.
+      if (el.kind === 'grid' || el.kind === 'text' || el.kind === 'label' || el.kind === 'dimension') {
+        // 픽킹 전용 프록시 메시 (거의 안 보이게) — 그리드 리본·텍스트/레이블 박스·치수선 리본.
+        // 보이는 것은 라벨 스프라이트(text/label/dim)와 에지(dimension 치수선·label 지시선)뿐.
         mat.transparent = true;
         mat.opacity = 0.04;
         mat.depthWrite = false;
@@ -342,6 +343,11 @@ export class SceneManager {
       entry.labelKey = key;
     }
     labels.forEach((l, i) => entry.sprites[i]?.position.set(...l.pos));
+  }
+
+  /** 디버그/스모크 전용 — 라이브 파생 경로가 만든 라벨 텍스트 키 (`style:text|...`). */
+  debugLabelKey(id: Id): string | null {
+    return this.entries.get(id)?.labelKey ?? null;
   }
 
   private remove(id: Id): void {

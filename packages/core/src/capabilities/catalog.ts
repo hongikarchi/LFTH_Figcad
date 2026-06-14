@@ -448,6 +448,43 @@ export const CAPABILITIES: Capability[] = [
       }),
     summary: (a) => `텍스트 '${a['text']}' ${fmtPt(a['at'])}`,
   },
+  {
+    id: 'create_label',
+    category: 'annotation',
+    titleKo: '레이블',
+    icon: 'pencil',
+    descriptionKo:
+      '레이블(Revit 태그) 생성 — 참조 요소(targetId)의 속성 자동 표기. template: name=요소 이름/타입명, area=존/슬라브/지붕 면적(㎡), custom=customText. leader=지시선. 예: "이 존 면적 라벨" → targetId=존id, template=area.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        at: ptSchema('레이블 위치'),
+        targetId: { type: 'string', description: '참조 요소 id (생략 시 자유 custom 노트)' },
+        template: {
+          type: 'string',
+          enum: ['name', 'area', 'custom'],
+          description: 'name=이름/타입명, area=면적㎡(존/슬라브/지붕), custom=customText',
+        },
+        customText: { type: 'string', description: 'custom 템플릿 또는 고아 fallback 텍스트' },
+        leader: { type: 'boolean', description: '지시선(at→타깃 중심) 표시' },
+      },
+      required: ['levelId', 'at', 'template'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createLabel({
+        levelId: asStr(a['levelId'], 'levelId'),
+        at: asPt(a['at']),
+        template: asStr(a['template'], 'template') as 'name' | 'area' | 'custom',
+        ...(a['targetId'] !== undefined ? { targetId: String(a['targetId']) } : {}),
+        ...(a['customText'] !== undefined ? { customText: String(a['customText']) } : {}),
+        ...(a['leader'] !== undefined ? { leader: a['leader'] === true } : {}),
+      }),
+    summary: (a) => `레이블 (${a['template']}) ${fmtPt(a['at'])}`,
+  },
 
   // ===== opening =====
   {

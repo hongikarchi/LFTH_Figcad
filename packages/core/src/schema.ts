@@ -299,6 +299,24 @@ export const TextElementSchema = z.object({
 });
 export type TextElement = z.infer<typeof TextElementSchema>;
 
+/**
+ * 라벨(Revit 태그) — 참조 요소(targetId)의 속성을 자동 표기하는 주석. 타입 없음.
+ * template: 'name'=요소 이름/타입명, 'area'=존/슬라브/지붕 면적(㎡), 'custom'=customText.
+ * 타깃 삭제(고아) 시 연쇄삭제 안 함 — customText 또는 '—' fallback(lint orphan 경고).
+ * leader=지시선(at→타깃 중심). 텍스트·중심은 파생(저장 안 함).
+ */
+export const LabelElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('label'),
+  levelId: z.string(),
+  at: Pt, // 라벨 위치 mm
+  targetId: z.string().optional(), // 참조 요소 id (없으면 자유 custom 노트)
+  template: z.enum(['name', 'area', 'custom']),
+  customText: z.string().optional(),
+  leader: z.boolean().optional(), // 지시선 표시
+});
+export type LabelElement = z.infer<typeof LabelElementSchema>;
+
 /** 치수 바인딩 — 참조 요소의 끝점(a/b)을 따라감 (이동 추종) */
 export const DimBindSchema = z.object({
   id: z.string(),
@@ -332,6 +350,7 @@ export const ElementSchema = z.discriminatedUnion('kind', [
   CurtainWallElementSchema,
   ZoneElementSchema,
   TextElementSchema,
+  LabelElementSchema,
   DimensionElementSchema,
 ]);
 export type Element = z.infer<typeof ElementSchema>;

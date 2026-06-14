@@ -91,7 +91,7 @@ function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId
   if (el.kind === 'dimension') {
     return { x: (el.a[0] + el.b[0]) / 2, y: (el.a[1] + el.b[1]) / 2, levelId: el.levelId };
   }
-  if (el.kind === 'column' || el.kind === 'text') {
+  if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label') {
     return { x: el.at[0], y: el.at[1], levelId: el.levelId };
   }
   // opening — 호스트 중심선 위 offset 지점

@@ -106,6 +106,7 @@ const KIND_LABEL: Record<Element['kind'], string> = {
   curtainwall: '커튼월',
   zone: '존',
   text: '텍스트',
+  label: '레이블',
   dimension: '치수',
 };
 

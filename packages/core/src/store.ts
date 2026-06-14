@@ -29,6 +29,7 @@ import {
   type ZoneElement,
   type StairElement,
   type TextElement,
+  type LabelElement,
   type WallElement,
 } from './schema';
 import { resolveDimAnchor } from './select';
@@ -721,6 +722,29 @@ export class DocStore {
     return id;
   }
 
+  createLabel(params: {
+    levelId: Id;
+    at: Pt;
+    targetId?: Id;
+    template: 'name' | 'area' | 'custom';
+    customText?: string;
+    leader?: boolean;
+  }): Id {
+    const id = nanoid(12);
+    const el = ElementSchema.parse({
+      id,
+      kind: 'label',
+      levelId: params.levelId,
+      at: [quantize(params.at[0]), quantize(params.at[1])],
+      template: params.template,
+      ...(params.targetId !== undefined ? { targetId: params.targetId } : {}),
+      ...(params.customText !== undefined ? { customText: params.customText } : {}),
+      ...(params.leader !== undefined ? { leader: params.leader } : {}),
+    }) as LabelElement;
+    this.setElement(id, el);
+    return id;
+  }
+
   createDimension(params: {
     levelId: Id;
     a: Pt;
@@ -753,7 +777,8 @@ export class DocStore {
   /** 점과 mm-정확 일치하는 요소 끝점 찾기 (치수 바인딩 캡처) — 마이터 조인의 정확일치 철학 */
   private bindFor(p: Pt, levelId: Id): DimBind | undefined {
     for (const el of this.elements.values()) {
-      if (el.kind === 'dimension' || el.kind === 'text' || el.kind === 'opening') continue;
+      if (el.kind === 'dimension' || el.kind === 'text' || el.kind === 'label' || el.kind === 'opening')
+        continue;
       // 그리드는 levelId 없음(전층) → 'levelId' in el 이 false라 자연히 통과
       if ('levelId' in el && el.levelId !== levelId) continue;
       if ('a' in el && 'b' in el) {
@@ -848,6 +873,8 @@ export class DocStore {
     } else if (next.kind === 'text') {
       next.at = [quantize(next.at[0]), quantize(next.at[1])];
       if (next.size !== undefined) next.size = quantize(next.size);
+    } else if (next.kind === 'label') {
+      next.at = [quantize(next.at[0]), quantize(next.at[1])];
     } else if (next.kind === 'dimension') {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
@@ -1037,43 +1064,44 @@ export class DocStore {
   ): Id[] {
     const els = this.withHostedOpenings(ids);
     const created: Id[] = [];
-    const wallIdMap = new Map<Id, Id>(); // 원본 벽 → 새 벽
+    const idMap = new Map<Id, Id>(); // 원본 → 새 id (개구부 재호스트·라벨 타깃 재바인딩 공유)
+    const labelTargets: { newId: Id; targetId: Id }[] = [];
     this.transact(() => {
       for (const el of els) {
+        let newId: Id | null = null;
         if (el.kind === 'wall') {
-          const newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
-          wallIdMap.set(el.id, newId);
-          created.push(newId);
+          newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
         } else if (el.kind === 'slab' || el.kind === 'zone') {
-          created.push(this.writeNew({ ...el, boundary: el.boundary.map((p) => q2(xform(p))) }));
+          newId = this.writeNew({ ...el, boundary: el.boundary.map((p) => q2(xform(p))) });
         } else if (el.kind === 'grid') {
           // 라벨은 자동 재발급 (중복 방지)
           const a = q2(xform(el.a));
           const b = q2(xform(el.b));
-          created.push(this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) }));
+          newId = this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) });
         } else if (el.kind === 'column' || el.kind === 'text') {
-          created.push(this.writeNew({ ...el, at: q2(xform(el.at)) }));
+          newId = this.writeNew({ ...el, at: q2(xform(el.at)) });
+        } else if (el.kind === 'label') {
+          newId = this.writeNew({ ...el, at: q2(xform(el.at)) });
+          if (el.targetId) labelTargets.push({ newId, targetId: el.targetId });
         } else if (
           el.kind === 'beam' ||
           el.kind === 'curtainwall' ||
           el.kind === 'stair' ||
           el.kind === 'railing'
         ) {
-          created.push(this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) }));
+          newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
         } else if (el.kind === 'dimension') {
           // 복사본은 바인딩 해제 → 변환된 위치의 자유 치수. 단 출처는 stored가 아닌
           // 해석된(렌더에 보이는) 좌표 — 바인딩 요소가 이미 이동했어도 보이는 위치를 복사.
           const ra = resolveDimAnchor(this, el.bindA, el.a);
           const rb = resolveDimAnchor(this, el.bindB, el.b);
-          created.push(
-            this.writeNew({
-              ...el,
-              a: q2(xform(ra)),
-              b: q2(xform(rb)),
-              bindA: undefined,
-              bindB: undefined,
-            }),
-          );
+          newId = this.writeNew({
+            ...el,
+            a: q2(xform(ra)),
+            b: q2(xform(rb)),
+            bindA: undefined,
+            bindB: undefined,
+          });
         } else if (el.kind === 'roof') {
           const next: Record<string, unknown> = {
             ...el,
@@ -1085,13 +1113,17 @@ export class DocStore {
             const td = xform(el.slope.dir);
             next['slope'] = { dir: q2([td[0] - o[0], td[1] - o[1]]), pitch: el.slope.pitch };
           }
-          created.push(this.writeNew(next));
+          newId = this.writeNew(next);
+        }
+        if (newId) {
+          idMap.set(el.id, newId);
+          created.push(newId);
         }
       }
-      // 개구부는 벽 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
+      // 개구부는 호스트 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
       for (const el of els) {
         if (el.kind !== 'opening') continue;
-        const newHost = wallIdMap.get(el.hostId);
+        const newHost = idMap.get(el.hostId);
         if (!newHost) continue; // 호스트가 복사 대상이 아니면 개구부 단독 복사 안 함
         created.push(
           this.writeNew({
@@ -1100,6 +1132,14 @@ export class DocStore {
             ...(flipOpenings ? { flip: !el.flip } : {}),
           }),
         );
+      }
+      // 라벨 타깃이 같은 복사셋에 있으면 새 타깃으로 재바인딩 (개구부 재호스트 선례).
+      // 셋 밖이면 원본 targetId 유지 — name/area가 '—'로 퇴화하지 않게(dimension 언바인딩과 다름).
+      for (const { newId, targetId } of labelTargets) {
+        const remapped = idMap.get(targetId);
+        if (!remapped) continue;
+        const ymap = this.yElements.get(newId);
+        if (ymap instanceof Y.Map) ymap.set('targetId', remapped);
       }
     });
     return created;
@@ -1128,7 +1168,7 @@ export class DocStore {
             'boundary',
             el.boundary.map((p) => q2([p[0] + delta[0], p[1] + delta[1]])),
           );
-        } else if (el.kind === 'column' || el.kind === 'text') {
+        } else if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label') {
           ymap.set('at', q2([el.at[0] + delta[0], el.at[1] + delta[1]]));
         }
         // opening 단독 이동은 SelectTool 드래그(offset)로
@@ -1190,7 +1230,7 @@ export class DocStore {
               pitch: el.slope.pitch,
             });
           }
-        } else if (el.kind === 'column' || el.kind === 'text') {
+        } else if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label') {
           ymap.set('at', q2(rotatePoint(el.at, center, angleRad)));
         }
       }

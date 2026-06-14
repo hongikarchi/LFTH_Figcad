@@ -21,6 +21,7 @@ import { RailingTool } from './tools/RailingTool';
 import { RoofTool } from './tools/RoofTool';
 import { DimensionTool } from './tools/DimensionTool';
 import { TextTool } from './tools/TextTool';
+import { LabelTool } from './tools/LabelTool';
 import { SketchTool } from './tools/SketchTool';
 import { CommentTool } from './tools/CommentTool';
 import { SectionTool } from './tools/SectionTool';
@@ -138,6 +139,7 @@ tools.register('curtainwall', new CurtainWallTool(ctx));
 tools.register('zone', new ZoneTool(ctx));
 tools.register('dimension', new DimensionTool(ctx));
 tools.register('text', new TextTool(ctx));
+tools.register('label', new LabelTool(ctx));
 tools.register('sketch', new SketchTool(ctx));
 tools.register('comment', new CommentTool(ctx));
 tools.register('section', new SectionTool(ctx, 'section'));
@@ -312,6 +314,7 @@ if (import.meta.env.DEV) {
       seed,
       engine,
       rig,
+      sceneManager, // 스모크: 라이브 파생 라벨 검증(debugLabelKey)
       lint,
       ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
       sketch, // { rasterizeSketch, hasSketch, clearSketch, getStrokes } — E2E용

@@ -37,6 +37,7 @@ export type LintCode =
   | 'overlap-wall' // 근접 평행 벽 겹침
   | 'unjoined-endpoint' // 끝점이 거의 만나지만 정확히 안 붙음 (마이터 조인 불발)
   | 'orphan-dimension' // 치수 바인딩이 삭제된 요소를 가리킴 (추종 안 됨)
+  | 'orphan-label' // 라벨 타깃이 삭제된 요소를 가리킴 (fallback 텍스트 표시)
   | 'extreme-dimension'; // 극단적으로 짧은 벽/낮은 벽/작은 슬라브 등
 
 export interface LintFix {
@@ -78,6 +79,7 @@ const KIND_LABEL: Record<string, string> = {
   curtainwall: '커튼월',
   zone: '존',
   text: '텍스트',
+  label: '레이블',
   dimension: '치수',
 };
 
@@ -172,6 +174,16 @@ export function lint(store: DocStore): LintFinding[] {
       }
     }
 
+    // 라벨 타깃 고아 — 참조 요소 삭제됨 (fallback 텍스트로 표시되나 속성 추종 안 됨)
+    if (el.kind === 'label' && el.targetId && !store.getElement(el.targetId)) {
+      findings.push({
+        code: 'orphan-label',
+        severity: 'warning',
+        message: '레이블 타깃이 삭제된 요소를 가리킴 — fallback 텍스트로 표시 (속성 추종 안 됨)',
+        elementIds: [el.id],
+      });
+    }
+
     if (el.kind === 'opening') {
       const host = store.getElement(el.hostId);
       if (host?.kind !== 'wall') {
@@ -245,6 +257,8 @@ export function lint(store: DocStore): LintFinding[] {
       key = `dim|${el.levelId}|${segKey(el.a, el.b)}|${el.offset ?? ''}`;
     } else if (el.kind === 'zone') {
       key = `zn|${el.levelId}|${el.name}|${el.number ?? ''}|${boundaryKey(el.boundary)}`;
+    } else if (el.kind === 'label') {
+      key = `lbl|${el.levelId}|${el.at[0]},${el.at[1]}|${el.template}|${el.targetId ?? ''}|${el.customText ?? ''}`;
     } else {
       key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
     }

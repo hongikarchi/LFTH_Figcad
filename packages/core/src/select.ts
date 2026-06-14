@@ -1,5 +1,6 @@
 import type { DocStore } from './store';
 import { resolveOpening } from './schema';
+import { polygonCentroid } from './geometry/deriveZone';
 import type { Comment, DimBind, Element, OpeningType, Pt, WallElement } from './schema';
 
 /**
@@ -23,6 +24,18 @@ export function resolveCommentPoint(store: DocStore, c: Comment): Pt {
     c.anchorId ? { id: c.anchorId, anchor: c.anchorWhich ?? 'a' } : undefined,
     c.at,
   );
+}
+
+/** 라벨 leader 끝점 — 타깃 요소 중심(mm). footprint 재사용해 픽/렌더와 같은 좌표. */
+export function labelTargetCenter(store: DocStore, target: Element): Pt | null {
+  const fp = elementFootprint(target, store);
+  if (!fp) return null;
+  if (fp.kind === 'point') return fp.p;
+  if (fp.kind === 'segment')
+    return [Math.round((fp.a[0] + fp.b[0]) / 2), Math.round((fp.a[1] + fp.b[1]) / 2)];
+  // 폴리곤(존/슬라브/지붕) = 면적가중 무게중심 (존 라벨 스탬프와 동일 관례 — 재발명 금지)
+  const c = polygonCentroid(fp.pts);
+  return [Math.round(c[0]), Math.round(c[1])];
 }
 
 /**
@@ -150,7 +163,8 @@ export function elementFootprint(el: Element, store: DocStore): Footprint {
       a: resolveDimAnchor(store, el.bindA, el.a),
       b: resolveDimAnchor(store, el.bindB, el.b),
     };
-  if (el.kind === 'column' || el.kind === 'text') return { kind: 'point', p: el.at };
+  if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label')
+    return { kind: 'point', p: el.at };
   if (el.kind === 'opening') {
     const host = store.getElement(el.hostId);
     if (host?.kind !== 'wall') return null;

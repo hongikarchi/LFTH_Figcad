@@ -1,4 +1,4 @@
-import { polygonArea, resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
+import { labelText, polygonArea, resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
 import { useUiStore, type TypeKind } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
@@ -497,6 +497,54 @@ export function InfoBox({ store }: { store: DocStore }) {
     );
   }
 
+  if (el?.kind === 'label') {
+    const target = el.targetId ? store.getElement(el.targetId) : null;
+    const shown = labelText(el, target ?? null, store);
+    return (
+      <div className="infobox">
+        <span className="infobox-title">레이블</span>
+        <span className="infobox-field">
+          <label>템플릿</label>
+          <select
+            value={el.template}
+            onChange={(e) => store.updateElement(el.id, { template: e.target.value })}
+          >
+            <option value="name">이름/타입</option>
+            <option value="area">면적</option>
+            <option value="custom">직접 입력</option>
+          </select>
+        </span>
+        {el.template === 'custom' ? (
+          <TextField
+            label="내용"
+            value={el.customText ?? ''}
+            maxLength={120}
+            width={140}
+            onCommit={(v) => store.updateElement(el.id, { customText: v })}
+          />
+        ) : (
+          <span className="infobox-field">
+            <label>표시</label>
+            <span className="ro">{shown}</span>
+          </span>
+        )}
+        <span className="infobox-field">
+          <label>지시선</label>
+          <input
+            type="checkbox"
+            checked={!!el.leader}
+            onChange={(e) => store.updateElement(el.id, { leader: e.target.checked })}
+          />
+        </span>
+        <span className="infobox-field">
+          <label>타깃</label>
+          <span className="ro">{el.targetId ? (target ? '연결됨' : '삭제됨(고아)') : '없음'}</span>
+        </span>
+        {deleteBtn(el.id)}
+      </div>
+    );
+  }
+
   if (el?.kind === 'grid') {
     return (
       <div className="infobox">
@@ -610,6 +658,15 @@ export function InfoBox({ store }: { store: DocStore }) {
       <div className="infobox">
         <span className="infobox-title">텍스트 도구</span>
         <span className="infobox-hint">점 클릭 → 입력창에 문자 입력 (Enter 확정 · Esc 취소)</span>
+      </div>
+    );
+  }
+
+  if (activeTool === 'label') {
+    return (
+      <div className="infobox">
+        <span className="infobox-title">레이블 도구</span>
+        <span className="infobox-hint">요소 클릭 = 자동 라벨(존=면적·그 외=이름) · 빈 곳 클릭 = 직접 입력</span>
       </div>
     );
   }

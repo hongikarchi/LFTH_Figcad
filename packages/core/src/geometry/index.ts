@@ -28,7 +28,8 @@ import {
   textDeriveKey,
 } from './deriveAnnotations';
 import { deriveZone, zoneDeriveKey } from './deriveZone';
-import { resolveDimAnchor } from '../select';
+import { deriveLabel, labelDeriveKey, labelText } from './deriveLabel';
+import { resolveDimAnchor, labelTargetCenter } from '../select';
 import type { JoinInfo } from './joins';
 import type { DocStore } from '../store';
 import type {
@@ -54,6 +55,7 @@ export * from './deriveOthers';
 export * from './deriveStructure';
 export * from './deriveAnnotations';
 export * from './deriveZone';
+export * from './deriveLabel';
 export * from './deriveDrawing';
 export * from './hatch';
 export * from './joins';
@@ -261,6 +263,16 @@ export class DeriveCache {
       const input = { text: el, level };
       key = `txt:${textDeriveKey(input)}`;
       compute = () => deriveText(input);
+    } else if (el.kind === 'label') {
+      const level = store.getLevel(el.levelId);
+      if (!level) return null;
+      // 타깃 해석: 표시 텍스트(template별)·중심(leader)을 읽어 넣음. 고아면 fallback.
+      const target = el.targetId ? (store.getElement(el.targetId) ?? null) : null;
+      const text = labelText(el, target, store);
+      const targetCenter = target ? labelTargetCenter(store, target) : null;
+      const input = { label: el, level, text, targetCenter };
+      key = `lbl:${labelDeriveKey(input)}`;
+      compute = () => deriveLabel(input);
     } else if (el.kind === 'dimension') {
       const level = store.getLevel(el.levelId);
       if (!level) return null;

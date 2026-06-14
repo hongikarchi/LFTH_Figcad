@@ -2,6 +2,8 @@ import type { DocStore } from '../store';
 import type { ColumnType, DrawingView, Pt, RoofType, Section, SlabType, WallType } from '../schema';
 import { wallFootprint } from './deriveWall';
 import { polygonArea, polygonCentroid } from './deriveZone';
+import { labelText } from './deriveLabel';
+import { labelTargetCenter } from '../select';
 import { HATCH_CONCRETE, hatchPolygon, type Seg2D } from './hatch';
 
 /**
@@ -220,6 +222,14 @@ function derivePlan(view: DrawingView, store: DocStore): Drawing2D {
       const c = polygonCentroid(el.boundary);
       res.labels.push({ text: el.number ? `${el.number} ${el.name}` : el.name, pos: c });
       res.labels.push({ text: `${(polygonArea(el.boundary) / 1e6).toFixed(1)}㎡`, pos: [c[0], c[1] - 400] });
+    } else if (el.kind === 'label') {
+      // 레이블 = 텍스트(공유 labelText — 3D와 동일) + leader 지시선(가는 선)
+      const target = el.targetId ? (store.getElement(el.targetId) ?? null) : null;
+      res.labels.push({ text: labelText(el, target, store), pos: el.at });
+      if (el.leader && target) {
+        const tc = labelTargetCenter(store, target);
+        if (tc) res.proj.push({ pts: [el.at, tc], closed: false });
+      }
     }
     // roof = 평면도(floor plan)에 미표시. opening/beam/stair = 후속.
   }
