@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import { DocStore } from '@figcad/core';
 import { handleAgentRequest } from './agent';
 import { createCommit, handleVersionRequest, isSafeRoom } from './version';
+import { handleConnectorRequest } from './apply';
 
 interface Env {
   Doc: DurableObjectNamespace;
@@ -71,8 +72,29 @@ export class Doc extends YServer<Env> {
     return next;
   }
 
-  /** M6 버전 관리 — 룸 HTTP: ?op=commit/log/show (Doc DO = 커밋 권위) */
+  /**
+   * M10 connector 라이브 스토어 — `new DocStore(this.document)`를 DO당 1회만 캐시.
+   * apply마다 새로 만들면 Y.Map observer가 누수된다(매번 등록). 캐시된 미러는
+   * WS 클라 편집도 observer로 따라가 항상 현재 상태. onStart(→onLoad) 완료 후
+   * 첫 onRequest에서 lazy 생성 — this.document는 이미 적재됨(partyserver 보장).
+   */
+  private docStore: DocStore | null = null;
+  private liveStore(): DocStore {
+    if (!this.docStore) this.docStore = new DocStore(this.document);
+    return this.docStore;
+  }
+
+  /**
+   * 룸 HTTP: M6 버전(?op=commit/log/show) + M10 connector(?op=apply/pull).
+   * 전부 serializeCommit으로 직렬화 — apply의 mutate+onSave가 커밋과 원자적.
+   */
   override async onRequest(request: Request): Promise<Response> {
+    const op = new URL(request.url).searchParams.get('op');
+    if (op === 'apply' || op === 'pull') {
+      return this.serializeCommit(() =>
+        handleConnectorRequest(request, this.name, this.liveStore(), () => this.onSave(), this.env.ROOM_KEY),
+      );
+    }
     return this.serializeCommit(() =>
       handleVersionRequest(
         request,

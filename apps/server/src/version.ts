@@ -123,14 +123,14 @@ export async function createCommit(
 }
 
 // 데브에서 vite(5173)와 서버(8787)가 다른 origin — 접근 통제는 ?key=가 담당하므로
-// CORS는 개방 (iPad LAN 데브 접속도 같은 경로)
-const CORS = {
+// CORS는 개방 (iPad LAN 데브 접속도 같은 경로). connector(apply.ts)도 공유.
+export const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'content-type',
 };
 
-const json = (status: number, body: unknown): Response =>
+export const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', ...CORS },
