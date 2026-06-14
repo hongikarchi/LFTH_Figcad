@@ -53,7 +53,7 @@
 | 4 | M10 connector — D-1 라이브쓰기 ✅(a7cff19) · D-2 Rhino 플러그인 ⬜ | D-1 완료, D-2=goal(.NET 밖) |
 | 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
 
-**현재 위치: 라벨(Task B) 완료·배포 — Version `d5daa8c2` (커밋 `bc45a73`). M11 사용자요청 기능 전부 완료.**
+**현재 위치: M11.5(UX 7건) + M10-D1(라이브쓰기 API) 완료·배포 — Version `73eef3be`.** 남은 figcad 작업 = 전부 이 환경 밖(D-2 Rhino 플러그인 .NET · Task E 검증 416MB+네이티브). 직전 배포 `d5daa8c2`(라벨).
 - Phase 1 ✅: 평면(절단/투영/해치 even-odd) + 단면(cut (u,z)) + 입면(박스매싱 painter HLR) + DXF + views(schemaVersion 3). 멀티에이전트 리뷰 1건(해치) 수정.
 - Phase 2 ✅: 존(IfcSpace, 면적/부피) + 커튼월(UV 멀리언 그리드) + **라벨**(Revit 태그 — targetId 바인딩+template[name/area/custom]+leader, 타깃 추종/고아 fallback). 신규 kind 완전 배선(커밋 7c649e7 존 = **템플릿**). interop=주석류 의도적 스킵(텍스트는 drawing DXF 경유).
 - Phase 3 ✅: fork(클라 주도 — 한 버전 스냅샷→새 룸. 서버 DO storage 격리라 클라 importSnapshot).
