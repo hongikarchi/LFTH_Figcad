@@ -13,7 +13,7 @@
 ## 문서 위치 (투명성)
 - **이 파일** = repo 내 lean SoT (현재 위치 + 마일스톤 상태).
 - 전체 히스토리 상세 플랜: `~/.claude/plans/figma-lazy-milner.md` (M0~M10).
-- 현 작업(M11) 플랜: `~/.claude/plans/wondrous-hugging-pebble.md`.
+- 현 작업(M12) 플랜: `~/.claude/plans/wondrous-hugging-pebble.md` (벤치마크→ADOPT 스프린트 + 자율 실행 하드게이트).
 - 메모리 인덱스: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 - 영역별 규칙: `.claude/rules/*.md` (해당 경로 작업 시 로드).
 - 외부 벤치마크: **`docs/hub-benchmark-review.md`** (유일·현행 — 협업·인터롭 플랫폼 Speckle·Onshape·Figma·Omniverse·3D Tiles 대비, 정체성=웹·실시간·AI 허브 기준 deep research 3패스). 구 조사 `modeling-tools-review.md`(저작기능 렌즈, off-identity)·`pascal-editor-review.md`는 **삭제됨** — 쓸 만한 부분(IFC Pset/Translator 인터롭 = §8 G5, pascal per-kind 레지스트리 = §5)은 hub-benchmark로 이관.
@@ -36,14 +36,14 @@
 
 배포: https://figcad.archivibe.workers.dev
 
-## M11.5 — UX 폴리시 (사용성 7건, 미배포)
+## M11.5 — UX 폴리시 (사용성 7건) ✅ 배포 `73eef3be`
 실사용 피드백 수정. 상세 = `~/.claude/plans/wondrous-hugging-pebble.md`.
 - [5] 폴리곤 미리보기(슬라브/지붕/존) 펜 탭 stale 수정 · [2] 하단바 스토리 스위처(3D 유지) · [3] 줌버튼 제거 · [1] 네비게이터 2D뷰 클릭=도면열림(Revit Project Browser 관례) · [4] 색상 구조화 버전 diff(초록/빨강/호박) — 커밋 `9a6e655`.
 - [6] 커튼월 유리 패널(반투명 자식 메시) `4405f10` · [7] 객체 정점 편집(슬라브/지붕/존 그립)+커튼월 핸들·이동 `b1163ce`.
-- 검증: core 239·interop 30·tsc·build·ux-smoke(7항목 도구 직접 구동). 6·7 멀티에이전트 리뷰 진행. **배포 대기**(사용자 승인).
+- 검증: core 239·interop 30·tsc·build·ux-smoke(7항목 도구 직접 구동). 6·7 멀티에이전트 리뷰 4건 수정. **배포 완료** `73eef3be`(M10-D1 동반).
 
-## 진행 중 (M11) — 잔여 기능 완성 + 도면생성 + 검증
-> 실행: 자율 구현, Phase 경계마다 커밋 + cadence(core 테스트·tsc·스모크·E2E·멀티에이전트 리뷰). `/goal`은 Phase 5 검증 꼬리에서만.
+## 완료 (M11) — 잔여 기능 + 도면생성 + 검증 ✅
+> 자율 구현, Phase 경계마다 커밋 + cadence(core 테스트·tsc·스모크·E2E·멀티에이전트 리뷰).
 
 | Phase | 내용 | 상태 |
 |---|---|---|
@@ -67,6 +67,30 @@
 - **3 fork**: `?op=fork` = 커밋 스냅샷→새 룸(importSnapshot 재사용). branch/merge/허브UI=v1.5.
 - **4 connector**: 결정적 — Rhino 플러그인 + `?op=apply`(라이브쓰기) + 컨버터. MCP 아님. AI 시맨틱리프팅(brep→파라메트릭)=v1.5.
 - **5 검증**: 260416=436MB → 브라우저 통짜 import 불가(WASM 캡), subset/connector 경로로. 현 .3dm import는 wall/slab/grid만(나머지 스킵 = 갭). 에러·속도·안정성·네이티브 왕복.
+
+## M12 — 벤치마크 ADOPT 스프린트 (`hub-benchmark-review.md` → 실행)
+> 3패스 조사 채택거리를 정체성 게이트로 실행. 자율 야간 빌드(하드게이트 = 플랜 파일). **재평가: BCF=v1.5 강등**(LFTH는 전원 Figcad 내 조율, 크로스툴 이슈교환 실수요 약함) · **F6=정체성 핵심이나 야간엔 스파이크만**(전체=v1.5).
+
+| 항목 | 내용 | 상태 |
+|---|---|---|
+| A 문서 | 벤치마크 → SoT 반영 (이 섹션) | ✅ |
+| B lint-in-loop critic | AI 루프에 결정적 lint 자기수정(H3/H4) — `agent.ts` end-of-loop, AI-touched만, error 재프롬프트(≤2라운드), 외부 검증자만(LLM 판사 금지) | ⏳ |
+| C F6 스파이크 | 읽기전용 레퍼런스 지오 채널(격리·개발플래그) + `docs/federation-design.md`(v1.5 전체 스펙) | ⏳ |
+
+신규 의존성 0 · 스키마 0 · 배포/푸시 없음. cadence = core test·tsc·build·smoke·멀티에이전트 리뷰.
+
+## v1.5 백로그 (감독 하 진행)
+| 항목 | 판정 |
+|---|---|
+| BCF 이슈 왕복(G4) | 워크플로-게이트(외부사 openBIM 교환 실수요 시). 재료 보유(Comment·`ifcGuidFromId` 안정 GUID·viewpoint). 파일 `.bcfzip`=데스크톱 표준 |
+| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain 9파일. `def.positional`(move/rotate/transformCopy/footprint→1)부터 점진. **코어 taxonomy=감독 필수** |
+| F6 전체 federation | C 설계문서가 스펙. F9 3D-Tiles HLOD(436MB 웹뷰 유일 검증답)와 페어 |
+| F2 branch/merge | 스파이크 선행 — CRDT가 라이브 자동해결 → offline-divergent 버전에만 |
+| G2 Cloud2BIM scan→BIM · G3 Speckle-Automate 룰QA(B 후속) · G5 IFC Pset 패스스루 · F5 파라 역-import · F7 USD 레인 · H2 멀티에이전트(입증 시만) | CONSIDER |
+
+**REJECT (실수 빌드 금지):** H5 op 위 free-form 코드레이어(불변② 우회) · H6 메시bake 생성AI(불변① — ops/파라미터만) · pascal 플러그인 마켓(YAGNI, 소비자 0).
+**미답 = 딥리서치 부적합(§6):** 생성/개념설계 AI(dim4 약한절반) · 경쟁지형 Arcol/Motif/Qonic/Forma(dim6) — 포지셔닝 맵+불변 엣지 렌즈 필요(3패스 다 생존 claim 0).
+**KEEP (빌드 안 함):** F1 실시간코어(Yjs CRDT, Figma보다 앞섬) · F5 손실 비대칭=업계표준 · F8 wasm32 4GB→커넥터 경로 검증 · F4 Speckle 컨버터=우리 설계 옳음 검증 · F3 버전 diff=M11.5로 충족(3D 고스트만 v1.5).
 
 ## 함정 (반복비용 큰 것)
 - wrangler.jsonc compat 2개: `no_websocket_standard_binary_type`·`nodejs_compat`.
