@@ -50,7 +50,7 @@
 | **1** | 도면생성 평면+단면+입면 + 해치 (정체성 핵심) | ✅ 배포 b9f0f98f |
 | **2** | 요소: 존 ✅ · 커튼월 ✅ · 라벨 ✅ | ✅ 완료 (라벨=goal 자율 run) |
 | **3** | M6.5 fork (스냅샷→새 룸) | ✅ 완료 |
-| 4 | M10 connector (?op=apply + Rhino RhinoCommon 플러그인) | ⬜ goal prompt(.NET 환경 밖) |
+| 4 | M10 connector — D-1 라이브쓰기 ✅(a7cff19) · D-2 Rhino 플러그인 ⬜ | D-1 완료, D-2=goal(.NET 밖) |
 | 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
 
 **현재 위치: 라벨(Task B) 완료·배포 — Version `d5daa8c2` (커밋 `bc45a73`). M11 사용자요청 기능 전부 완료.**
