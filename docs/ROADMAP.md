@@ -1,7 +1,7 @@
 # Figcad 로드맵 (repo 내 SoT)
 
 > 버전관리되는 lean 상태판. 폴더에 보이고 git에 남고 compact 생존.
-> **정체성**: AI 기반 실시간 협업 "상류 설계·조율 허브 + 멀티툴 인터롭 오케스트레이터". 메인도면=CAD·납품BIM=Revit·파라메트릭=Rhino/GH의 *상류*(LOD 100~250)를 소장님(iPad Pencil)+실무자(데스크톱)가 실시간 같이 빚고 IFC/DXF/.3dm으로 핸드오프.
+> **정체성 — 3축: 웹 · 실시간 · AI.** **웹**(브라우저, 설치 없음 / iPad Pencil + 데스크톱) · **실시간**(여러 툴 모델·도면 + 여러 사람을 한 화면에서 동시에) · **AI**(손그림→모델, 에이전트 편집). Rhino·CAD·Revit의 모델·도면을 **실시간으로 모아 같이 보고 빚는** 멀티툴 협업 허브 — IFC/DXF/.3dm 양방향 인터롭. 대조·sketch·조율은 거기서 파생. (정밀 모델링·납품도면 *제작*은 전문툴 몫, Figcad는 모으고·조율 — LOD 100~250 수준. "상류"·"핸드오프"=단방향 함의라 안 씀.)
 
 ## 4대 불변 규칙
 1. 지오메트리는 문서에 저장·동기화 안 함 — 파라미터에서 순수 함수 파생.
@@ -16,6 +16,7 @@
 - 현 작업(M11) 플랜: `~/.claude/plans/wondrous-hugging-pebble.md`.
 - 메모리 인덱스: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 - 영역별 규칙: `.claude/rules/*.md` (해당 경로 작업 시 로드).
+- 외부 벤치마크: **`docs/hub-benchmark-review.md`** (유일·현행 — 협업·인터롭 플랫폼 Speckle·Onshape·Figma·Omniverse·3D Tiles 대비, 정체성=웹·실시간·AI 허브 기준 deep research 3패스). 구 조사 `modeling-tools-review.md`(저작기능 렌즈, off-identity)·`pascal-editor-review.md`는 **삭제됨** — 쓸 만한 부분(IFC Pset/Translator 인터롭 = §8 G5, pascal per-kind 레지스트리 = §5)은 hub-benchmark로 이관.
 
 ## 완료 (M0~M9)
 | M | 내용 | 상태 |

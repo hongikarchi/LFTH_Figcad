@@ -1,6 +1,7 @@
 # Figcad — 웹 기반 실시간 협업 건축 BIM 모델러
 
-LFTH 내부 도구. iPad(Safari PWA) + 데스크톱이 같은 모델을 실시간 동시 편집.
+LFTH 내부 도구. 정체성 3축 = **웹**(브라우저, 설치 없음) · **실시간**(여러 툴 모델·도면 + 여러 사람을 한 화면에서 동시에) · **AI**(손그림→모델, 에이전트 편집).
+iPad(Safari PWA) + 데스크톱이 같은 모델을 실시간 동시 편집하고, Rhino·CAD·Revit 모델·도면을 실시간으로 모아 같이 본다 (멀티툴 협업 허브, IFC/DXF/.3dm 양방향). 대조·sketch·조율은 거기서 파생.
 스택: TypeScript strict + Vite + pnpm workspaces / Three.js(WebGL2) / React 19(패널만) + Zustand / Yjs + y-partyserver / Cloudflare Workers + Durable Objects.
 
 ## 불변 규칙 (위반 = 리뷰 반려)
