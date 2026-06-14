@@ -1,5 +1,5 @@
 import * as WebIFC from 'web-ifc';
-import { DocStore, type DocSnapshot, type Id } from '@figcad/core';
+import { DocStore, type DocSnapshot, type Id, type Section } from '@figcad/core';
 
 /**
  * IFC4 → Figcad 문서 (web-ifc reader).
@@ -8,11 +8,16 @@ import { DocStore, type DocSnapshot, type Id } from '@figcad/core';
  *   IfcBuildingStorey       → 레벨
  *   IfcWallStandardCase     → 벽 (placement 원점/방향 + Body 프로필 XDim/YDim/Depth)
  *   IfcSlab                 → 슬라브 (ArbitraryClosedProfile 경계 + Depth)
+ *   IfcColumn               → 기둥 (placement at + 압출 프로필→단면 + Depth→높이)
+ *   IfcBeam                 → 보 (placement a + 솔리드 축 방향·길이로 b 복원 + 프로필→단면)
  *   IfcDoor/IfcWindow + Void/Fills → 개구부 (호스트 벽 + offset/sill)
  *
  * Figcad 모델(swept solid 파라메트릭)로 만든 IFC는 정확 복원되고, 외부 IFC도
- * 표준 IfcWallStandardCase/IfcSlab면 best-effort 복원된다 (자유형 B-rep은 스킵).
- * 타입은 두께/개구부 치수별로 생성·dedup. ifcApi는 호출자가 Init() 주입.
+ * 표준 IfcWallStandardCase/IfcSlab/IfcColumn/IfcBeam면 best-effort 복원된다(자유형 B-rep 스킵).
+ * 타입은 두께/단면/개구부 치수별로 생성·dedup. ifcApi는 호출자가 Init() 주입.
+ *
+ * 의도적 미지원(스킵+카운트 — 기하 베이크라 깨끗한 파라 역변환 불가, brep 시맨틱 리프팅=v1.5):
+ *   계단(IfcStair)·난간(IfcRailing)·지붕(IfcSlab ROOF, 슬로프 손실). 존/커튼월은 export 자체가 후속.
  */
 
 // 플래튼된 GetLine 값 헬퍼
@@ -133,6 +138,22 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     return item ?? null;
   };
 
+  // --- 단면 복원 (기둥/보 압출 프로필 → Section) ---
+  // 기둥 프로필: XDim=width, YDim=depth. 보 프로필: XDim=depth, YDim=width (export와 대칭).
+  const sectionFromProfile = (profile: AnyLine | undefined, beamSwap: boolean): Section | null => {
+    if (!profile) return null;
+    const radius = num(profile['Radius']);
+    if (radius > 0) return { shape: 'circle', diameter: Math.round(radius * 2) };
+    const xd = Math.round(num(profile['XDim']));
+    const yd = Math.round(num(profile['YDim']));
+    if (xd <= 0 || yd <= 0) return null;
+    return beamSwap ? { shape: 'rect', width: yd, depth: xd } : { shape: 'rect', width: xd, depth: yd };
+  };
+  const sectionKey = (s: Section): string =>
+    s.shape === 'circle' ? `c${s.diameter}` : `r${s.width}x${s.depth}`;
+  const sectionLabel = (s: Section): string =>
+    s.shape === 'circle' ? `D${s.diameter}` : `${s.width}×${s.depth}`;
+
   // --- 벽 (IfcWallStandardCase + 외부 도구의 평범한 IfcWall 둘 다) ---
   const wallExpressToId = new Map<number, Id>();
   const wallIds = new Set<number>([...ids(WebIFC.IFCWALLSTANDARDCASE), ...ids(WebIFC.IFCWALL)]);
@@ -206,6 +227,83 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
       store.createSlab({ levelId, typeId: slabType(thickness), boundary: pts });
     } catch {
       bump('slab(invalid-polygon)');
+    }
+  }
+
+  // --- 기둥 (IfcColumn) — placement at + 압출 단면/높이 복원 ---
+  const columnTypeBySection = new Map<string, Id>();
+  const columnTypeFor = (section: Section): Id => {
+    const key = sectionKey(section);
+    const hit = columnTypeBySection.get(key);
+    if (hit) return hit;
+    const id = store.addType({ kind: 'column', name: `기둥 ${sectionLabel(section)}`, section, color: '#9a9aa6' });
+    columnTypeBySection.set(key, id);
+    return id;
+  };
+  for (const cid of ids(WebIFC.IFCCOLUMN)) {
+    const cl = line(cid);
+    const place = (cl['ObjectPlacement'] as AnyLine)?.['RelativePlacement'] as AnyLine | undefined;
+    const loc = coordsOf(place?.['Location']);
+    const at: [number, number] = [Math.round(loc[0] ?? 0), Math.round(loc[1] ?? 0)];
+    const baseOffset = Math.round(loc[2] ?? 0);
+    const solid = bodySolid(cl);
+    const section = sectionFromProfile(solid?.['SweptArea'] as AnyLine | undefined, false);
+    const height = Math.round(num(solid?.['Depth']));
+    if (!section || height <= 0) {
+      bump('column(미지원 표현)');
+      continue;
+    }
+    const levelId = levelFor(elementStorey.get(cid));
+    const level = store.getLevel(levelId)!;
+    store.createColumn({
+      levelId,
+      typeId: columnTypeFor(section),
+      at,
+      ...(height !== level.height ? { height } : {}),
+      ...(baseOffset !== 0 ? { baseOffset } : {}),
+    });
+  }
+
+  // --- 보 (IfcBeam) — placement a + 솔리드 축 방향(Position.Axis)·길이(Depth)로 b 복원 ---
+  const beamTypeBySection = new Map<string, Id>();
+  const beamTypeFor = (section: Section): Id => {
+    const key = sectionKey(section);
+    const hit = beamTypeBySection.get(key);
+    if (hit) return hit;
+    const id = store.addType({ kind: 'beam', name: `보 ${sectionLabel(section)}`, section, color: '#9a9070' });
+    beamTypeBySection.set(key, id);
+    return id;
+  };
+  for (const bid of ids(WebIFC.IFCBEAM)) {
+    const bl = line(bid);
+    const place = (bl['ObjectPlacement'] as AnyLine)?.['RelativePlacement'] as AnyLine | undefined;
+    const loc = coordsOf(place?.['Location']);
+    const a: [number, number] = [Math.round(loc[0] ?? 0), Math.round(loc[1] ?? 0)];
+    // 보는 export가 zOffset 미지정 시 기본 z(level.height-춤/2)를 항상 기록 →
+    // import는 그 값을 명시 zOffset으로 복원(지오 동일, 파라만 explicit화). 의도된 정규화.
+    const zOffset = Math.round(loc[2] ?? 0);
+    const solid = bodySolid(bl);
+    const section = sectionFromProfile(solid?.['SweptArea'] as AnyLine | undefined, true);
+    const len = num(solid?.['Depth']);
+    const axis = ((solid?.['Position'] as AnyLine)?.['Axis'] as AnyLine)?.['DirectionRatios'] as
+      | number[]
+      | undefined;
+    const ux = num(axis?.[0] ?? 1);
+    const uy = num(axis?.[1] ?? 0);
+    const dlen = Math.hypot(ux, uy) || 1;
+    if (!section || len <= 0) {
+      bump('beam(미지원 표현)');
+      continue;
+    }
+    const b: [number, number] = [
+      Math.round(a[0] + (ux / dlen) * len),
+      Math.round(a[1] + (uy / dlen) * len),
+    ];
+    const levelId = levelFor(elementStorey.get(bid));
+    try {
+      store.createBeam({ levelId, typeId: beamTypeFor(section), a, b, zOffset });
+    } catch {
+      bump('beam(zero-length)');
     }
   }
 

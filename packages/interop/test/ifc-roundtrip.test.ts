@@ -4,6 +4,8 @@ import {
   DocStore,
   seedDocument,
   SEED_IDS,
+  type BeamElement,
+  type ColumnElement,
   type OpeningElement,
   type SlabElement,
   type WallElement,
@@ -179,6 +181,41 @@ describe('IFC 라운드트립', () => {
     api.CloseModel(m);
   });
 
+  it('기둥 — 왕복 시 위치/단면(비정사각 사각·원) 복원 (F5 역import)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    // 비정사각(400×600) — width↔depth 전치 버그를 잡는다 (정사각이면 못 잡음)
+    const rectId = s.addType({
+      kind: 'column',
+      name: '사각 기둥 400×600',
+      section: { shape: 'rect', width: 400, depth: 600 },
+      color: '#cccccc',
+    });
+    s.createColumn({ levelId: SEED_IDS.level, typeId: rectId, at: [1000, 1000] });
+    const circId = s.addType({
+      kind: 'column',
+      name: '원형 기둥 D500',
+      section: { shape: 'circle', diameter: 500 },
+      color: '#cccccc',
+    });
+    s.createColumn({ levelId: SEED_IDS.level, typeId: circId, at: [4000, 1000], baseOffset: 200 });
+    const { snapshot } = roundtrip(s);
+    const cols = snapshot.elements.filter((e): e is ColumnElement => e.kind === 'column');
+    expect(cols).toHaveLength(2);
+    const sectionOf = (c: ColumnElement) => {
+      const t = snapshot.types.find((x) => x.id === c.typeId);
+      return t && t.kind === 'column' ? t.section : null;
+    };
+    const ats = cols.map((c) => `${c.at}`).sort();
+    expect(ats).toEqual(['1000,1000', '4000,1000']);
+    const circ = cols.find((c) => c.at[0] === 4000)!;
+    expect(sectionOf(circ)).toEqual({ shape: 'circle', diameter: 500 });
+    expect(circ.baseOffset).toBe(200);
+    const rect = cols.find((c) => c.at[0] === 1000)!;
+    // width=400·depth=600 정확 복원 (전치 시 600/400으로 깨짐)
+    expect(sectionOf(rect)).toEqual({ shape: 'rect', width: 400, depth: 600 });
+  });
+
   it('보 — IfcBeam으로 export', () => {
     const s = new DocStore();
     seedDocument(s);
@@ -188,6 +225,28 @@ describe('IFC 라운드트립', () => {
     const m = api.OpenModel(bytes);
     expect(api.GetLineIDsWithType(m, WebIFC.IFCBEAM).size()).toBe(2);
     api.CloseModel(m);
+  });
+
+  it('보 — 왕복 시 끝점(축 방향·길이)/단면 복원 (F5 역import)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    s.createBeam({ levelId: SEED_IDS.level, typeId: SEED_IDS.beam300, a: [0, 0], b: [5000, 0] });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: SEED_IDS.beam300, a: [5000, 0], b: [5000, 4000] });
+    const { snapshot } = roundtrip(s);
+    const beams = snapshot.elements.filter((e): e is BeamElement => e.kind === 'beam');
+    expect(beams).toHaveLength(2);
+    // 끝점 무순서 매칭 (a→b 방향까지, ≤1mm 반올림 허용)
+    const segKey = (a: number[], b: number[]) => `${a}|${b}`;
+    const keys = beams.map((bm) => segKey(bm.a, bm.b)).sort();
+    expect(keys).toEqual([segKey([0, 0], [5000, 0]), segKey([5000, 0], [5000, 4000])].sort());
+    // 단면 = beam300 (사각) 복원
+    const t = snapshot.types.find((x) => x.id === beams[0]!.typeId);
+    expect(t?.kind === 'beam' && t.section.shape).toBe('rect');
+    const orig = s.getType(SEED_IDS.beam300);
+    if (t?.kind === 'beam' && t.section.shape === 'rect' && orig?.kind === 'beam' && orig.section.shape === 'rect') {
+      expect(t.section.width).toBe(orig.section.width);
+      expect(t.section.depth).toBe(orig.section.depth);
+    }
   });
 
   it('계단 — IfcStair로 export (스텝 솔리드 집합)', () => {
