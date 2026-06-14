@@ -11,22 +11,42 @@ import { CORS, isSafeRoom, json } from './version';
  * MCP/JSON-RPC 군더더기 없는 평범한 oplog POST — Rhino 플러그인(D2)이 소비자.
  *
  * 안전: ?key= 게이트(WS 접속과 동일) · isSafeRoom · 단일스레드 DO 프리즈 방지 바운드
- * (ops≤2000 · body≤2MB · arg 배열≤4096). applyOpLog가 op마다 zod+런타임 검증(최종 방어선).
+ * (ops≤2000 · body≤2MB · 최상위 arg 배열≤2000 · **배치 총작업 예산**). applyOpLog가 op마다
+ * zod+런타임 검증(최종 방어선). DoS 핵심: 바운드는 차원별 독립이라 곱(ops×ids×count)이 폭발 →
+ * opWork 예산으로 배치 총 반복/생성 수를 사전 캡(array_elements count 폭탄·2000×ids 곱 차단).
  *
  * 주의: applyOpLog는 op마다 별도 transact — 후속 op가 선행 op의 미러(예: 치수 바인딩의
  * bindFor, 개구부 hostId)를 봐야 하므로 단일 transact로 묶지 않는다(미러는 transact 끝에 갱신).
+ *
+ * 한계(의도): 커넥터 쓰기는 user-less·**undo 불가**(LOCAL_ORIGIN 아님 — 클라 Ctrl+Z 추적 안 됨).
+ * delete 포함 파괴적 op도 적용됨. 복구 = M6 버전 복원. 결정적 커넥터 surface라 수용.
+ * 레이트리밋·per-room 쿼터 = v1.5.
  */
 
 const MAX_OPS = 2000;
 const MAX_BODY = 2 * 1024 * 1024; // 2MB
-const MAX_ARRAY = 4096; // 단일 op 인자 배열 길이 상한 (10만점 boundary 등 DO 프리즈 차단)
+const MAX_ARRAY = 2000; // 최상위 arg 배열 길이 상한 (boundary 점수·ids — isSimplePolygon O(n²) 캡)
+const WORK_BUDGET = 50_000; // 배치 총 작업(생성·반복) 상한 — count·ids·ops 곱 폭발 차단
 
-/** op 인자 안에 과도하게 긴 배열(점 폭탄)이 없나 — 단일스레드 DO 보호 */
+/** **최상위** array 인자만 검사 (카탈로그의 array 인자 = ids/boundary 전부 최상위). 중첩 배열은
+ *  asPt 등이 op별로 거부. 진짜 폭주 방어는 MAX_BODY + opWork 예산. */
 function argsBounded(args: Record<string, unknown>): boolean {
   for (const v of Object.values(args)) {
     if (Array.isArray(v) && v.length > MAX_ARRAY) return false;
   }
   return true;
+}
+
+/** op의 보수적 작업량 상한 — 배치 총합이 WORK_BUDGET 넘으면 거부(실행 전). */
+function opWork(op: string, args: Record<string, unknown>): number {
+  const ids = Array.isArray(args['ids']) ? (args['ids'] as unknown[]).length : 0;
+  const boundary = Array.isArray(args['boundary']) ? (args['boundary'] as unknown[]).length : 0;
+  if (op === 'array_elements') {
+    const count = typeof args['count'] === 'number' ? (args['count'] as number) : 1;
+    return Math.max(ids, 1) * Math.max(count, 1); // 빈 ids도 count번 반복(transformCopy([]))
+  }
+  if (op === 'duplicate_elements' || op === 'mirror_elements') return Math.max(ids, 1);
+  return 1 + boundary; // create/update — boundary는 MAX_ARRAY로 별도 캡
 }
 
 export async function handleConnectorRequest(
@@ -63,6 +83,7 @@ export async function handleConnectorRequest(
     if (ops.length > MAX_OPS) return json(413, { error: `op이 너무 많음 (최대 ${MAX_OPS})` });
 
     const log: OpLogEntry[] = [];
+    let totalWork = 0;
     for (const e of ops) {
       if (!e || typeof e !== 'object') return json(400, { error: '각 op = {op:string, args:object}' });
       const rec = e as Record<string, unknown>;
@@ -70,9 +91,12 @@ export async function handleConnectorRequest(
       const args = rec['args'];
       if (typeof opName !== 'string' || typeof args !== 'object' || args === null || Array.isArray(args))
         return json(400, { error: '각 op = {op:string, args:object}' });
-      if (!argsBounded(args as Record<string, unknown>))
-        return json(413, { error: `op 인자 배열이 너무 김 (최대 ${MAX_ARRAY})` });
-      log.push({ op: opName, args: args as Record<string, unknown>, result: rec['result'] });
+      const a = args as Record<string, unknown>;
+      if (!argsBounded(a)) return json(413, { error: `op 인자 배열이 너무 김 (최대 ${MAX_ARRAY})` });
+      totalWork += opWork(opName, a);
+      if (totalWork > WORK_BUDGET)
+        return json(413, { error: `배치 총 작업이 너무 큼 (예산 ${WORK_BUDGET} — count·ids 곱 확인)` });
+      log.push({ op: opName, args: a, result: rec['result'] });
     }
 
     // op마다 별도 transact(applyOpLog 내부) — 후속 op가 선행 결과를 미러로 봄.

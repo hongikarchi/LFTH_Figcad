@@ -1182,11 +1182,12 @@ export class DocStore {
     return this.transformCopy(ids, (p) => [p[0] + delta[0], p[1] + delta[1]], false);
   }
 
-  /** 배열 복사 — count개, 누적 delta */
+  /** 배열 복사 — count개, 누적 delta. count는 [1,1000]로 클램프(단일스레드 freeze 방어 — UI는 ≤50). */
   arrayElements(ids: Id[], delta: Pt, count: number): Id[] {
+    const n = Math.min(Math.max(Math.floor(count) || 1, 1), 1000);
     const created: Id[] = [];
     this.transact(() => {
-      for (let i = 1; i <= count; i++) {
+      for (let i = 1; i <= n; i++) {
         created.push(
           ...this.transformCopy(ids, (p) => [p[0] + delta[0] * i, p[1] + delta[1] * i], false),
         );

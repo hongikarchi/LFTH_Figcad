@@ -40,16 +40,37 @@ cadence(필수): advisor(설계 전·완료 전) → 구현 → corepack pnpm -F
 
 ## ~~Task C — fork~~ ✅ 완료 (커밋 f4e1fbc) — 클라 주도(서버 DO storage 격리), VersionPanel fork 버튼
 
-## Task D — Rhino↔Figcad connector [외부: .NET/Rhino 환경 필요]
+## ~~Task D-1 (이 저장소)~~ ✅ 완료 (커밋 a592be6) — Figcad 라이브쓰기 API
+
+`apps/server/src/apply.ts` + Doc DO onRequest. **D2가 호출할 실제 계약**:
+```
+GET  {base}/parties/doc/{room}?op=pull[&key=KEY]
+     → 200 DocSnapshot { meta, levels[], types[], elements[] }  (라이브 현재 상태)
+POST {base}/parties/doc/{room}?op=apply[&key=KEY]
+     body: { ops: [ { op: "create_wall", args: {...}, result?: any }, ... ] }
+     → 200 { applied: number, failed: [{entry,error}], createdIds: string[] }
+     op 이름·args = Capability Registry(packages/core/src/capabilities/catalog.ts, aiExposed).
+     예: create_wall{levelId,typeId,a:[x,y],b:[x,y]} · create_slab{levelId,typeId,boundary:[[x,y]...]} · update_element · delete_element 등.
+     좌표 mm 정수(float 관용). 변경은 접속 WS 클라 전원에 broadcast + onSave 영속(무인 룸도).
+바운드: ops≤2000 · body≤2MB · arg배열≤4096. 게이트: ?key=ROOM_KEY(프로덕션 secret), isSafeRoom.
+```
+base 데브 = `http://localhost:8787` · 프로덕션 = `https://figcad.archivibe.workers.dev`. room = projectId(?p=).
+
+## Task D-2 — Rhino 플러그인 [외부: .NET/Rhino 환경 필요]
 
 ```
-목표: 결정적 connector(MCP 아님) — Rhino sync 버튼 ↔ Figcad. 2레이어. 상세 설계 = ~/.claude/plans/figma-lazy-milner.md의 M10 섹션 + 메모리 figcad-mcp-programmable-api.md.
-
-D1 (이 저장소): Figcad 라이브쓰기 API. apps/server/src Doc DO에 ?op=apply (POST oplog) — `new DocStore(this.document)` → runCapability/executeOp → 성공 후 await onSave(). M9-C에서 검증된 메커니즘(broadcast 스파이크: 서버측 this.document 변경이 접속 WS 클라 전파됨) 재도입하되 JSON-RPC/MCP 없이 평범한 oplog POST. 입력 바운드(배열≤2000·count≤1000·body≤2MB) + ?key 게이트 + 전용 origin. **소비자(D2) 직전에만 구현(YAGNI).**
-
-D2 (외부 .NET): Rhino RhinoCommon .NET8 플러그인(Yak 패키지). Sync 명령 → HttpClient로 ?op=pull(snapshot 읽기)/?op=apply(쓰기). RhinoDoc 이벤트 자동 push=v1.5. RhinoApp.InvokeOnUiThread(스레드 마샬). 컨버터: Figcad→Rhino(파라메트릭 벽→풋프린트 brep, 무손실급, .3dm export 경로 재사용) / Rhino→Figcad(제약 스키마 — "Wall" 레이어 곡선+속성→WallElement만, 임의 brep=참조/AI 시맨틱리프팅 v1.5). 기대치: 완전 무손실 왕복 불가(brep↔파라메트릭 본질적 손실) — 관례 따른 것만.
-
-검증: D1=2클라 전파 E2E(miniflare dev.mjs). D2=Rhino에서 Sync→Figcad 화면 갱신 라운드트립. Speckle 패턴 참고(ConvertToNative/ToSpeckle), 백본 채택 X.
+목표: Rhino RhinoCommon .NET8 플러그인(Yak 패키지) "FigcadSync" — 위 D-1 계약 호출. 양방향:
+- Pull: GET ?op=pull → DocSnapshot → 컨버터로 RhinoDoc.Objects.Add. 레이어=요소종류(Wall/Slab/Column...).
+- Push: 선택/전체 Rhino 객체 → 컨버터로 ops 배열 → POST ?op=apply {ops}. 성공 시 Figcad 화면 즉시 갱신(WS).
+스레드: RhinoApp.InvokeOnUiThread(HTTP 콜백→RhinoDoc 수정). HttpClient 재사용. base/room/key=플러그인 설정(EditBox).
+컨버터(핵심 난이도=시맨틱 변환):
+- Figcad→Rhino: 파라메트릭 무손실 우선 — 벽 중심선+두께→풋프린트 압출, 슬라브→압출, 기둥→압출.
+  (.3dm export 경로가 이미 이 매핑 — packages/interop/src/rhino3dm.ts 참고). LOD 100~250.
+- Rhino→Figcad: 제약 스키마 — "Wall" 레이어 선/폴리라인+UserText(두께)→create_wall, "Slab" 닫힌 곡선→create_slab.
+  임의 brep/메시=스킵+카운트(무손실 역변환 불가, AI 시맨틱리프팅=v1.5). 관례 따른 것만.
+검증: (1) Figcad 벽→Pull→Rhino 압출. (2) Rhino "Wall" 선→Push→Figcad 화면 벽(2클라면 둘 다 — D1 broadcast).
+  (3) 임의 brep Push→스킵 카운트. 완전 무손실 왕복 불가(brep↔파라메트릭 본질 손실) 명시.
+참고: Speckle ConvertToNative/ToSpeckle(백본 채택 X)·developer.rhino3d.com/guides/rhinocommon·Yak.
 ```
 
 ## Task E — 사용성 검증 [외부: 260416 파일 + 네이티브 툴]

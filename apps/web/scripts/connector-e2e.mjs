@@ -59,6 +59,15 @@ try {
     throw new Error(`0길이 벽이 failed로 안 잡힘: ${JSON.stringify(bad)}`);
   console.log(`PASS  부분 실패 보고 (failed ${bad.failed.length}, applied ${bad.applied})`);
 
+  // 3b) DoS 방어 — count 폭탄(array_elements count=1e9)은 실행 전 413
+  const bomb = await fetch(`${srv}/parties/doc/${room}?op=apply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ops: [{ op: 'array_elements', args: { ids: [], delta: [0, 0], count: 1e9 } }] }),
+  });
+  if (bomb.status !== 413) throw new Error(`count 폭탄이 ${bomb.status} (413 기대 — DoS 방어 실패)`);
+  console.log('PASS  count 폭탄 → 413 (배치 작업 예산 방어)');
+
   // 4) 무인 영속 — 유일 클라 닫고 apply → 새 클라가 기존+신규 둘 다 봄 (onSave + onLoad)
   await page.close();
   await new Promise((r) => setTimeout(r, 600));

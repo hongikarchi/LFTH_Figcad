@@ -91,8 +91,15 @@ export class Doc extends YServer<Env> {
   override async onRequest(request: Request): Promise<Response> {
     const op = new URL(request.url).searchParams.get('op');
     if (op === 'apply' || op === 'pull') {
+      // 영속 캐던스를 apply 빈도와 분리: 접속 클라가 있으면 y-partyserver의 디바운스 onSave
+      // (update마다 2s/10s)에 위임 — apply마다 O(doc) 전체 인코딩 회피. 무인 룸만 즉시 영속.
+      const persist = async () => {
+        let conns = 0;
+        for (const _ of this.getConnections()) conns++;
+        if (conns === 0) await this.onSave();
+      };
       return this.serializeCommit(() =>
-        handleConnectorRequest(request, this.name, this.liveStore(), () => this.onSave(), this.env.ROOM_KEY),
+        handleConnectorRequest(request, this.name, this.liveStore(), persist, this.env.ROOM_KEY),
       );
     }
     return this.serializeCommit(() =>
