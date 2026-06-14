@@ -56,7 +56,13 @@ POST {base}/parties/doc/{room}?op=apply[&key=KEY]
 ```
 base 데브 = `http://localhost:8787` · 프로덕션 = `https://figcad.archivibe.workers.dev`. room = projectId(?p=).
 
-## Task D-2 — Rhino 플러그인 [외부: .NET/Rhino 환경 필요]
+## ~~Task D-2 — Rhino 커넥터~~ ✅ 코어 완료 (MCP 라이브 검증) — `.rhp` 패키징만 남음
+
+`connectors/rhino/FigcadConnector.cs` + README. Pull/Push 컨버터를 **Rhino MCP로 배포 D-1에 대고
+양방향 왕복 검증**(벽/슬라브 좌표·재-Pull 멱등·createdIds writeback 무중복). 소유권 규칙=`figcad:id` UserString.
+남은 것 = `.rhp` 패키징(.NET8 SDK+VS+Yak, 모노레포 밖) — 코어 로직은 그대로 재사용. 아래는 원 스펙(참고).
+
+```
 
 ```
 목표: Rhino RhinoCommon .NET8 플러그인(Yak 패키지) "FigcadSync" — 위 D-1 계약 호출. 양방향:

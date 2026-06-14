@@ -50,7 +50,7 @@
 | **1** | 도면생성 평면+단면+입면 + 해치 (정체성 핵심) | ✅ 배포 b9f0f98f |
 | **2** | 요소: 존 ✅ · 커튼월 ✅ · 라벨 ✅ | ✅ 완료 (라벨=goal 자율 run) |
 | **3** | M6.5 fork (스냅샷→새 룸) | ✅ 완료 |
-| 4 | M10 connector — D-1 라이브쓰기 ✅(a7cff19) · D-2 Rhino 플러그인 ⬜ | D-1 완료, D-2=goal(.NET 밖) |
+| 4 | M10 connector — D-1 라이브쓰기 ✅ · D-2 Rhino 커넥터 코어 ✅(MCP 검증, `.rhp` 셸만 남음) | 양방향 왕복 동작 |
 | 5 | 검증 (260416 MODELING.3dm + 사용성) | ⬜ goal prompt(416MB·네이티브 툴) |
 
 **현재 위치: M11.5(UX 7건) + M10-D1(라이브쓰기 API) 완료·배포 — Version `73eef3be`.** 남은 figcad 작업 = 전부 이 환경 밖(D-2 Rhino 플러그인 .NET · Task E 검증 416MB+네이티브). 직전 배포 `d5daa8c2`(라벨).
