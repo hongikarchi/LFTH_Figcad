@@ -36,7 +36,7 @@ type DragMode =
   | { kind: 'endpoint'; id: string; which: 'a' | 'b' }
   | { kind: 'opening'; id: string }
   | { kind: 'slab'; id: string; startDoc: Pt; origBoundary: Pt[] }
-  | { kind: 'vertex'; id: string; vertexIndex: number; origBoundary: Pt[] }
+  | { kind: 'vertex'; id: string; vertexIndex: number; origBoundary: Pt[]; levelId: string }
   | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
   | { kind: 'column'; id: string; startDoc: Pt; origAt: Pt }
   | { kind: 'beam'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
@@ -114,7 +114,7 @@ export class SelectTool implements Tool {
       });
       if (best >= 0) {
         if (this.refuseIfLocked(poly.id)) return;
-        this.drag = { kind: 'vertex', id: poly.id, vertexIndex: best, origBoundary: poly.boundary };
+        this.drag = { kind: 'vertex', id: poly.id, vertexIndex: best, origBoundary: poly.boundary, levelId: poly.levelId };
         this.ctx.collab.setEditing(poly.id);
         return;
       }
@@ -135,8 +135,8 @@ export class SelectTool implements Tool {
       this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     } else if (el.kind === 'opening') {
       this.drag = { kind: 'opening', id: hit };
-    } else if (el.kind === 'slab' || el.kind === 'roof') {
-      // 경계 폴리곤 mover (roof는 slab과 동일 — boundary 평행이동)
+    } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
+      // 경계 폴리곤 mover (roof·zone은 slab과 동일 — boundary 평행이동). 정점 그립은 본체 픽 전에 처리됨.
       this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
     } else if (el.kind === 'grid') {
       this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
@@ -247,7 +247,7 @@ export class SelectTool implements Tool {
     } else if (this.drag.kind === 'vertex') {
       const drag = this.drag;
       const snap = snapPoint([info.doc[0], info.doc[1]], {
-        endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
+        endpoints: this.ctx.store.wallEndpoints(drag.levelId), // 폴리곤 자기 레벨 (활성 레벨 아님 — 끝점 분기와 동일)
         endpointTolerance: SNAP_PX * info.mmPerPixel,
         grid: GRID_MM,
       });
