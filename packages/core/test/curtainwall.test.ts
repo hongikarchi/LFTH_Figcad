@@ -41,6 +41,23 @@ describe('커튼월 — 생성/파생', () => {
     expect(signedVolume(geo!.positions)).toBeGreaterThan(0); // inside-out이면 음수
   });
 
+  it('유리 패널 파생 — 그리드 셀마다 쿼드 (panels 메시)', () => {
+    const { store, seed } = setup();
+    // 6000×3000(층고) ÷ 1500 = u 4셀 × v 2셀 = 8패널 → 6 정점/패널(쿼드 2삼각)
+    const id = store.createCurtainWall({
+      levelId: seed.levelId,
+      typeId: seed.curtainWallTypeId,
+      a: [0, 0],
+      b: [6000, 0],
+      uSpacing: 1500,
+      vSpacing: 1500,
+    });
+    const geo = new DeriveCache().derive(store, id, buildDeriveIndex(store));
+    expect(geo!.panels).toBeDefined();
+    expect(geo!.panels!.positions.length).toBeGreaterThan(0);
+    expect(geo!.panels!.positions.length % 9).toBe(0); // 삼각형 단위
+  });
+
   it('seed 커튼월 타입 존재 (mullionSection)', () => {
     const { store, seed } = setup();
     const t = store.getType(seed.curtainWallTypeId);

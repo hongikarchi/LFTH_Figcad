@@ -16,6 +16,8 @@ export interface DerivedGeometry extends MeshData {
   anchors: { a: [number, number, number]; b: [number, number, number] };
   /** 씬 내 라벨 (그리드/텍스트/치수). 없으면 라벨 없음 */
   labels?: LabelSpec[];
+  /** 반투명 자식 메시 (커튼월 유리 패널 등) — SceneManager가 별도 메시로 렌더. 메인 메시는 단일 머티리얼 유지 */
+  panels?: MeshData;
 }
 
 /**

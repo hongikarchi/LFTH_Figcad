@@ -24,7 +24,11 @@ interface SceneEntry {
   labelKey: string; // 라벨 채널 직렬화 (텍스트+스타일 변경 시만 스프라이트 재생성)
   sprites: THREE.Sprite[];
   lastGeo: DerivedGeometry | null;
+  glassMesh: THREE.Mesh | null; // 반투명 자식(커튼월 유리) — 메인 메시 단일 머티리얼 보존
 }
+
+const GLASS_COLOR = 0x88ccee;
+const GLASS_OPACITY = 0.3;
 
 type LabelStyle = 'grid' | 'text' | 'dim';
 
@@ -184,7 +188,12 @@ export class SceneManager {
   }
 
   get pickables(): THREE.Object3D[] {
-    return [...this.entries.values()].map((e) => e.mesh);
+    const out: THREE.Object3D[] = [];
+    for (const e of this.entries.values()) {
+      out.push(e.mesh);
+      if (e.glassMesh) out.push(e.glassMesh); // 유리 클릭도 커튼월 선택 (userData.elementId 동일)
+    }
+    return out;
   }
 
   setSelected(ids: Id[]): void {
@@ -245,6 +254,11 @@ export class SceneManager {
     mat.opacity = ghosted ? GHOST_OPACITY : baseOpacity;
     mat.needsUpdate = true;
     entry.edges.material = ghosted ? this.ghostEdgeMat : this.edgeMat;
+    if (entry.glassMesh) {
+      const gm = entry.glassMesh.material as THREE.MeshLambertMaterial;
+      gm.opacity = ghosted ? GHOST_OPACITY : GLASS_OPACITY;
+      gm.needsUpdate = true;
+    }
   }
 
   private upsert(id: Id, index?: DeriveIndex): void {
@@ -298,6 +312,7 @@ export class SceneManager {
         labelKey: '',
         sprites: [],
         lastGeo: null,
+        glassMesh: null,
       };
       this.entries.set(id, entry);
       this.applyGhosting(entry);
@@ -317,9 +332,38 @@ export class SceneManager {
       setLineGeometry(entry.edges.geometry, geo.edges);
       entry.lastGeo = geo;
       this.updateLabels(entry, geo);
+      this.syncGlass(entry, id, geo);
     }
 
     this.applyHighlight(id);
+  }
+
+  /** 반투명 자식 메시(커튼월 유리 패널) 동기 — 메인 메시는 단일 머티리얼 유지(핫 캐스트 경로 무영향). */
+  private syncGlass(entry: SceneEntry, id: Id, geo: DerivedGeometry): void {
+    if (geo.panels) {
+      if (!entry.glassMesh) {
+        const gm = new THREE.Mesh(
+          new THREE.BufferGeometry(),
+          new THREE.MeshLambertMaterial({
+            color: GLASS_COLOR,
+            transparent: true,
+            opacity: GLASS_OPACITY,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          }),
+        );
+        gm.userData['elementId'] = id; // 유리 픽 = 커튼월 선택
+        this.engine.scene.add(gm);
+        entry.glassMesh = gm;
+      }
+      setBufferGeometry(entry.glassMesh.geometry, geo.panels.positions, geo.panels.normals);
+      this.applyGhosting(entry); // 새 유리 불투명도를 현재 고스트 상태에 동기
+    } else if (entry.glassMesh) {
+      this.engine.scene.remove(entry.glassMesh);
+      entry.glassMesh.geometry.dispose();
+      (entry.glassMesh.material as THREE.Material).dispose();
+      entry.glassMesh = null;
+    }
   }
 
   /**
@@ -357,6 +401,11 @@ export class SceneManager {
     entry.mesh.geometry.dispose();
     entry.edges.geometry.dispose();
     (entry.mesh.material as THREE.Material).dispose();
+    if (entry.glassMesh) {
+      this.engine.scene.remove(entry.glassMesh);
+      entry.glassMesh.geometry.dispose();
+      (entry.glassMesh.material as THREE.Material).dispose();
+    }
     for (const s of entry.sprites) {
       s.material.map?.dispose();
       s.material.dispose();

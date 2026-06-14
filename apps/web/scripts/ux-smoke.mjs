@@ -80,6 +80,29 @@ try {
     throw new Error(`도면 뷰 클릭이 도면 안 엶: ${JSON.stringify(opened)}`);
   console.log('PASS  네비게이터 도면 뷰 클릭 → 도면 자동 열림 (item 1)');
 
+  // item 6 — 커튼월 유리 패널: 반투명 자식 메시(opacity 0.3)가 씬에 + 픽 가능
+  const glass = await page.evaluate(() => {
+    const { store, seed, ui } = window.__figcad;
+    ui.getState().setViewMode('3d');
+    const id = store.createCurtainWall({
+      levelId: seed.levelId, typeId: seed.curtainWallTypeId,
+      a: [0, 0], b: [6000, 0], uSpacing: 1500, vSpacing: 1500,
+    });
+    return id;
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const glassOk = await page.evaluate((id) => {
+    let found = null;
+    window.__figcad.engine.scene.traverse((m) => {
+      if (m.userData && m.userData.elementId === id && m.material && m.material.transparent && m.material.opacity < 0.6 && m.geometry?.attributes?.position?.count > 0) {
+        found = m.material.opacity;
+      }
+    });
+    return found;
+  }, glass);
+  if (glassOk === null) throw new Error('커튼월 유리 패널 메시 없음 (item 6)');
+  console.log(`PASS  커튼월 유리 패널 (반투명 메시 opacity ${glassOk}) (item 6)`);
+
   if (errors.length) throw new Error(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
   console.log('\nUX 스모크 통과');
 } catch (err) {

@@ -1,4 +1,4 @@
-import { extrudeProfile, mergeMeshData, type MeshData, type Profile, type Ring } from './meshBuilder';
+import { buildFaces, extrudeProfile, mergeMeshData, type FaceSpec, type MeshData, type Profile, type Ring } from './meshBuilder';
 import type { DerivedGeometry } from './deriveWall';
 import type {
   BeamDeriveInput,
@@ -361,9 +361,10 @@ function gridStops(total: number, spacing: number, minGap: number): number[] {
 }
 
 /**
- * 커튼월 — 베이스라인 a→b × 높이 H 면을 멀리언 그리드로.
- * 수직 멀리언(기둥식 수직 압출) at u=0..L every uSpacing + 수평 멀리언(보식 축 압출)
- * at v=0..H every vSpacing. 패널(유리)=v1.5. 단면=type.mullionSection.
+ * 커튼월 — 베이스라인 a→b × 높이 H 면을 멀리언 그리드 + 유리 패널로.
+ * 수직 멀리언(기둥식 수직 압출) + 수평 멀리언(보식 축 압출) = 메인 메시(불투명).
+ * 각 그리드 셀 안쪽(멀리언 반폭 inset)에 평면 쿼드 = 유리 패널(panels — SceneManager가
+ * 반투명 별도 메시로 렌더). 단면=type.mullionSection.
  */
 export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometry {
   const { cw, type, level } = input;
@@ -383,15 +384,17 @@ export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometr
   const dir: [number, number] = [(bx - ax) / L, (by - ay) / L];
   const n: [number, number] = [dir[1], -dir[0]]; // 베이스라인 수직(평면)
   const ring = sectionRing(type.mullionSection);
-  // 멀리언 폭 — 끝 테두리와 겹치는 내부 스톱 제거 임계
+  // 멀리언 폭 — 끝 테두리와 겹치는 내부 스톱 제거 임계 + 패널 inset
   const mullionW =
     type.mullionSection.shape === 'rect' ? type.mullionSection.width : type.mullionSection.diameter;
+  const uStops = gridStops(L, cw.uSpacing, mullionW);
+  const vStops = gridStops(H, cw.vSpacing, mullionW);
   const meshes: MeshData[] = [];
 
   // 수직 멀리언 — 각 u 위치에서 단면을 수직 압출 (기둥식)
   const mh = H * MM;
   const centerY = baseY + mh / 2;
-  for (const u of gridStops(L, cw.uSpacing, mullionW)) {
+  for (const u of uStops) {
     const px = ax + dir[0] * u;
     const py = ay + dir[1] * u;
     const profile: Profile = {
@@ -409,7 +412,7 @@ export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometr
   const mx = (ax + bx) / 2;
   const my = (ay + by) / 2;
   const nb: [number, number] = [dir[1], -dir[0]];
-  for (const v of gridStops(H, cw.vSpacing, mullionW)) {
+  for (const v of vStops) {
     const axisZ = (baseE + v) * MM;
     const profile: Profile = { outer: ring, holes: [] };
     meshes.push(
@@ -421,7 +424,37 @@ export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometr
     );
   }
 
-  return { ...mergeMeshData(meshes), anchors };
+  // 유리 패널 — 각 그리드 셀 안쪽(멀리언 반폭 inset)에 평면 쿼드. n=0 평면(멀리언 사이 중앙).
+  const half = mullionW / 2;
+  const panelFaces: FaceSpec[] = [];
+  for (let i = 0; i + 1 < uStops.length; i++) {
+    const u0 = uStops[i]! + half;
+    const u1 = uStops[i + 1]! - half;
+    if (u1 - u0 < 1) continue;
+    for (let j = 0; j + 1 < vStops.length; j++) {
+      const v0 = vStops[j]! + half;
+      const v1 = vStops[j + 1]! - half;
+      if (v1 - v0 < 1) continue;
+      panelFaces.push({
+        profile: {
+          outer: [
+            [u0, v0],
+            [u1, v0],
+            [u1, v1],
+            [u0, v1],
+          ],
+          holes: [],
+        },
+        map: (uu, vv) => [(ax + dir[0] * uu) * MM, (baseE + vv) * MM, (ay + dir[1] * uu) * MM],
+      });
+    }
+  }
+
+  return {
+    ...mergeMeshData(meshes),
+    anchors,
+    ...(panelFaces.length ? { panels: buildFaces(panelFaces) } : {}),
+  };
 }
 
 export function curtainWallDeriveKey(input: CurtainWallDeriveInput): string {
