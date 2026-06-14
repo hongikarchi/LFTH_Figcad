@@ -315,6 +315,7 @@ if (import.meta.env.DEV) {
       engine,
       rig,
       sceneManager, // 스모크: 라이브 파생 라벨 검증(debugLabelKey)
+      tools, // 스모크: 도구 down/move/up 직접 구동(정점 편집 등)
       lint,
       ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
       sketch, // { rasterizeSketch, hasSketch, clearSketch, getStrokes } — E2E용

@@ -7,13 +7,17 @@ import {
   rectFromPoints,
   resolveOpening,
   snapPoint,
+  type CurtainWallElement,
   type Element,
   type Footprint,
   type OpeningType,
   type Pt,
   type Rect,
+  type RoofElement,
+  type SlabElement,
   type WallElement,
   type WallType,
+  type ZoneElement,
 } from '@figcad/core';
 import { pickElement, worldToScreen } from '../engine/Picker';
 import { useUiStore, type EditAction } from '../state/uiStore';
@@ -32,6 +36,7 @@ type DragMode =
   | { kind: 'endpoint'; id: string; which: 'a' | 'b' }
   | { kind: 'opening'; id: string }
   | { kind: 'slab'; id: string; startDoc: Pt; origBoundary: Pt[] }
+  | { kind: 'vertex'; id: string; vertexIndex: number; origBoundary: Pt[] }
   | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
   | { kind: 'column'; id: string; startDoc: Pt; origAt: Pt }
   | { kind: 'beam'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
@@ -46,6 +51,7 @@ export class SelectTool implements Tool {
   private drag: DragMode = { kind: 'none' };
   private handleA: THREE.Mesh;
   private handleB: THREE.Mesh;
+  private gripPool: THREE.Mesh[] = []; // 폴리곤 정점 그립 (필요분만 lazy 생성, 재사용)
   private lastWrite = 0;
   private pendingWrite: (() => void) | null = null;
   // 편집 액션 상태머신 (이동/복사/배열/대칭의 수집된 점)
@@ -78,21 +84,38 @@ export class SelectTool implements Tool {
       return;
     }
 
-    const selectedWall = this.selectedWall();
+    const doc = info.doc;
+    const tolMm = HANDLE_PX * info.mmPerPixel;
 
-    // 1. 끝점 핸들 픽킹 (선택된 벽이 있을 때)
-    if (selectedWall) {
-      const tolMm = HANDLE_PX * info.mmPerPixel;
-      const dA = Math.hypot(info.doc[0] - selectedWall.a[0], info.doc[1] - selectedWall.a[1]);
-      const dB = Math.hypot(info.doc[0] - selectedWall.b[0], info.doc[1] - selectedWall.b[1]);
+    // 1. 끝점 핸들 픽킹 (선택된 세그먼트 = 벽/커튼월)
+    const seg = this.selectedSegment();
+    if (seg) {
+      const dA = Math.hypot(doc[0] - seg.a[0], doc[1] - seg.a[1]);
+      const dB = Math.hypot(doc[0] - seg.b[0], doc[1] - seg.b[1]);
       if (dA <= tolMm || dB <= tolMm) {
-        if (this.refuseIfLocked(selectedWall.id)) return;
-        this.drag = {
-          kind: 'endpoint',
-          id: selectedWall.id,
-          which: dA <= dB ? 'a' : 'b',
-        };
-        this.ctx.collab.setEditing(selectedWall.id);
+        if (this.refuseIfLocked(seg.id)) return;
+        this.drag = { kind: 'endpoint', id: seg.id, which: dA <= dB ? 'a' : 'b' };
+        this.ctx.collab.setEditing(seg.id);
+        return;
+      }
+    }
+
+    // 1b. 폴리곤 정점 그립 픽킹 (선택된 슬라브/지붕/존) — 그립 안이면 정점편집, 밖이면 본체로 폴백
+    const poly = this.selectedPolygon();
+    if (poly) {
+      let best = -1;
+      let bestD = tolMm;
+      poly.boundary.forEach((v, i) => {
+        const d = Math.hypot(doc[0] - v[0], doc[1] - v[1]);
+        if (d <= bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      if (best >= 0) {
+        if (this.refuseIfLocked(poly.id)) return;
+        this.drag = { kind: 'vertex', id: poly.id, vertexIndex: best, origBoundary: poly.boundary };
+        this.ctx.collab.setEditing(poly.id);
         return;
       }
     }
@@ -120,8 +143,13 @@ export class SelectTool implements Tool {
     } else if (el.kind === 'column' || el.kind === 'text') {
       // 점 mover (text는 column과 동일 — at 평행이동)
       this.drag = { kind: 'column', id: hit, startDoc: info.doc, origAt: el.at };
-    } else if (el.kind === 'beam' || el.kind === 'stair' || el.kind === 'railing') {
-      // a/b 세그먼트 mover (stair·railing은 beam과 동일 — a/b 평행이동)
+    } else if (
+      el.kind === 'beam' ||
+      el.kind === 'stair' ||
+      el.kind === 'railing' ||
+      el.kind === 'curtainwall'
+    ) {
+      // a/b 세그먼트 mover (stair·railing·커튼월은 beam과 동일 — a/b 평행이동)
       this.drag = { kind: 'beam', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     }
     // dimension은 드래그 분기 없음 — 선택만(이미 setSelection). 가동 파라미터=offset(InfoBox).
@@ -166,7 +194,7 @@ export class SelectTool implements Tool {
       this.showLength(this.drag.id);
     } else if (this.drag.kind === 'endpoint') {
       const el = this.ctx.store.getElement(this.drag.id);
-      if (el?.kind !== 'wall') return;
+      if (el?.kind !== 'wall' && el?.kind !== 'curtainwall') return;
       const which = this.drag.which;
       const other = which === 'a' ? el.b : el.a;
       const snap = snapPoint([info.doc[0], info.doc[1]], {
@@ -216,6 +244,22 @@ export class SelectTool implements Tool {
           boundary: drag.origBoundary.map(([x, y]) => [x + dx, y + dy]),
         }),
       );
+    } else if (this.drag.kind === 'vertex') {
+      const drag = this.drag;
+      const snap = snapPoint([info.doc[0], info.doc[1]], {
+        endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
+        endpointTolerance: SNAP_PX * info.mmPerPixel,
+        grid: GRID_MM,
+      });
+      // 이웃 정점에 겹치면 0길이 변 → isSimplePolygon이 못 잡으니 명시 50mm 가드
+      const m = drag.origBoundary.length;
+      const prev = drag.origBoundary[(drag.vertexIndex + m - 1) % m]!;
+      const next = drag.origBoundary[(drag.vertexIndex + 1) % m]!;
+      if (Math.hypot(snap.point[0] - prev[0], snap.point[1] - prev[1]) < 50) return;
+      if (Math.hypot(snap.point[0] - next[0], snap.point[1] - next[1]) < 50) return;
+      // 자가교차는 updateElement의 isSimplePolygon이 조용히 거부 → 그립이 직전 유효 위치에 머묾
+      const boundary = drag.origBoundary.map((v, i) => (i === drag.vertexIndex ? snap.point : v));
+      this.throttledWrite(() => this.ctx.store.updateElement(drag.id, { boundary }));
     } else if (this.drag.kind === 'grid') {
       const dx = Math.round((info.doc[0] - this.drag.startDoc[0]) / GRID_MM) * GRID_MM;
       const dy = Math.round((info.doc[1] - this.drag.startDoc[1]) / GRID_MM) * GRID_MM;
@@ -505,28 +549,85 @@ export class SelectTool implements Tool {
     }
   }
 
-  private selectedWall(): WallElement | null {
-    // 끝점 핸들·길이칩은 단일 벽 선택일 때만
+  /** 단일 선택된 세그먼트(벽/커튼월) — 끝점 핸들·드래그용 */
+  private selectedSegment(): WallElement | CurtainWallElement | null {
     const sel = useUiStore.getState().selection;
     if (sel.length !== 1) return null;
     const el = this.ctx.store.getElement(sel[0]!);
-    return el?.kind === 'wall' ? el : null;
+    return el?.kind === 'wall' || el?.kind === 'curtainwall' ? el : null;
+  }
+
+  /** 단일 선택된 경계 폴리곤(슬라브/지붕/존) — 정점 그립 편집용 */
+  private selectedPolygon(): SlabElement | RoofElement | ZoneElement | null {
+    const sel = useUiStore.getState().selection;
+    if (sel.length !== 1) return null;
+    const el = this.ctx.store.getElement(sel[0]!);
+    return el?.kind === 'slab' || el?.kind === 'roof' || el?.kind === 'zone' ? el : null;
+  }
+
+  private segElev(seg: WallElement | CurtainWallElement): number {
+    const base = this.ctx.store.getLevel(seg.levelId)?.elevation ?? 0;
+    const off = seg.kind === 'curtainwall' ? (seg.baseOffset ?? 0) : 0;
+    return (base + off) / 1000 + 0.02;
+  }
+
+  private polyElev(poly: SlabElement | RoofElement | ZoneElement): number {
+    const level = this.ctx.store.getLevel(poly.levelId);
+    const base = level?.elevation ?? 0;
+    if (poly.kind === 'roof') return (base + (level?.height ?? 0) + (poly.baseOffset ?? 0)) / 1000;
+    if (poly.kind === 'zone') return base / 1000 + 0.015;
+    return base / 1000 + 0.02; // slab
+  }
+
+  private ensureGrip(i: number): THREE.Mesh {
+    let g = this.gripPool[i];
+    if (!g) {
+      g = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), this.handleA.material as THREE.Material);
+      this.ctx.engine.scene.add(g);
+      this.gripPool[i] = g;
+    }
+    return g;
+  }
+
+  private hideGrips(from = 0): void {
+    for (let i = from; i < this.gripPool.length; i++) this.gripPool[i]!.visible = false;
   }
 
   private refreshHandles(): void {
-    const wall = this.selectedWall();
-    if (!wall || useUiStore.getState().activeTool !== 'select') {
+    if (useUiStore.getState().activeTool !== 'select') {
       this.handleA.visible = this.handleB.visible = false;
+      this.hideGrips();
       this.ctx.engine.requestRender();
       return;
     }
-    const level = this.ctx.store.getLevel(wall.levelId);
-    const elev = (level?.elevation ?? 0) / 1000;
-    this.handleA.position.set(wall.a[0] / 1000, elev + 0.02, wall.a[1] / 1000);
-    this.handleB.position.set(wall.b[0] / 1000, elev + 0.02, wall.b[1] / 1000);
-    this.handleA.scale.setScalar(0.07);
-    this.handleB.scale.setScalar(0.07);
-    this.handleA.visible = this.handleB.visible = true;
+    const seg = this.selectedSegment();
+    if (seg) {
+      const elev = this.segElev(seg);
+      this.handleA.position.set(seg.a[0] / 1000, elev, seg.a[1] / 1000);
+      this.handleB.position.set(seg.b[0] / 1000, elev, seg.b[1] / 1000);
+      this.handleA.scale.setScalar(0.07);
+      this.handleB.scale.setScalar(0.07);
+      this.handleA.visible = this.handleB.visible = true;
+      this.hideGrips();
+      this.ctx.engine.requestRender();
+      return;
+    }
+    const poly = this.selectedPolygon();
+    if (poly) {
+      this.handleA.visible = this.handleB.visible = false;
+      const elev = this.polyElev(poly);
+      poly.boundary.forEach((v, i) => {
+        const g = this.ensureGrip(i);
+        g.position.set(v[0] / 1000, elev, v[1] / 1000);
+        g.scale.setScalar(0.07);
+        g.visible = true;
+      });
+      this.hideGrips(poly.boundary.length);
+      this.ctx.engine.requestRender();
+      return;
+    }
+    this.handleA.visible = this.handleB.visible = false;
+    this.hideGrips();
     this.ctx.engine.requestRender();
   }
 

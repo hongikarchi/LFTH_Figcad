@@ -103,6 +103,44 @@ try {
   if (glassOk === null) throw new Error('커튼월 유리 패널 메시 없음 (item 6)');
   console.log(`PASS  커튼월 유리 패널 (반투명 메시 opacity ${glassOk}) (item 6)`);
 
+  // item 7a — 슬라브 정점 드래그(그립): down(정점0)→move(새 위치)→up. 도구 직접 구동.
+  const vtx = await page.evaluate(() => {
+    const { store, seed, ui, tools } = window.__figcad;
+    ui.getState().setTool('select');
+    const id = store.createSlab({
+      levelId: seed.levelId, typeId: seed.slabTypeId,
+      boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]],
+    });
+    ui.getState().setSelection([id]);
+    const t = tools.active;
+    const info = (doc) => ({ doc, clientX: 100, clientY: 100, mmPerPixel: 5 });
+    t.down(info([0, 0])); // 정점0 그립 픽 (doc=정점)
+    t.move(info([500, 500])); // 새 위치로
+    t.up(info([500, 500]));
+    return store.getElement(id).boundary[0];
+  });
+  if (!(vtx[0] === 500 && vtx[1] === 500)) throw new Error(`정점 편집 실패: boundary[0]=${JSON.stringify(vtx)}`);
+  console.log(`PASS  슬라브 정점 드래그 → boundary[0]=${JSON.stringify(vtx)} (item 7)`);
+
+  // item 7b — 커튼월 끝점 핸들 드래그
+  const cwEnd = await page.evaluate(() => {
+    const { store, seed, ui, tools } = window.__figcad;
+    ui.getState().setTool('select');
+    const id = store.createCurtainWall({
+      levelId: seed.levelId, typeId: seed.curtainWallTypeId,
+      a: [0, 0], b: [6000, 0], uSpacing: 1500, vSpacing: 1500,
+    });
+    ui.getState().setSelection([id]);
+    const t = tools.active;
+    const info = (doc) => ({ doc, clientX: 100, clientY: 100, mmPerPixel: 5 });
+    t.down(info([0, 0])); // 끝점 a
+    t.move(info([0, 1500]));
+    t.up(info([0, 1500]));
+    return store.getElement(id).a;
+  });
+  if (cwEnd[0] === 0 && cwEnd[1] === 0) throw new Error(`커튼월 끝점 이동 안 됨: a=${JSON.stringify(cwEnd)}`);
+  console.log(`PASS  커튼월 끝점 핸들 드래그 → a=${JSON.stringify(cwEnd)} (item 7)`);
+
   if (errors.length) throw new Error(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
   console.log('\nUX 스모크 통과');
 } catch (err) {
