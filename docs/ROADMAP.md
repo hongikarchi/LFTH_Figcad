@@ -73,11 +73,11 @@
 
 | 항목 | 내용 | 상태 |
 |---|---|---|
-| A 문서 | 벤치마크 → SoT 반영 (이 섹션) | ✅ |
-| B lint-in-loop critic | AI 루프에 결정적 lint 자기수정(H3/H4) — `agent.ts` end-of-loop, AI-touched만, error 재프롬프트(≤2라운드), 외부 검증자만(LLM 판사 금지) | ⏳ |
-| C F6 스파이크 | 읽기전용 레퍼런스 지오 채널(격리·개발플래그) + `docs/federation-design.md`(v1.5 전체 스펙) | ⏳ |
+| A 문서 | 벤치마크 → SoT 반영 (이 섹션) | ✅ `2514766` |
+| B lint-in-loop critic | AI 루프에 결정적 lint 자기수정(H3/H4) — `agent.ts` end-of-loop, AI-touched만, error 재프롬프트(≤2라운드), 외부 검증자만(LLM 판사 금지) | ✅ `f5112dc` |
+| C F6 스파이크 | 읽기전용 레퍼런스 지오 채널(격리·개발플래그) + `docs/federation-design.md`(v1.5 전체 스펙) | ✅ `120b9cf` |
 
-신규 의존성 0 · 스키마 0 · 배포/푸시 없음. cadence = core test·tsc·build·smoke·멀티에이전트 리뷰.
+신규 의존성 0 · 스키마 0 · **미배포**(다음 배포는 사용자 승인 시 — B 서버변경 포함). 검증: core 245(+6)·tsc·build·reference-layer-smoke 4/4·멀티에이전트 리뷰(B 3건·C 2건 수정).
 
 ## v1.5 백로그 (감독 하 진행)
 | 항목 | 판정 |
