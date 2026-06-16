@@ -378,6 +378,36 @@ export const KIND_LABEL: Record<Element['kind'], string> = {
 };
 
 /**
+ * 요소의 **positional 카테고리** — move/rotate/transformCopy/footprint가 좌표를 어떻게 다루나.
+ *  - `segment`: 끝점 `a`,`b` (선형 요소)
+ *  - `polygon`: 정점 배열 `boundary`
+ *  - `point`:   단일 점 `at`
+ *  - `hosted`:  자체 좌표 없음 — 호스트(벽)에서 파생 (opening). **마커일 뿐, 4 op이 각자 특수처리.**
+ *
+ * `Record<Element['kind'], …>` = 신규 kind 누락 시 컴파일 에러(KIND_LABEL과 같은 가드).
+ * 오늘 store.ts(move/rotate/transformCopy)·select.ts(footprint)에 손으로 4번 중복된 kind→카테고리
+ * 매핑의 **단일 소스**. 4 사본이 어긋나면(새 kind를 3곳만 갱신) footprint=픽 가능인데 move=안 움직임 같은
+ * 조용한 버그 → 이 Record가 그 클래스를 제거. (특수 케이스는 각 op의 명시적 named 훅으로 유지.)
+ */
+export type PositionalCategory = 'segment' | 'polygon' | 'point' | 'hosted';
+export const POSITIONAL: Record<Element['kind'], PositionalCategory> = {
+  wall: 'segment',
+  grid: 'segment',
+  beam: 'segment',
+  curtainwall: 'segment',
+  stair: 'segment',
+  railing: 'segment',
+  dimension: 'segment',
+  slab: 'polygon',
+  roof: 'polygon',
+  zone: 'polygon',
+  column: 'point',
+  text: 'point',
+  label: 'point',
+  opening: 'hosted',
+};
+
+/**
  * 협업 코멘트 — 요소가 아닌 별도 채널(ydoc 'comments' 맵). 평면 id 엔트리:
  * 루트(parentId 없음) = 앵커 있는 코멘트, 답글 = parentId 참조.
  * 평면 구조라 동시 답글이 서로 클로버되지 않음(각 답글 = 새 키, 엔트리별 LWW).

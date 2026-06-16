@@ -16,13 +16,13 @@ description: core 지오메트리 파생·단위·신규 Element kind 배선 체
 - 파생 결정론: 같은 파라미터 → 같은 메시. deriveKey가 모든 입력(바인딩 해석 좌표 포함)을 포괄해야 메모이즈·재파생 정확.
 
 ## 신규 Element kind 배선 체크리스트 (silent if-chain — 누락 = 조용한 버그)
-새 kind 추가 시 **전부** 배선. tsc+단위만 통과시키지 말고 **실제로 move/copy/rotate/lint/export로 행사해 검증** (advisor 교훈 — D1a에서 .3dm/DXF 조용한 누락 사고).
+새 kind 추가 시 **전부** 배선. tsc+단위만 통과시키지 말고 **실제로 move/copy/rotate/lint/export로 행사해 검증** (advisor 교훈 — D1a에서 .3dm/DXF 조용한 누락 사고). **`test/positional-registry.test.ts`의 `FACTORY`에 신규 kind를 추가**하면 move/rotate/footprint/duplicate가 카테고리대로 동작하는지 열거 검증(누락=요란한 실패, 조용한 no-op 방지).
 
-1. `schema.ts` — Element union + (타입 있으면) ElemType/TypeKind + DeriveInput union + **`KIND_LABEL` 항목**(타입이 `Record<Element['kind']>`라 누락 시 컴파일 에러 = lint·diff 공유 단일 소스).
+1. `schema.ts` — Element union + (타입 있으면) ElemType/TypeKind + DeriveInput union + **`KIND_LABEL` 항목** + **`POSITIONAL` 항목**(둘 다 `Record<Element['kind']>`라 누락 시 컴파일 에러). KIND_LABEL=lint·diff 공유 라벨; POSITIONAL=move/rotate/transformCopy/footprint의 좌표 카테고리(`segment`=a,b / `polygon`=boundary / `point`=at / `hosted`=호스트파생) 단일 소스.
 2. `geometry/deriveX.ts` — `deriveX()` + `deriveKey` (바인딩 시 해석 좌표를 키에 폴드).
 3. `geometry/index.ts` — DeriveCache 분기.
-4. `store.ts` — create / update(quantize) / move / rotate / transformCopy / deleteElements 정책 / seed.
-5. `select.ts` — `elementFootprint` (+ 바인딩 있으면 `resolveDimAnchor`류 공유 헬퍼).
+4. `store.ts` — create / update(quantize) / move / rotate / transformCopy / deleteElements 정책 / seed. (move/rotate/transformCopy는 `POSITIONAL` 카테고리로 기계적 좌표변환 — 특수훅(grid 라벨재발급·label 재타깃·dimension 언바인딩·roof slope·opening 재호스트)만 명시 분기.)
+5. `select.ts` — `elementFootprint`(`POSITIONAL` 카테고리 기반 + dimension 바인딩 해석·opening 호스트 투영) (+ 바인딩 있으면 `resolveDimAnchor`류 공유 헬퍼).
 6. `capabilities/catalog.ts` — capability 항목 (+ `aiExposed` 의도 명시).
 7. `lint.ts` — dup 검사 + typeId 가드 (+ 바인딩 고아 검사). (`KIND_LABEL`은 schema.ts 단일 소스서 import — step 1.)
 8. `diff.ts` — (`KIND_LABEL` schema.ts에서 import; 신규 dup-key·countByKind는 자동.)
