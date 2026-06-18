@@ -80,6 +80,7 @@
 | iter1 F5 역-import | IFC/.3dm 파라 역-import — 기둥+보(깨끗한 파라메트릭만) | ✅ `f13b771` |
 | iter2 KIND_LABEL | lint·diff 공유 라벨 schema.ts 단일소스화 (§5 per-kind 레지스트리 첫 슬라이스) | ✅ `9301d3c` |
 | def.positional S1 | `POSITIONAL` 레지스트리 선언 + golden/enumerated 안전망 (순수 additive, 동작변경 0) | ✅ `4071276` |
+| def.positional S2+S3 | move/rotate/transformCopy/footprint를 `POSITIONAL` 단일소스 dispatch로 (4 손-중복 제거, 특수훅 명시 유지). audit+멀티리뷰=FULLY EQUIVALENT, core 320 0변동 | ✅ `67b1430` |
 
 신규 의존성 0 · 스키마 0 · **미배포**(다음 배포는 사용자 승인 시 — B 서버변경 포함). 검증: core 245(+6)·tsc·build·reference-layer-smoke 4/4·멀티에이전트 리뷰(B 3건·C 2건 수정).
 
@@ -87,7 +88,7 @@
 | 항목 | 판정 |
 |---|---|
 | BCF 이슈 왕복(G4) | 워크플로-게이트(외부사 openBIM 교환 실수요 시). 재료 보유(Comment·`ifcGuidFromId` 안정 GUID·viewpoint). 파일 `.bcfzip`=데스크톱 표준 |
-| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain(`.claude/rules/core-geometry.md` 10단계 체크리스트). **KIND_LABEL 슬라이스 ✅**(`9301d3c`) · **def.positional S1 ✅**(`4071276`, `POSITIONAL` 레지스트리 선언+golden/enumerated 가드, 순수 additive). 남은 **S2/S3 op 리팩터**(move/rotate/transformCopy/footprint를 레지스트리 구동으로 dedup) = **코어 taxonomy 감독 필수, 사용자 go 대기** |
+| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain(`.claude/rules/core-geometry.md` 10단계 체크리스트). **KIND_LABEL ✅**(`9301d3c`) · **def.positional ✅ S1~S3**(`4071276`+`67b1430`, `POSITIONAL` 선언+golden/enumerated 가드 → move/rotate/transformCopy/footprint 단일소스 dispatch, FULLY EQUIVALENT). 남은 슬라이스 후보: `def.derive`(geometry/index 디스패처)·`def.ifc/rhino/dxf`(interop)·`def.lint`(dup-key) — 각 감독 하 |
 | F6 전체 federation | C 설계문서가 스펙. F9 3D-Tiles HLOD(436MB 웹뷰 유일 검증답)와 페어 |
 | F2 branch/merge | 스파이크 선행 — CRDT가 라이브 자동해결 → offline-divergent 버전에만 |
 | G2 Cloud2BIM scan→BIM · G3 Speckle-Automate 룰QA(B 후속) · G5 IFC Pset 패스스루 · **F5 파라 역-import(기둥+보 ✅ `f13b771`, 남은 kind=기하베이크 skip)** · F7 USD 레인 · H2 멀티에이전트(입증 시만) | CONSIDER |
