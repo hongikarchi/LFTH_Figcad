@@ -318,7 +318,12 @@ function vertexNormals(poly: Pt[]): [number, number][] {
       nx = segN[i - 1]![0] + segN[i]![0];
       ny = segN[i - 1]![1] + segN[i]![1];
     }
-    const len = Math.hypot(nx, ny) || 1;
+    let len = Math.hypot(nx, ny);
+    if (len < 1e-9) {
+      // 인접 세그먼트가 거의 반대 방향(평균 법선 소멸) — 한 세그먼트 법선으로 폴백([0,0] 퇴화 방지).
+      [nx, ny] = segN[Math.max(i - 1, 0)]!;
+      len = 1;
+    }
     vn.push([nx / len, ny / len]);
   }
   return vn;
@@ -348,6 +353,15 @@ function deriveArcWall(input: WallDeriveInput): DerivedGeometry {
   };
   if (Math.hypot(bxMm - axMm, byMm - ayMm) === 0) {
     return { positions: new Float32Array(0), normals: new Float32Array(0), edges: new Float32Array(0), anchors };
+  }
+
+  // 곡률이 두께 대비 너무 타이트해 내측 레일이 중심선을 넘으면(R ≤ tw/2) 자기교차 = 표현 불가한 입력.
+  // 우아하게 직선 chord로 폴백(깨진/뒤집힌 메시 방지). 보통 chord<두께인 퇴화 벽뿐(extreme-dimension lint가 별도 경고). 리뷰 반영.
+  {
+    const hh = Math.hypot(bxMm - axMm, byMm - ayMm) / 2;
+    const ss = Math.abs(wall.sagitta!);
+    const R = (hh * hh + ss * ss) / (2 * ss);
+    if (R <= tw / 2 + 1) return deriveStraightWall(input);
   }
 
   /** 문서 평면(mm) + 높이(mm) → 월드(m, Y-up) */

@@ -17,7 +17,6 @@
  * irrelevant for a measurement harness).
  * ========================================================================== */
 import { describe, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
 import * as Y from 'yjs';
 import { DocStore, seedDocument, SEED_IDS } from '../src/store';
 import { lint, type LintCode } from '../src/lint';
@@ -105,6 +104,8 @@ describe('R1 merge spike (throwaway)', () => {
       const cs = Object.entries(t.byCode).map(([c, n]) => `${c}:${n}`).join(' ') || '—';
       lines.push(`${cat}: ${t.invalid}/${t.trials} (${pct}%) merge-invalid  [${cs}]`);
     }
-    writeFileSync(new URL('./.merge-spike-out.txt', import.meta.url), lines.join('\n'), 'utf8');
+    // 결과 출력 — 재실행 시 `.spike.`를 임시로 떼고 돌리면 콘솔에 표 출력(빌드 게이트·tsc 모두 제외됨).
+    // eslint-disable-next-line no-console
+    console.log(lines.join('\n'));
   });
 });

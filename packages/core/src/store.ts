@@ -197,6 +197,11 @@ export class DocStore {
   private federationSources = new Map<Id, FederationSource>();
   private observers = new Set<DocObserver>();
 
+  // 원격 머지 판별(M13-B): "원격"=다른 사용자의 라이브 편집. 로컬 출신(LOCAL_ORIGIN ops·undo·
+  // 캐시로드)은 제외, 초기 동기화 전(live=false)엔 전부 비원격(첫 로드 시 기존 요소 오탐 방지).
+  private localOrigins = new Set<unknown>([LOCAL_ORIGIN]);
+  private live = false;
+
   constructor(ydoc?: Y.Doc) {
     this.ydoc = ydoc ?? new Y.Doc();
     this.yMeta = this.ydoc.getMap('meta');
@@ -267,10 +272,10 @@ export class DocStore {
         }
       }
       // 원격 머지 출신 표시 — 한 observeDeep 발화의 모든 이벤트는 같은 트랜잭션 공유.
-      // 로컬 ops만 LOCAL_ORIGIN(객체). 원격 applyUpdate origin=undefined/null·provider → 전부 remote.
-      // (events 비면 안전하게 local 취급 — fallback을 LOCAL_ORIGIN으로 두되 origin undefined는 remote.)
+      // "원격" = 라이브(초기동기화 후) + 비로컬 origin(LOCAL_ORIGIN·undo·캐시로드 제외).
+      // 단순 `≠LOCAL_ORIGIN`은 undo·indexeddb·초기 provider sync를 오탐(매 로드/undo 가짜 배너) — 리뷰 반영.
       const origin = events.length ? events[0]!.transaction.origin : LOCAL_ORIGIN;
-      change.remote = origin !== LOCAL_ORIGIN;
+      change.remote = this.live && !this.localOrigins.has(origin);
       this.emit(change);
     });
     // 코멘트 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 DocChange로 emit해
@@ -1548,6 +1553,15 @@ export class DocStore {
   observe(cb: DocObserver): () => void {
     this.observers.add(cb);
     return () => this.observers.delete(cb);
+  }
+
+  /** 원격 머지 알림(M13-B)용 — 로컬 출신 origin 등록(undo manager·indexeddb 등). 기본은 LOCAL_ORIGIN만. */
+  registerLocalOrigin(origin: unknown): void {
+    if (origin !== undefined && origin !== null) this.localOrigins.add(origin);
+  }
+  /** 초기 동기화(프로바이더/캐시 로드) 완료 후 호출 — 이후 비로컬 변경만 '원격 머지'로 표시. */
+  setLive(live = true): void {
+    this.live = live;
   }
 
   private emit(change: DocChange): void {

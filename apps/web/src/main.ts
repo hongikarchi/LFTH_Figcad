@@ -166,6 +166,10 @@ provider.on('status', (e: { status: string }) => {
 });
 
 const undoMgr = store.createUndoManager();
+// 협업 병합 알림(M13-B): undo는 로컬 출신 → '원격 머지' 오탐 제외. 초기 동기화(provider synced)
+// 후에만 라이브 — 그전 캐시/서버 로드는 기존 요소라 알림 대상 아님(리뷰 반영).
+store.registerLocalOrigin(undoMgr);
+provider.on('synced', () => store.setLive());
 const doUndo = () => {
   undoMgr.undo();
   engine.requestRender();
