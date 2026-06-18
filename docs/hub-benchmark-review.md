@@ -4,6 +4,8 @@
 > 조사일: 2026-06. 딥 리서치 하니스 **2패스**, 3-vote 적대적 검증. **1차**(§2~7, dim 1·2·3): 109 에이전트 / 26 소스 / 24 confirm → 9 finding(F1~F9). **2차**(§8, dim 4·5·6 타깃): 104 에이전트 / 22 소스 / 22 confirm → 5 finding(G1~G5). 잔존 미답 = §6.
 >
 > **이 문서가 교체한 것**(둘 다 삭제됨, 쓸 부분 이관): 구 `modeling-tools-review.md`는 *틀린 질문*("데스크톱 저작툴에서 어떤 기능 베낄까")으로 저작기능 쇼핑리스트를 냈고 = Figcad를 더 무거운 단독 모델러로 미는 off-identity 방향. 이 문서는 *올바른 질문*("웹/실시간/AI 인터롭 허브를 best-in-class로")으로 **협업·인터롭 플랫폼**(Speckle·Onshape·Figma·Omniverse·3D Tiles)과 벤치마크. 구 doc의 인터롭 항목(IFC Pset/Translator)은 §8 G5로, 구 `pascal-editor-review.md`의 유일한 쓸모(per-kind 레지스트리)는 §5 내부 리팩터 트랙으로 이관.
+>
+> **⚙️ 실행 상태(2026-06, 이 보고서 이후):** ADOPT 판정 중 일부 착수됨 — A(doc→ROADMAP SoT)=`2514766` · **B = lint-in-loop critic(H3/H4) 실행 완료** `f5112dc`(`critiqueOpLog`가 `apps/server/src/agent.ts` + core `packages/core/src/ai.ts`에 배선, MAX_CRITIC_ROUNDS=2 — §9의 "`agent.ts`가 lint 미호출"은 *조사 시점* 기준이고 이후 닫힘) · **C = F6 레퍼런스 채널 스파이크** `120b9cf`(`apps/web/src/engine/ReferenceLayer.ts` + `docs/federation-design.md`; 전체 federation은 v1.5). **BCF(G4)는 ROADMAP에서 ADOPT→v1.5 재평가**(LFTH 전원 Figcad 내 조율, 크로스툴 이슈교환 실수요 약함). **F5 역-import는 기둥+보까지 확장** `f13b771`. 이하 본문은 조사 시점 프레이밍 유지.
 
 ---
 
@@ -18,7 +20,7 @@
 4. **CONSIDER (v1.5)**: Onshape식 branch/merge(F2) · 3D-Tiles HLOD 스트리밍(436MB의 유일한 검증된 답, F9) · USD 4번째 레인(F7) · 파라메트릭 역-import(pascal #2, F5로 재정의).
 5. **스코프 — 3패스로 나눠 답함**:
    - **1차(§2~4·7)** = dim 1(실시간)·2(인터롭/federation)·3(웹 대용량). 완료.
-   - **2차(§8)** = dim 5(크로스툴 QA/clash) ✅ · 인터롭 재평가(IFC Pset/Translator) ✅ · dim 4 시맨틱 리프팅(역방향) ✅. → **ADOPT BCF** · CONSIDER Speckle Automate식 룰QA · brep→파라 리프팅 **v1.5 연기 정당**.
+   - **2차(§8)** = dim 5(크로스툴 QA/clash) ✅ · 인터롭 재평가(IFC Pset/Translator) ✅ · dim 4 시맨틱 리프팅(역방향) ✅. → **BCF**(ROADMAP서 v1.5로 재평가) · CONSIDER Speckle Automate식 룰QA · brep→파라 리프팅 **v1.5 연기 정당**.
    - **3차 Part A(§9)** = dim 4 순방향 NL→ops AI ✅. → **ADOPT lint-in-loop critic**(나머지 NL→ops 스택은 이미 보유 — capability registry·dryrun·ReAct 루프). REJECT free-form 코드 레이어.
    - **⚠️ 아직도 펑크(§6)**: dim 4의 **생성/개념설계 AI**(약한 절반, 원칙만 잡힘) + dim 6 **경쟁지형(Arcol/Motif/Qonic/Forma)** = 3패스 다 생존 claim 0/medium. "커버됐다"고 읽지 말 것 — 3차 Part B(다른 렌즈) 필요.
 
@@ -40,7 +42,7 @@
 
 ## 2. ADOPT
 
-### F6 — Federated 뷰어 (publish-then-assemble) = 허브 코어 패턴 ⭐
+### F6 — Federated 뷰어 (publish-then-assemble) = 허브 코어 패턴 ⭐ (스파이크 ✅ M12-C `120b9cf`, 전체=v1.5)
 **confidence: high** · `docs.speckle.systems/3d-viewer/federation`
 - Speckle은 서로 다른 툴(Revit·Rhino·AutoCAD…)에서 저작된 모델을 **거대 파일 교환 없이** 한 3D 뷰어 씬에 합침. 워크플로우 = **publish-then-assemble**: 각 분야가 자기 네이티브 툴에서 프로젝트로 업로드 → 사이드바에서 모델 추가 → "View All in 3D"로 함께 봄. 허브는 **재저작이 아니라 툴별 published 모델을 aggregate**.
 - **이게 Figcad 정체성 그 자체.** 순수 집계·뷰잉 = 단독 저작의 정반대 → 게이트 명백 통과.
@@ -83,7 +85,7 @@
 - Figcad는 현재 IFC/DXF/.3dm(핸드오프용) export. **USD 레인이 허브 가치 있나, 아니면 LFTH의 Rhino/Revit 엔드포인트엔 .3dm/IFC로 충분한가**는 미해결(§6).
 
 ### (pascal #2 재정의) 파라메트릭 역-import — F5로 스코프 축소
-- 이전 pascal 리뷰는 "import 비대칭을 먼저 닫아라"(column/beam/stair/railing/roof/curtainwall/zone은 파라미터에서 export되니 역importer는 기계적)고 권고. `ifcImport.ts`·`rhino3dm.ts`가 현재 wall/slab/grid만 복원.
+- 이전 pascal 리뷰는 "import 비대칭을 먼저 닫아라"(column/beam/stair/railing/roof/curtainwall/zone은 파라미터에서 export되니 역importer는 기계적)고 권고. `ifcImport.ts`·`rhino3dm.ts`가 현재 wall/slab/grid + **기둥·보**(`f13b771`) 복원. 남은 kind = 기하 베이크 case라 skip.
 - **F5로 재정의**: 비대칭 자체는 업계 표준이니 *완전 무손실 왕복을 쫓지 말 것*. **깨끗한 파라메트릭 역이 있는 kind만** 역importer 추가(파라미터 재구성→`store.create*`, 지오메트리 주입 금지 — inv 1). **brep→파라메트릭(진짜 손실 케이스)은 v1.5 AI 시맨틱 리프팅**, skip-and-count 유지가 맞음. 이 작업은 결국 per-kind 레지스트리(§5)의 `def.ifc`/`def.rhino`가 소유 → import-first로 짓고 나중에 레지스트리로 접음.
 
 ---
@@ -175,7 +177,7 @@ three-bvh-csg(LOD 아래) · 머티리얼/페인트/테마 · 워크스루 · We
 - **Figcad fit**: 기존 **버전 diff + 요소앵커 코멘트스레드 + lint 8종** 위에 룰기반 검사를 올리는 일. 닿는 파일: `apps/server`(검사 자동화)·collab(코멘트 연계)·`packages/core/lint`(8종 확장).
 - **불변 가드**: QA = 읽기/검증(비변형) — 지오 미저장, 렌더루프 밖. ⚠️ IDS/COBie 번들 임포트는 beta(paid) = 미성숙. 핵심 룰QA는 GA.
 
-### G4 — 크로스툴 이슈 왕복: BCF (ADOPT) ⭐
+### G4 — 크로스툴 이슈 왕복: BCF (~~ADOPT~~ → **v1.5 재평가**, ROADMAP) ⭐
 **confidence: high** · `technical.buildingsmart.org/standards/bcf` · BIMcollab·Wikipedia 확증
 - **BCF(BIM Collaboration Format)** = openBIM 표준 — 모델 자체가 아니라 **contextualized 이슈데이터만**(뷰=PNG+IFC좌표, 요소=**IFC GUID 참조**) XML로 툴 간 전송, 이미 공유된 IFC 모델 leverage. buildingSMART 소유(Tekla·Solibri 개발), BCF 2.1/3.0 REST API.
 - **Figcad 요소앵커 코멘트스레드가 정확히 BCF export 대상** — 요소 GUID 참조 + 뷰캡처. 허브의 **조율 정체성 정중앙**(저작 아닌 이슈 federation).
@@ -194,7 +196,7 @@ three-bvh-csg(LOD 아래) · 머티리얼/페인트/테마 · 워크스루 · We
 | G1 brep→파라 리프팅 | **DEFER v1.5** (정당) | AI 역방향 |
 | G2 Cloud2BIM scan→BIM | CONSIDER v1.5 (레퍼런스) | AI 역방향/인터롭 |
 | G3 Speckle Automate 룰QA | CONSIDER | dim5 QA |
-| G4 BCF 이슈 왕복 | **ADOPT** ⭐ | dim5 QA/조율 |
+| G4 BCF 이슈 왕복 | ~~ADOPT~~ → **v1.5 재평가**(ROADMAP) | dim5 QA/조율 |
 | G5 param→IFC Pset | CONSIDER(중립 패스스루)·무거운UI REJECT | 인터롭 |
 
 **미답 잔존(§6)**: dim4 NL→ops/에이전트 편집·생성AI + dim6 경쟁지형 = 2패스 다 생존 claim 0 → 3차 패스.
@@ -205,7 +207,7 @@ three-bvh-csg(LOD 아래) · 머티리얼/페인트/테마 · 워크스루 · We
 
 > dim4 순방향(NL→ops 에이전트 편집 + 생성AI)만 타깃, Text2BIM 코드 그라운딩 + Figcad AI 스택 위 배선(101 에이전트 / 19 소스 / 87 claim → 25 검증 → 21 confirm·4 kill → 7 finding). 렌즈 = 아키텍처 패턴, 마케팅 아님.
 >
-> **결론 한 줄**: NL→ops 스택 대부분 **이미 있음**. 진짜 갭 = **자기수정/critic 루프** 하나. 실행 가능한 ADOPT 1개 = **lint-in-loop critic**(이 세션서 코드로 검증: `agent.ts`에 `lint` 참조 0 = 루프 내 미호출 / `lint.ts:133` `lint(store)→LintFinding[]` 순수함수 실재).
+> **결론 한 줄**: NL→ops 스택 대부분 **이미 있음**. 진짜 갭 = **자기수정/critic 루프** 하나. 실행 가능한 ADOPT 1개 = **lint-in-loop critic**(조사 시점 갭: `agent.ts` 루프에 `lint` 미호출 / `lint.ts:133` `lint(store)→LintFinding[]` 순수함수 실재). **→ 이후 M12-B `f5112dc`로 실행 완료**(`critiqueOpLog`, this-turn-touched만 lint, MAX_CRITIC_ROUNDS=2).
 
 ### H1 — 이미 보유 (갭 아님): 도구 추상화 + NL→API(지오 bake 아님)
 **confidence: high** · Text2BIM(arxiv 2408.08054 + repo) · 대조: `capabilities/catalog.ts`·`agent.ts`
@@ -217,9 +219,9 @@ three-bvh-csg(LOD 아래) · 머티리얼/페인트/테마 · 워크스루 · We
 - Text2BIM = 4개 전문 에이전트(Instruction Enhancer/Architect/Programmer/Reviewer = 계획→생성→리뷰 분할). Figcad `/api/agent` = **단일 SYSTEM_PROMPT·단일 모델·단일 MAX_ITERATIONS=12 ReAct 루프**(계획·실행 한 프롬프트 공유), 분할 없음.
 - **판정 CONSIDER(채택 아님)**: 실제 아키텍처 차이지만 경량. **단일 패스 품질이 부족함이 입증될 때만** 정당. AgentRunner DO 위에 배선, 4역할 다 executeOp로 op-log 종료 → 불변 위반 0. Text2BIM 분할은 free-form Vectorworks API 복잡도 때문 — Figcad엔 그 복잡도 없음(열린질문).
 
-### H3 — GAP #2 + 권고 fix: lint-in-loop critic (ADOPT) ⭐
+### H3 — GAP #2 + 권고 fix: lint-in-loop critic (ADOPT → ✅ shipped M12-B `f5112dc`) ⭐
 **confidence: high** · Text2BIM checker→BCF→Reviewer 루프 · 대조: `lint.ts:31-56,133` + `agent.ts`(lint 미호출, 이 세션 검증)
-- Text2BIM은 생성→검증→수정 루프를 닫음: IFC export → 룰기반 체커가 BCF 이슈 방출 → Reviewer가 해석·재프롬프트 → 에러 0까지 반복. **Figcad는 해당 조각 다 가짐** — `lint.ts`가 순수 결정적 룰체커(`LintFinding[]{code,severity,message,elementIds,fix}`, ~8-10 코드: overlap-wall·unjoined-endpoint·orphan-* 등) + dryrun이 생성/미리보기 공급 — **그러나 `agent.ts`가 루프 안에서 `lint()`를 절대 호출 안 함.**
+- Text2BIM은 생성→검증→수정 루프를 닫음: IFC export → 룰기반 체커가 BCF 이슈 방출 → Reviewer가 해석·재프롬프트 → 에러 0까지 반복. **Figcad는 해당 조각 다 가짐** — `lint.ts`가 순수 결정적 룰체커(`LintFinding[]{code,severity,message,elementIds,fix}`, ~8-10 코드: overlap-wall·unjoined-endpoint·orphan-* 등) + dryrun이 생성/미리보기 공급 — **조사 시점엔 `agent.ts`가 루프 안에서 `lint()` 미호출 → M12-B(`f5112dc`)에서 `critiqueOpLog`(this-turn-touched 요소만 lint)로 닫음.**
 - 현재 agent.ts는 **구문 절반만**: executeOp/zod 에러를 `tool_result(is_error:true)`로 모델에 환류. **도메인 룰 절반(겹침·미접합·고아)은 빠짐.**
 - **ADOPT(최고가치)**: tool 루프 후 `lint(dryStore)` 실행 → findings를 관찰로 환류 → applyOpLog 커밋 **전에** 반복. 불변 준수: lint=읽기전용 순수, 루프가 승인 게이트 **앞**, fix는 delete 기반 ops(lint의 fix가 이미 delete-only). **`LintFinding`(code+elementIds) = BCF(이슈+요소GUID)의 직접 아날로그** → §8 G4와 연결.
 

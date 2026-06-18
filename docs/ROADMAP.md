@@ -17,6 +17,7 @@
 - 메모리 인덱스: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 - 영역별 규칙: `.claude/rules/*.md` (해당 경로 작업 시 로드).
 - 외부 벤치마크: **`docs/hub-benchmark-review.md`** (유일·현행 — 협업·인터롭 플랫폼 Speckle·Onshape·Figma·Omniverse·3D Tiles 대비, 정체성=웹·실시간·AI 허브 기준 deep research 3패스). 구 조사 `modeling-tools-review.md`(저작기능 렌즈, off-identity)·`pascal-editor-review.md`는 **삭제됨** — 쓸 만한 부분(IFC Pset/Translator 인터롭 = §8 G5, pascal per-kind 레지스트리 = §5)은 hub-benchmark로 이관.
+- 데이터구조 근본연구: **`docs/geometry-representation-study.md`** (3D 표현 통합 — 3패스 딥리서치 + F-rep fetch. 결론 = Figcad는 recipe-tree-CRDT의 degenerate, 제안 = 3층 머지[movable-tree CRDT + field-LWW + post-merge lint critic], freeform = F-rep/SDF 레인. **§8 = 라운드트립 정밀화**[parametric 2종·손실은 약한커널-편집-되올리기·"최고수준 recipe 저장" 규칙]. F6 federation·`federation-design.md`와 페어. 첫 빌드 = lint post-merge 검증기 = hub-benchmark §9와 합류).
 
 ## 완료 (M0~M9)
 | M | 내용 | 상태 |
@@ -74,8 +75,11 @@
 | 항목 | 내용 | 상태 |
 |---|---|---|
 | A 문서 | 벤치마크 → SoT 반영 (이 섹션) | ✅ `2514766` |
-| B lint-in-loop critic | AI 루프에 결정적 lint 자기수정(H3/H4) — `agent.ts` end-of-loop, AI-touched만, error 재프롬프트(≤2라운드), 외부 검증자만(LLM 판사 금지) | ✅ `f5112dc` |
-| C F6 스파이크 | 읽기전용 레퍼런스 지오 채널(격리·개발플래그) + `docs/federation-design.md`(v1.5 전체 스펙) | ✅ `120b9cf` |
+| B lint-in-loop critic | AI 루프에 결정적 lint 자기수정(H3/H4) — `agent.ts` end-of-loop(`critiqueOpLog`, core `ai.ts`), AI-touched만, error 재프롬프트(≤2라운드), 외부 검증자만(LLM 판사 금지) | ✅ `f5112dc` |
+| C F6 스파이크 | 읽기전용 레퍼런스 지오 채널(격리·개발플래그, `ReferenceLayer.ts`) + `docs/federation-design.md`(v1.5 전체 스펙) | ✅ `120b9cf` |
+| iter1 F5 역-import | IFC/.3dm 파라 역-import — 기둥+보(깨끗한 파라메트릭만) | ✅ `f13b771` |
+| iter2 KIND_LABEL | lint·diff 공유 라벨 schema.ts 단일소스화 (§5 per-kind 레지스트리 첫 슬라이스) | ✅ `9301d3c` |
+| def.positional S1 | `POSITIONAL` 레지스트리 선언 + golden/enumerated 안전망 (순수 additive, 동작변경 0) | ✅ `4071276` |
 
 신규 의존성 0 · 스키마 0 · **미배포**(다음 배포는 사용자 승인 시 — B 서버변경 포함). 검증: core 245(+6)·tsc·build·reference-layer-smoke 4/4·멀티에이전트 리뷰(B 3건·C 2건 수정).
 
@@ -83,7 +87,7 @@
 | 항목 | 판정 |
 |---|---|
 | BCF 이슈 왕복(G4) | 워크플로-게이트(외부사 openBIM 교환 실수요 시). 재료 보유(Comment·`ifcGuidFromId` 안정 GUID·viewpoint). 파일 `.bcfzip`=데스크톱 표준 |
-| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain 9파일. **KIND_LABEL 슬라이스 ✅**(`9301d3c`, schema 단일소스+컴파일 가드). 남은 `def.positional`(move/rotate/transformCopy/footprint→1) = **코어 taxonomy 감독 필수** |
+| per-kind NodeDefinition 레지스트리(§5) | XL·High — silent if-chain(`.claude/rules/core-geometry.md` 10단계 체크리스트). **KIND_LABEL 슬라이스 ✅**(`9301d3c`) · **def.positional S1 ✅**(`4071276`, `POSITIONAL` 레지스트리 선언+golden/enumerated 가드, 순수 additive). 남은 **S2/S3 op 리팩터**(move/rotate/transformCopy/footprint를 레지스트리 구동으로 dedup) = **코어 taxonomy 감독 필수, 사용자 go 대기** |
 | F6 전체 federation | C 설계문서가 스펙. F9 3D-Tiles HLOD(436MB 웹뷰 유일 검증답)와 페어 |
 | F2 branch/merge | 스파이크 선행 — CRDT가 라이브 자동해결 → offline-divergent 버전에만 |
 | G2 Cloud2BIM scan→BIM · G3 Speckle-Automate 룰QA(B 후속) · G5 IFC Pset 패스스루 · **F5 파라 역-import(기둥+보 ✅ `f13b771`, 남은 kind=기하베이크 skip)** · F7 USD 레인 · H2 멀티에이전트(입증 시만) | CONSIDER |

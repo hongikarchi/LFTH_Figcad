@@ -56,8 +56,8 @@ node apps/web/scripts/ai-panel-smoke.mjs [포트|URL]
 
 @docs/ROADMAP.md
 
-- repo 내 lean SoT = `docs/ROADMAP.md` (현재 위치·마일스톤 상태). **M0~M9 완료**, 현재 **M11 Phase 0~5**(잔여기능+도면생성+검증).
-- 전체 히스토리: `~/.claude/plans/figma-lazy-milner.md`(M0~M10) · 현 작업: `wondrous-hugging-pebble.md`.
+- repo 내 lean SoT = `docs/ROADMAP.md` (현재 위치·마일스톤 상태). **M0~M11 완료 + M12 A/B/C 완료**, 현재 **M12**(def.positional 레지스트리·F5 역-import·KIND_LABEL 단일소스 — 로컬커밋, 미배포).
+- 전체 히스토리: `~/.claude/plans/figma-lazy-milner.md`(M0~M10) · 현 작업(M12): `wondrous-hugging-pebble.md`.
 - 메모리: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 
 ## Compact instructions

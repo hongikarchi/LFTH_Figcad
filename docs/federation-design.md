@@ -25,7 +25,7 @@ LFTH 적용: 구조는 Rhino·설비는 Revit·의장은 Figcad에서 만든 걸
 `apps/web/src/engine/ReferenceLayer.ts` — 격리된 자기 매니저:
 - 독립 `THREE.Group`을 `engine.scene`에 추가. SceneManager **무수정**(렌더 2경로 한 매니저 혼입 회피).
 - `add(name, ReferenceMesh[])` — 외부 메시(positions[+normals], 월드 미터)를 read-only 머티리얼(반투명, 구분색)로 담음. `userData.figcadReference=true`.
-- `setVisible`/`setAllVisible`/`remove`/`clear`/`list` + `dispose`(지오/머티리얼 해제).
+- `setVisible`/`setAllVisible`/`remove`/`clear`/`list` (지오/머티리얼 해제 = `clear`/`remove` 내부 `disposeGroup` 헬퍼; 공개 `dispose` 메서드 없음).
 - **store·ops·Y.Doc 무관** → `store.listElements()`에 안 들어옴(스모크가 증명). render-on-demand(`engine.requestRender()`).
 - **개발 플래그 뒤**(`import.meta.env.DEV` + `__figcad.referenceLayer`) — 기본 UI 밖, 미완이어도 배포앱 무영향.
 
