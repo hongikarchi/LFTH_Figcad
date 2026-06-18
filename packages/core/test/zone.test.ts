@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument } from '../src/store';
-import { DeriveCache, buildDeriveIndex, deriveZone, polygonArea, polygonCentroid } from '../src/geometry';
+import { DeriveCache, buildDeriveIndex, polygonArea, polygonCentroid } from '../src/geometry';
 import { runCapability } from '../src/capabilities';
 import { lint } from '../src/lint';
 import { elementFootprint } from '../src/select';

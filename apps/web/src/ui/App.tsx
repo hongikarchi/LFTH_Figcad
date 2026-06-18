@@ -30,7 +30,7 @@ export function App({ store, actions }: { store: DocStore; actions: ViewActions 
       <InfoBox store={store} />
       <EditActions store={store} />
       <Navigator store={store} />
-      <QuickOptions store={store} actions={actions} />
+      <QuickOptions store={store} />
       <AiPanel store={store} />
       <LintPanel store={store} actions={actions} />
       <VersionPanel store={store} />

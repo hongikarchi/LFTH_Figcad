@@ -18,14 +18,14 @@ export class SketchTool implements Tool {
   private group: THREE.Group;
   private mat: THREE.LineBasicMaterial;
   private drawing = false;
-  private unsub: () => void;
 
   constructor(private ctx: EditorContext) {
     this.group = new THREE.Group();
     this.mat = new THREE.LineBasicMaterial({ color: 0x0a84ff });
     ctx.engine.scene.add(this.group);
-    // 외부(AiPanel 지우기/전송 후 clear)에서 스트로크가 바뀌면 프리뷰 재구성
-    this.unsub = onSketchChange(() => {
+    // 외부(AiPanel 지우기/전송 후 clear)에서 스트로크가 바뀌면 프리뷰 재구성.
+    // 도구=앱수명 싱글톤이라 unsub 불필요(SelectTool과 동일 패턴).
+    onSketchChange(() => {
       this.redraw();
       this.ctx.engine.requestRender();
     });

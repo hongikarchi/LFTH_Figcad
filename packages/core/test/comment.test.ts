@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { DocStore, seedDocument, SEED_IDS } from '../src/store';
 import { resolveCommentPoint } from '../src/select';
-import type { WallElement } from '../src/schema';
 
 function setup() {
   const store = new DocStore();

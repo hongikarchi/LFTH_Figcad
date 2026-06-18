@@ -29,7 +29,6 @@ const MARKER_COLORS: Record<SnapResult['kind'], number> = {
 export class WallTool implements Tool {
   private chainStart: Pt | null = null;
   private downClient: { x: number; y: number } | null = null;
-  private lastSnap: Pt | null = null;
 
   private ghostMesh: THREE.Mesh;
   private ghostEdges: THREE.LineSegments;
@@ -67,7 +66,6 @@ export class WallTool implements Tool {
   move(info: ToolPointerInfo): void {
     if (!info.doc) return;
     const snap = this.snap(info);
-    this.lastSnap = snap.point;
     this.updateMarker(snap, info.mmPerPixel);
     if (this.chainStart) this.updateGhost(this.chainStart, snap.point);
     this.ctx.engine.requestRender();

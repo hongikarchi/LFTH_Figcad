@@ -105,7 +105,7 @@ describe.each(ALL_KINDS)('enumerated: %s × 4 op (category-consistent)', (kind) 
   });
 
   it(`duplicate = 새 요소 생성 (위치 변환)`, () => {
-    const { store, seed, id } = make(kind);
+    const { store, id } = make(kind);
     if (cat === 'hosted') {
       // 호스트 포함해야 복사됨 — 호스트 단독 셋이면 0개(golden에서 검증). 여기선 호스트+개구부.
       const host = (store.getElement(id) as { hostId: string }).hostId;

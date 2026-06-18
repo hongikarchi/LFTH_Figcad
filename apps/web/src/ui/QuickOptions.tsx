@@ -5,8 +5,6 @@ import { useLint } from './LintPanel';
 import { Icon } from './icons/Icon';
 
 export interface ViewActions {
-  zoomIn: () => void;
-  zoomOut: () => void;
   /** 카메라 타깃 이동 (월드 m) — lint 요소 점프용 */
   focusWorld: (x: number, y: number, z: number) => void;
 }
@@ -21,7 +19,7 @@ const CONN_LABEL = {
   offline: '오프라인',
 } as const;
 
-export function QuickOptions({ store, actions }: { store: DocStore; actions: ViewActions }) {
+export function QuickOptions({ store }: { store: DocStore }) {
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);

@@ -4,7 +4,6 @@ import {
   DocStore,
   deriveDrawing,
   sectionRing,
-  type BeamType,
   type ColumnType,
   type DocSnapshot,
   type DrawingView,
@@ -60,9 +59,6 @@ export function exportDxf(snap: DocSnapshot): string {
   );
   const columnTypes = new Map(
     snap.types.filter((t) => t.kind === 'column').map((t) => [t.id, t as ColumnType]),
-  );
-  const beamTypes = new Map(
-    snap.types.filter((t) => t.kind === 'beam').map((t) => [t.id, t as BeamType]),
   );
   const stairTypes = new Map(
     snap.types.filter((t) => t.kind === 'stair').map((t) => [t.id, t as StairType]),

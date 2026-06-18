@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument } from '../src/store';
-import { DeriveCache, buildDeriveIndex, deriveRoof } from '../src/geometry';
+import { deriveRoof } from '../src/geometry';
 import { runCapability } from '../src/capabilities';
 import { lint } from '../src/lint';
 import { elementFootprint, footprintInRect } from '../src/select';

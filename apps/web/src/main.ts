@@ -282,14 +282,6 @@ window.addEventListener('keydown', (e) => {
 
 // --- React UI (패널만 — 캔버스/HUD는 명령형) ---
 const viewActions = {
-  zoomIn: () => {
-    rig.zoom(1 / 1.25);
-    engine.requestRender();
-  },
-  zoomOut: () => {
-    rig.zoom(1.25);
-    engine.requestRender();
-  },
   focusWorld: (x: number, y: number, z: number) => {
     rig.focusOn(x, y, z);
     engine.requestRender();

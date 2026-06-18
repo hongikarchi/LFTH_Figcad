@@ -23,7 +23,6 @@ export class InputManager {
   private cameraButton = -1;
   private cameraPointerId: number | null = null;
   private lastMouse = { x: 0, y: 0 };
-  private cameraDownPos = { x: 0, y: 0 };
   private cameraMoved = 0; // RMB 클릭(Enter) vs 드래그 판별용 누적 이동량
   private toolPointerId: number | null = null;
   private penActive = false;
@@ -75,7 +74,6 @@ export class InputManager {
       this.cameraButton = e.button;
       this.cameraPointerId = e.pointerId;
       this.lastMouse = { x: e.clientX, y: e.clientY };
-      this.cameraDownPos = { x: e.clientX, y: e.clientY };
       this.cameraMoved = 0;
       return;
     }
