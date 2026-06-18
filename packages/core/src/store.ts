@@ -7,6 +7,7 @@ import {
   ElementSchema,
   ElemTypeSchema,
   LevelSchema,
+  POSITIONAL,
   quantize,
   type BeamElement,
   type ColumnElement,
@@ -1056,6 +1057,29 @@ export class DocStore {
     return [...map.values()];
   }
 
+  /**
+   * 복사용 positional 필드 override (`POSITIONAL` 카테고리 단일소스 — transformCopy 기계부).
+   * 특수훅(grid 라벨 재발급·dimension 언바인딩·roof slope·opening 재호스트)은 호출부에서 base에 덧씌움.
+   */
+  private positionalOverride(el: Element, xform: (p: Pt) => [number, number]): Record<string, unknown> {
+    switch (POSITIONAL[el.kind]) {
+      case 'segment': {
+        const s = el as Extract<Element, { a: Pt; b: Pt }>;
+        return { a: q2(xform(s.a)), b: q2(xform(s.b)) };
+      }
+      case 'polygon': {
+        const p = el as Extract<Element, { boundary: Pt[] }>;
+        return { boundary: p.boundary.map((q) => q2(xform(q))) };
+      }
+      case 'point': {
+        const p = el as Extract<Element, { at: Pt }>;
+        return { at: q2(xform(p.at)) };
+      }
+      case 'hosted':
+        return {}; // opening은 2nd pass(호스트 재맵)에서 처리
+    }
+  }
+
   /** 평면 변환을 요소 집합에 적용해 복사 생성. 벽의 개구부는 새 벽으로 재호스트 */
   private transformCopy(
     ids: Id[],
@@ -1068,57 +1092,29 @@ export class DocStore {
     const labelTargets: { newId: Id; targetId: Id }[] = [];
     this.transact(() => {
       for (const el of els) {
-        let newId: Id | null = null;
-        if (el.kind === 'wall') {
-          newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
-        } else if (el.kind === 'slab' || el.kind === 'zone') {
-          newId = this.writeNew({ ...el, boundary: el.boundary.map((p) => q2(xform(p))) });
-        } else if (el.kind === 'grid') {
-          // 라벨은 자동 재발급 (중복 방지)
-          const a = q2(xform(el.a));
-          const b = q2(xform(el.b));
-          newId = this.writeNew({ ...el, a, b, label: this.nextGridLabel(a, b) });
-        } else if (el.kind === 'column' || el.kind === 'text') {
-          newId = this.writeNew({ ...el, at: q2(xform(el.at)) });
-        } else if (el.kind === 'label') {
-          newId = this.writeNew({ ...el, at: q2(xform(el.at)) });
-          if (el.targetId) labelTargets.push({ newId, targetId: el.targetId });
-        } else if (
-          el.kind === 'beam' ||
-          el.kind === 'curtainwall' ||
-          el.kind === 'stair' ||
-          el.kind === 'railing'
-        ) {
-          newId = this.writeNew({ ...el, a: q2(xform(el.a)), b: q2(xform(el.b)) });
+        if (el.kind === 'opening') continue; // hosted → 2nd pass(호스트 재맵)
+        const base: Record<string, unknown> = { ...el, ...this.positionalOverride(el, xform) };
+        if (el.kind === 'grid') {
+          // 라벨 자동 재발급 (중복 방지) — base.a/b = 변환된 새 좌표
+          base['label'] = this.nextGridLabel(base['a'] as Pt, base['b'] as Pt);
         } else if (el.kind === 'dimension') {
           // 복사본은 바인딩 해제 → 변환된 위치의 자유 치수. 단 출처는 stored가 아닌
           // 해석된(렌더에 보이는) 좌표 — 바인딩 요소가 이미 이동했어도 보이는 위치를 복사.
-          const ra = resolveDimAnchor(this, el.bindA, el.a);
-          const rb = resolveDimAnchor(this, el.bindB, el.b);
-          newId = this.writeNew({
-            ...el,
-            a: q2(xform(ra)),
-            b: q2(xform(rb)),
-            bindA: undefined,
-            bindB: undefined,
-          });
-        } else if (el.kind === 'roof') {
-          const next: Record<string, unknown> = {
-            ...el,
-            boundary: el.boundary.map((p) => q2(xform(p))),
-          };
-          if (el.slope) {
-            // 경사 방향은 벡터 — 변환의 선형부만 적용 (xform(v) - xform(0))
-            const o = xform([0, 0]);
-            const td = xform(el.slope.dir);
-            next['slope'] = { dir: q2([td[0] - o[0], td[1] - o[1]]), pitch: el.slope.pitch };
-          }
-          newId = this.writeNew(next);
+          // (override의 stored-a/b 계산은 여기서 덮어써 버려짐 — xform·resolveDimAnchor 순수라 안전.)
+          base['a'] = q2(xform(resolveDimAnchor(this, el.bindA, el.a)));
+          base['b'] = q2(xform(resolveDimAnchor(this, el.bindB, el.b)));
+          base['bindA'] = undefined;
+          base['bindB'] = undefined;
+        } else if (el.kind === 'roof' && el.slope) {
+          // 경사 방향은 벡터 — 변환의 선형부만 적용 (xform(v) - xform(0))
+          const o = xform([0, 0]);
+          const td = xform(el.slope.dir);
+          base['slope'] = { dir: q2([td[0] - o[0], td[1] - o[1]]), pitch: el.slope.pitch };
         }
-        if (newId) {
-          idMap.set(el.id, newId);
-          created.push(newId);
-        }
+        const newId = this.writeNew(base);
+        idMap.set(el.id, newId);
+        created.push(newId);
+        if (el.kind === 'label' && el.targetId) labelTargets.push({ newId, targetId: el.targetId });
       }
       // 개구부는 호스트 매핑 후 처리 — 등거리 변환이라 offset 보존, 반사면 flip 토글
       for (const el of els) {
@@ -1145,6 +1141,37 @@ export class DocStore {
     return created;
   }
 
+  /**
+   * positional 좌표 변환 적용 (`POSITIONAL` 카테고리 단일소스 — move/rotate 공유).
+   * segment=a,b / polygon=boundary / point=at / hosted=opening(호스트 추종, no-op).
+   * 특수 케이스(roof.slope·dimension 언바인딩 등)는 호출부의 명시 훅 — 여기선 기계적 좌표만.
+   */
+  private applyPositional(el: Element, ymap: Y.Map<unknown>, f: (p: Pt) => [number, number]): void {
+    switch (POSITIONAL[el.kind]) {
+      case 'segment': {
+        const s = el as Extract<Element, { a: Pt; b: Pt }>;
+        ymap.set('a', q2(f(s.a)));
+        ymap.set('b', q2(f(s.b)));
+        break;
+      }
+      case 'polygon': {
+        const p = el as Extract<Element, { boundary: Pt[] }>;
+        ymap.set(
+          'boundary',
+          p.boundary.map((q) => q2(f(q))),
+        );
+        break;
+      }
+      case 'point': {
+        const p = el as Extract<Element, { at: Pt }>;
+        ymap.set('at', q2(f(p.at)));
+        break;
+      }
+      case 'hosted':
+        break; // opening = 호스트 추종(hostId+offset 상대) — 단독 이동/회전 no-op
+    }
+  }
+
   /** 제자리 이동 (벽의 개구부는 자동 추종 — hostId+offset 상대 좌표) */
   moveElements(ids: Id[], delta: Pt): void {
     const els = ids.map((id) => this.elements.get(id)).filter((e): e is Element => !!e);
@@ -1152,27 +1179,9 @@ export class DocStore {
       for (const el of els) {
         const ymap = this.yElements.get(el.id);
         if (!(ymap instanceof Y.Map)) continue;
-        if (
-          el.kind === 'wall' ||
-          el.kind === 'grid' ||
-          el.kind === 'beam' ||
-          el.kind === 'curtainwall' ||
-          el.kind === 'stair' ||
-          el.kind === 'railing' ||
-          el.kind === 'dimension'
-        ) {
-          ymap.set('a', q2([el.a[0] + delta[0], el.a[1] + delta[1]]));
-          ymap.set('b', q2([el.b[0] + delta[0], el.b[1] + delta[1]]));
-        } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
-          ymap.set(
-            'boundary',
-            el.boundary.map((p) => q2([p[0] + delta[0], p[1] + delta[1]])),
-          );
-        } else if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label') {
-          ymap.set('at', q2([el.at[0] + delta[0], el.at[1] + delta[1]]));
-        }
-        // opening 단독 이동은 SelectTool 드래그(offset)로
-        // 주의: 바인딩된 치수는 a/b가 fallback일 뿐 — derive가 참조 요소 좌표 사용(이동 무시)
+        // 바인딩된 치수도 segment라 stored a/b 이동 — derive/footprint가 바인딩 추종(이동 무시).
+        // opening 단독 이동은 SelectTool 드래그(offset)로 (hosted = no-op).
+        this.applyPositional(el, ymap, (p) => [p[0] + delta[0], p[1] + delta[1]]);
       }
     });
   }
@@ -1208,31 +1217,13 @@ export class DocStore {
       for (const el of els) {
         const ymap = this.yElements.get(el.id);
         if (!(ymap instanceof Y.Map)) continue;
-        if (
-          el.kind === 'wall' ||
-          el.kind === 'grid' ||
-          el.kind === 'beam' ||
-          el.kind === 'curtainwall' ||
-          el.kind === 'stair' ||
-          el.kind === 'railing' ||
-          el.kind === 'dimension'
-        ) {
-          ymap.set('a', q2(rotatePoint(el.a, center, angleRad)));
-          ymap.set('b', q2(rotatePoint(el.b, center, angleRad)));
-        } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
-          ymap.set(
-            'boundary',
-            el.boundary.map((p) => q2(rotatePoint(p, center, angleRad))),
-          );
-          if (el.kind === 'roof' && el.slope) {
-            // 경사 방향 벡터도 원점 기준 회전 (위치 평행이동 영향 없음)
-            ymap.set('slope', {
-              dir: q2(rotatePoint(el.slope.dir, [0, 0], angleRad)),
-              pitch: el.slope.pitch,
-            });
-          }
-        } else if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label') {
-          ymap.set('at', q2(rotatePoint(el.at, center, angleRad)));
+        this.applyPositional(el, ymap, (p) => rotatePoint(p, center, angleRad));
+        // 특수 훅: 지붕 경사 방향은 벡터 → 원점 기준 회전 (위치 평행이동 영향 없음)
+        if (el.kind === 'roof' && el.slope) {
+          ymap.set('slope', {
+            dir: q2(rotatePoint(el.slope.dir, [0, 0], angleRad)),
+            pitch: el.slope.pitch,
+          });
         }
       }
     });

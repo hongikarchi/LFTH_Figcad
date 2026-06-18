@@ -1,7 +1,15 @@
 import type { DocStore } from './store';
-import { resolveOpening } from './schema';
+import { POSITIONAL, resolveOpening } from './schema';
 import { polygonCentroid } from './geometry/deriveZone';
-import type { Comment, DimBind, Element, OpeningType, Pt, WallElement } from './schema';
+import type {
+  Comment,
+  DimBind,
+  Element,
+  OpeningElement,
+  OpeningType,
+  Pt,
+  WallElement,
+} from './schema';
 
 /**
  * 치수 바인딩 해석 — 참조 요소의 끝점(params, 파생 아님)을 읽는다.
@@ -143,44 +151,50 @@ export type Footprint =
   | { kind: 'point'; p: Pt }
   | null;
 
-/** 문서 좌표(mm) 기준 풋프린트. 앱이 화면 판정 시엔 각 점을 투영해 사용 */
+/**
+ * 문서 좌표(mm) 기준 풋프린트. 앱이 화면 판정 시엔 각 점을 투영해 사용.
+ * `POSITIONAL` 카테고리로 분기(move/rotate/copy와 단일소스 공유) + dimension 바인딩 해석·opening 호스트 투영 특수.
+ */
 export function elementFootprint(el: Element, store: DocStore): Footprint {
-  if (
-    el.kind === 'wall' ||
-    el.kind === 'grid' ||
-    el.kind === 'beam' ||
-    el.kind === 'curtainwall' ||
-    el.kind === 'stair' ||
-    el.kind === 'railing'
-  )
-    return { kind: 'segment', a: el.a, b: el.b };
-  if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone')
-    return { kind: 'polygon', pts: el.boundary };
-  if (el.kind === 'dimension')
-    // 바인딩 해석 — 렌더/클릭픽과 같은 좌표(이동된 바인딩 치수도 박스선택 일치)
-    return {
-      kind: 'segment',
-      a: resolveDimAnchor(store, el.bindA, el.a),
-      b: resolveDimAnchor(store, el.bindB, el.b),
-    };
-  if (el.kind === 'column' || el.kind === 'text' || el.kind === 'label')
-    return { kind: 'point', p: el.at };
-  if (el.kind === 'opening') {
-    const host = store.getElement(el.hostId);
-    if (host?.kind !== 'wall') return null;
-    const type = store.getType(el.typeId);
-    if (type?.kind !== 'opening') return null;
-    const level = store.getLevel((host as WallElement).levelId);
-    const r = resolveOpening(
-      el,
-      type as OpeningType,
-      host as WallElement,
-      (host as WallElement).height ?? level?.height ?? 0,
-    );
-    const len = Math.hypot(host.b[0] - host.a[0], host.b[1] - host.a[1]) || 1;
-    const dir: Pt = [(host.b[0] - host.a[0]) / len, (host.b[1] - host.a[1]) / len];
-    const off = r ? r.offset : el.offset;
-    return { kind: 'point', p: [Math.round(host.a[0] + dir[0] * off), Math.round(host.a[1] + dir[1] * off)] };
+  switch (POSITIONAL[el.kind]) {
+    case 'segment':
+      if (el.kind === 'dimension')
+        // 바인딩 해석 — 렌더/클릭픽과 같은 좌표(이동된 바인딩 치수도 박스선택 일치)
+        return {
+          kind: 'segment',
+          a: resolveDimAnchor(store, el.bindA, el.a),
+          b: resolveDimAnchor(store, el.bindB, el.b),
+        };
+      else {
+        const s = el as Extract<Element, { a: Pt; b: Pt }>;
+        return { kind: 'segment', a: s.a, b: s.b };
+      }
+    case 'polygon':
+      return { kind: 'polygon', pts: (el as Extract<Element, { boundary: Pt[] }>).boundary };
+    case 'point':
+      return { kind: 'point', p: (el as Extract<Element, { at: Pt }>).at };
+    case 'hosted': {
+      // opening — 호스트 벽 위 투영 점
+      const o = el as OpeningElement;
+      const host = store.getElement(o.hostId);
+      if (host?.kind !== 'wall') return null;
+      const type = store.getType(o.typeId);
+      if (type?.kind !== 'opening') return null;
+      const level = store.getLevel((host as WallElement).levelId);
+      const r = resolveOpening(
+        o,
+        type as OpeningType,
+        host as WallElement,
+        (host as WallElement).height ?? level?.height ?? 0,
+      );
+      const len = Math.hypot(host.b[0] - host.a[0], host.b[1] - host.a[1]) || 1;
+      const dir: Pt = [(host.b[0] - host.a[0]) / len, (host.b[1] - host.a[1]) / len];
+      const off = r ? r.offset : o.offset;
+      return {
+        kind: 'point',
+        p: [Math.round(host.a[0] + dir[0] * off), Math.round(host.a[1] + dir[1] * off)],
+      };
+    }
   }
   return null;
 }
