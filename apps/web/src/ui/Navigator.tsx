@@ -1,5 +1,12 @@
-import { useState } from 'react';
-import type { DocSnapshot, DocStore, DrawingView, ElemType } from '@figcad/core';
+import { useEffect, useState } from 'react';
+import type {
+  DocSnapshot,
+  DocStore,
+  DrawingView,
+  ElemType,
+  FederationSource,
+} from '@figcad/core';
+import type { FederationReconciler } from '../engine/FederationReconciler';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
@@ -89,8 +96,18 @@ function TypeEditor({ store, type }: { store: DocStore; type: ElemType }) {
  * 스토리: 클릭 = 평면 열기, ✎ = 인라인 편집(이름/레벨/층고/삭제).
  * 타입: ✎ = 두께/색/치수 편집. 문서: JSON 내보내기/가져오기(백업 탈출구).
  */
-export function Navigator({ store }: { store: DocStore }) {
+export function Navigator({
+  store,
+  federation,
+}: {
+  store: DocStore;
+  federation: FederationReconciler;
+}) {
   useDocVersion(store);
+  // 로드 상태(loading→ready/error)는 동기화 안 함 — store 변경 없이 reconciler가 통지.
+  // useDocVersion(store)은 add/remove/setVisible(ops) 커버, 비동기 로드 완료는 onChange만 잡는다.
+  const [, bumpFed] = useState(0);
+  useEffect(() => federation.onChange(() => bumpFed((x) => x + 1)), [federation]);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
   const activeViewId = useUiStore((s) => s.activeViewId);
@@ -99,6 +116,7 @@ export function Navigator({ store }: { store: DocStore }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<string | null>(null);
   const [ifcBusy, setIfcBusy] = useState<'export' | 'import' | null>(null);
+  const [fedInput, setFedInput] = useState('');
 
   const levels = store.listLevels();
   const types = store.listTypes();
@@ -235,6 +253,48 @@ export function Navigator({ store }: { store: DocStore }) {
       });
     };
     input.click();
+  };
+
+  // --- M13 연동 모델 (federation 오버레이) ---
+  // 입력 = 원시 room id 또는 붙여넣은 ?p=<id> / 전체 URL. p 파라미터를 뽑아낸다.
+  const parseRoomId = (raw: string): string => {
+    const s = raw.trim();
+    if (!s) return '';
+    try {
+      const p = new URL(s).searchParams.get('p');
+      if (p) return p;
+    } catch {
+      // URL 아님 — ?p= 패턴만 들어왔거나 원시 id
+    }
+    const m = s.match(/[?&]p=([^&]+)/);
+    return m ? decodeURIComponent(m[1]!) : s;
+  };
+
+  const fedAuthor = localStorage.getItem('figcad.userName') ?? '게스트';
+
+  const addFederationRoom = () => {
+    const roomId = parseRoomId(fedInput);
+    if (!roomId) return;
+    store.addFederationSource({
+      name: `룸 ${roomId}`,
+      sourceType: 'figcad-room',
+      ref: roomId,
+      visible: true,
+      addedBy: fedAuthor,
+    });
+    setFedInput('');
+  };
+
+  const sources = store.listFederationSources();
+  const SOURCE_BADGE: Record<FederationSource['sourceType'], string> = {
+    'figcad-room': 'Figcad',
+    '3dm': '.3dm',
+    ifc: 'IFC',
+    gltf: 'glTF',
+    '3dtiles': '3D Tiles',
+  };
+  const showAll = () => {
+    for (const s of sources) if (!s.visible) store.setSourceVisible(s.id, true);
   };
 
   const addStory = () => {
@@ -412,6 +472,70 @@ export function Navigator({ store }: { store: DocStore }) {
           </button>
         </div>
       ))}
+
+      <div className="nav-section">연동 모델</div>
+      <div className="nav-subsection">모델 추가 (Figcad 룸)</div>
+      <div className="nav-row">
+        <input
+          className="nav-item indent"
+          value={fedInput}
+          placeholder="룸 id 또는 ?p=… 붙여넣기"
+          onChange={(e) => setFedInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) addFederationRoom();
+          }}
+        />
+        <button
+          className="nav-edit"
+          title="연동 모델 추가"
+          disabled={!fedInput.trim()}
+          onClick={addFederationRoom}
+        >
+          <Icon name="upload" size={14} />
+        </button>
+      </div>
+
+      <div className="nav-subsection">소스</div>
+      {sources.length === 0 ? (
+        <button className="nav-item indent" disabled title="위에 룸 id를 추가하면 read-only 오버레이로 겹쳐 봅니다">
+          연동된 모델 없음
+        </button>
+      ) : (
+        sources.map((s) => {
+          const status = federation.statusOf(s.id) ?? 'loading';
+          const err = federation.errorOf(s.id);
+          const dot = status === 'ready' ? '🟢' : status === 'error' ? '🔴' : '⏳';
+          const statusLabel = status === 'ready' ? '준비됨' : status === 'error' ? '오류' : '로딩…';
+          return (
+            <div key={s.id} className="nav-row">
+              <button
+                className="nav-item indent"
+                title={err ?? `${s.name} (${SOURCE_BADGE[s.sourceType]}) — ${statusLabel}`}
+                onClick={() => store.setSourceVisible(s.id, !s.visible)}
+              >
+                <span style={{ opacity: status === 'error' ? 0.6 : 1 }}>
+                  {s.visible ? '👁' : '🚫'} {s.name}
+                </span>
+                <span className="nav-meta">
+                  <span title={err ?? statusLabel}>{dot}</span> {SOURCE_BADGE[s.sourceType]}
+                </span>
+              </button>
+              <button
+                className="nav-delete"
+                title="연동 모델 제거"
+                onClick={() => store.removeFederationSource(s.id)}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })
+      )}
+      {sources.length > 1 && (
+        <button className="nav-item indent add" onClick={showAll}>
+          전체 보기
+        </button>
+      )}
     </div>
   );
 }

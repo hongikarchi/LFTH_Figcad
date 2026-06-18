@@ -295,7 +295,7 @@ const viewActions = {
   },
 };
 createRoot(document.getElementById('ui-root')!).render(
-  createElement(App, { store, actions: viewActions }),
+  createElement(App, { store, actions: viewActions, federation }),
 );
 
 engine.requestRender();

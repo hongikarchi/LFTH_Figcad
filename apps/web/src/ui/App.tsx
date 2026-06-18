@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { DocStore } from '@figcad/core';
+import type { FederationReconciler } from '../engine/FederationReconciler';
 import { Toolbox } from './Toolbox';
 import { InfoBox } from './InfoBox';
 import { Navigator } from './Navigator';
@@ -23,13 +24,21 @@ export function useDocVersion(store: DocStore): number {
  * Toolbox(좌) · Info Box(상단 가로) · Navigator(우) · Quick Options(하단).
  * Tab Bar는 뷰 탭 수요가 생기는 2D 도면 단계에 도입.
  */
-export function App({ store, actions }: { store: DocStore; actions: ViewActions }) {
+export function App({
+  store,
+  actions,
+  federation,
+}: {
+  store: DocStore;
+  actions: ViewActions;
+  federation: FederationReconciler;
+}) {
   return (
     <>
       <Toolbox />
       <InfoBox store={store} />
       <EditActions store={store} />
-      <Navigator store={store} />
+      <Navigator store={store} federation={federation} />
       <QuickOptions store={store} />
       <AiPanel store={store} />
       <LintPanel store={store} actions={actions} />
