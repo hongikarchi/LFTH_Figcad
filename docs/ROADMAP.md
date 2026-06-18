@@ -16,8 +16,9 @@
 - 현 작업(M12) 플랜: `~/.claude/plans/wondrous-hugging-pebble.md` (벤치마크→ADOPT 스프린트 + 자율 실행 하드게이트).
 - 메모리 인덱스: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 - 영역별 규칙: `.claude/rules/*.md` (해당 경로 작업 시 로드).
+- 포지셔닝 결정: **`docs/positioning-vs-mcp.md`** (2026-06-18 — MCP 시대 가치·모델링 범위·인제스트/동기화. 결론: viewer 아님·모델러 아님 = **편집가능 중립 조율 허브**. 해자=실시간·웹·중립[AI는 table-stakes]. 모델링=*입력 UI 가볍게+파라메트릭 어휘 풍부+멀티모델 라이브 허브가 진짜 일감*. 가치갭=ReferenceLayer dev-flag UI 미배선. §8 인제스트=**PR primitive**[import→staging AI clean-up→merge, 커넥터는 메타데이터 통과], 동기화=**툴↔허브 git + 사람↔허브 실시간**, Speckle backbone=검증·파이프위 editable로 이김·stream API ingest 옵션).
 - 외부 벤치마크: **`docs/hub-benchmark-review.md`** (유일·현행 — 협업·인터롭 플랫폼 Speckle·Onshape·Figma·Omniverse·3D Tiles 대비, 정체성=웹·실시간·AI 허브 기준 deep research 3패스). 구 조사 `modeling-tools-review.md`(저작기능 렌즈, off-identity)·`pascal-editor-review.md`는 **삭제됨** — 쓸 만한 부분(IFC Pset/Translator 인터롭 = §8 G5, pascal per-kind 레지스트리 = §5)은 hub-benchmark로 이관.
-- 데이터구조 근본연구: **`docs/geometry-representation-study.md`** (3D 표현 통합 — 3패스 딥리서치 + F-rep fetch. 결론 = Figcad는 recipe-tree-CRDT의 degenerate, 제안 = 3층 머지[movable-tree CRDT + field-LWW + post-merge lint critic], freeform = F-rep/SDF 레인. **§8 = 라운드트립 정밀화**[parametric 2종·손실은 약한커널-편집-되올리기·"최고수준 recipe 저장" 규칙]. F6 federation·`federation-design.md`와 페어. 첫 빌드 = lint post-merge 검증기 = hub-benchmark §9와 합류).
+- 데이터구조 근본연구: **`docs/geometry-representation-study.md`** (3D 표현 통합 — 3패스 딥리서치 + F-rep fetch. 결론 = Figcad는 recipe-tree-CRDT의 degenerate, 제안 = 3층 머지[movable-tree CRDT + field-LWW + post-merge lint critic]. **§8 = 라운드트립 정밀화**[parametric 2종·손실은 약한커널-편집-되올리기·"최고수준 recipe 저장" 규칙]. **§9 = 운영 결론**[**F-rep 강등**=이기는 축 없음(인터롭서 B-rep에 짐 — 지배 엔드포인트가 B-rep 커널)·**AI-freeform=파라미터 편집**(곡선 어휘)·**import=lift-what-maps+Lane-2 잔여+AI clean-up**]. **빌드 4개**: 머지 lint(=hub-benchmark §9, 첫 빌드)·Lane-2 원본 보관·파라메트릭 곡선 어휘·AI clean-up 패스. F6 federation·`federation-design.md`와 페어).
 
 ## 완료 (M0~M9)
 | M | 내용 | 상태 |
@@ -83,6 +84,19 @@
 | def.positional S2+S3 | move/rotate/transformCopy/footprint를 `POSITIONAL` 단일소스 dispatch로 (4 손-중복 제거, 특수훅 명시 유지). audit+멀티리뷰=FULLY EQUIVALENT, core 320 0변동 | ✅ `67b1430` |
 
 신규 의존성 0 · 스키마 0 · **미배포**(다음 배포는 사용자 승인 시 — B 서버변경 포함). 검증: core 245(+6)·tsc·build·reference-layer-smoke 4/4·멀티에이전트 리뷰(B 3건·C 2건 수정).
+
+## M13 — 멀티모델 라이브 허브 (정체성 피벗) 🔄 진행
+> `positioning-vs-mcp.md` 피벗 실행: 모델링 깊이 그만, **멀티모델 라이브 federation 허브**를 켠다(정체성 핵심 미빌드분). 플랜 = `~/.claude/plans/docs-fuzzy-micali.md`. 자율 풀푸시(빌드 A→E + 연구 R1~R4 병렬) · **미배포**(승인 게이트).
+
+| Track | 내용 | 상태 |
+|---|---|---|
+| **A 허브** | federation Y.Map 채널(comments/views 패턴, snapshot 4경로, SCHEMA v3→4) + ReferenceLayer 프로덕션 승격 + FederationReconciler(명령형, gen-guard, sig early-out) + 추출기 figcad-room(derive 재사용)·glTF(GLTFLoader)·IFC(web-ifc StreamAllMeshes, 미터·Y-up 라운드트립 게이트) + Navigator "연동 모델" UI | ✅ `24bb355`·`2d9e0bb`·`bde6046` 등 (core 328·interop 33·tsc·build, 리뷰 2건 수정) |
+| B 병합 lint 알림 | flag-not-block — DocChange.remote + 배너 | ⬜ |
+| C 곡선 벽 어휘 | sagitta 호 중심선 (AI 천장) | ⬜ |
+| D~G | .3dm Brep 표시·Lane-2 페이로드·AI clean-up 프리미티브·3D-Tiles | ⬜ |
+| R1~R4 연구 | 머지 스파이크·brep SOTA·branch/merge·경쟁지형+생성AI (throwaway/문서, 빌드 안 함) | 🔄 R4✅(`competitive-landscape.md`·`generative-ai-scope.md`) · R1 부분(timeout) |
+
+**불변①**: 외부 모델 = 별도표현(ReferenceLayer, Y.Doc 미진입), 채널엔 ref만. **A4 게이트**: snapshot→derive bbox+vertex 정합. **IFC 방위**: Figcad 라운드트립 자기일관 검증 — 실 Revit/ArchiCAD 방위는 wake-up 시각검증.
 
 ## v1.5 백로그 (감독 하 진행)
 | 항목 | 판정 |
