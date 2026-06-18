@@ -226,7 +226,7 @@ export function lint(store: DocStore): LintFinding[] {
   for (const el of els) {
     let key: string;
     if (el.kind === 'wall') {
-      key = `w|${el.levelId}|${el.typeId}|${el.height ?? ''}|${el.baseOffset ?? ''}|${segKey(el.a, el.b)}`;
+      key = `w|${el.levelId}|${el.typeId}|${el.height ?? ''}|${el.baseOffset ?? ''}|${segKey(el.a, el.b)}|${el.sagitta || ''}`;
     } else if (el.kind === 'grid') {
       key = `g|${segKey(el.a, el.b)}`;
     } else if (el.kind === 'opening') {

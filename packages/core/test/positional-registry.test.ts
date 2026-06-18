@@ -60,6 +60,51 @@ function make(kind: Element['kind']) {
   return { store, seed, id };
 }
 
+describe('곡선 벽 sagitta — transformCopy 부호 정책 (반사=반전, 이동/회전=보존)', () => {
+  // FACTORY는 Record<kind> 라 wall 항목이 1개뿐(직선 baseline 유지) → 곡선 벽은 여기 별도 검증.
+  // POSITIONAL['wall']은 'segment' 그대로(a,b만 좌표) — 아래 enumerated move/rotate는 sagitta를 안 건드림.
+  function makeCurved(sagitta: number) {
+    const store = new DocStore();
+    const seed = seedDocument(store);
+    const id = store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [100, 100],
+      b: [4100, 100],
+      sagitta,
+    });
+    return { store, id };
+  }
+
+  it('mirror = sagitta 부호 반전 (반사는 방향반전 → 휘는 쪽 뒤집힘)', () => {
+    const { store, id } = makeCurved(500);
+    const [copyId] = store.mirrorElements([id], [0, 0], [4000, 0]); // x축 반사
+    const copy = store.getElement(copyId!) as { sagitta?: number };
+    expect(copy.sagitta).toBe(-500);
+  });
+
+  it('move = sagitta 보존 (등거리 평행이동)', () => {
+    const { store, id } = makeCurved(500);
+    store.moveElements([id], [1000, 2000]);
+    const el = store.getElement(id) as { sagitta?: number };
+    expect(el.sagitta).toBe(500);
+  });
+
+  it('rotate = sagitta 보존 (방향보존 변환)', () => {
+    const { store, id } = makeCurved(500);
+    store.rotateElements([id], [0, 0], Math.PI / 2);
+    const el = store.getElement(id) as { sagitta?: number };
+    expect(el.sagitta).toBe(500);
+  });
+
+  it('duplicate(=평행이동 복사) = sagitta 보존 (flipOpenings=false)', () => {
+    const { store, id } = makeCurved(500);
+    const [copyId] = store.duplicateElements([id], [3000, 0]);
+    const copy = store.getElement(copyId!) as { sagitta?: number };
+    expect(copy.sagitta).toBe(500);
+  });
+});
+
 describe('enumerated: POSITIONAL 완전성', () => {
   it('FACTORY 키 = POSITIONAL 키 = 모든 Element kind (신규 kind 배선 강제)', () => {
     expect(Object.keys(FACTORY).sort()).toEqual(ALL_KINDS.slice().sort());

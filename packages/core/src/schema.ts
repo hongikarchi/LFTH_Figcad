@@ -154,6 +154,10 @@ export const WallElementSchema = z.object({
   b: Pt, // 중심선 끝
   height: mm.optional(), // 기본 = level.height
   baseOffset: mm.optional(), // 기본 0
+  // 중심선 곡률 — 부호 있는 새지타(현 a→b에서 호 정점까지의 수직거리 mm 정수).
+  // 없음/0 = 직선(기존 코드패스 그대로). 부호 = 현의 어느 쪽으로 휘는가(+ = 좌측법선 n=(-dir.y,dir.x) 방향).
+  // 레시피일 뿐 — 메시는 deriveWall이 순수 파생(불변①). mm 정수라 quantize 가능.
+  sagitta: mm.optional(),
   // props: {} — BIM pset 예약 (post-MVP)
 });
 export type WallElement = z.infer<typeof WallElementSchema>;

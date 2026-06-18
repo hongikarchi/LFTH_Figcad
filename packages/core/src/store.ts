@@ -486,6 +486,7 @@ export class DocStore {
     b: Pt;
     height?: number;
     baseOffset?: number;
+    sagitta?: number;
   }): Id {
     if (
       quantize(params.a[0]) === quantize(params.b[0]) &&
@@ -503,6 +504,7 @@ export class DocStore {
       b: [quantize(params.b[0]), quantize(params.b[1])],
       ...(params.height !== undefined ? { height: quantize(params.height) } : {}),
       ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+      ...(params.sagitta !== undefined ? { sagitta: quantize(params.sagitta) } : {}),
     }) as WallElement;
     this.setElement(id, wall);
     return id;
@@ -853,6 +855,7 @@ export class DocStore {
       if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
       if (next.height !== undefined) next.height = quantize(next.height);
       if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
+      if (next.sagitta !== undefined) next.sagitta = quantize(next.sagitta);
     } else if (next.kind === 'opening') {
       next.offset = quantize(next.offset);
       for (const k of ['widthOverride', 'heightOverride', 'sillOverride'] as const) {
@@ -1158,6 +1161,11 @@ export class DocStore {
       for (const el of els) {
         if (el.kind === 'opening') continue; // hosted → 2nd pass(호스트 재맵)
         const base: Record<string, unknown> = { ...el, ...this.positionalOverride(el, xform) };
+        if (el.kind === 'wall' && flipOpenings && el.sagitta !== undefined) {
+          // 반사(mirror) 전용 훅: 반사는 방향 반전 → 호가 휘는 쪽도 뒤집힌다 → 새지타 부호 반전.
+          // move/rotate/duplicate/array(flipOpenings=false)는 ...el로 sagitta 보존(부호 유지).
+          base['sagitta'] = -el.sagitta;
+        }
         if (el.kind === 'grid') {
           // 라벨 자동 재발급 (중복 방지) — base.a/b = 변환된 새 좌표
           base['label'] = this.nextGridLabel(base['a'] as Pt, base['b'] as Pt);

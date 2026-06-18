@@ -47,6 +47,11 @@ export const CAPABILITIES: Capability[] = [
         a: ptSchema('중심선 시작점'),
         b: ptSchema('중심선 끝점'),
         height: { type: 'integer', description: '벽 높이 mm (생략 시 레벨 층고)' },
+        sagitta: {
+          type: 'integer',
+          description:
+            '곡선 중심선 새지타 mm (현 a→b에서 호 정점까지 수직거리, 부호 = 휘는 쪽 / 생략·0 = 직선)',
+        },
       },
       required: ['levelId', 'typeId', 'a', 'b'],
       additionalProperties: false,
@@ -60,6 +65,7 @@ export const CAPABILITIES: Capability[] = [
         a: asPt(a['a']),
         b: asPt(a['b']),
         ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+        ...(optNum(a['sagitta']) !== undefined ? { sagitta: optNum(a['sagitta'])! } : {}),
       }),
     summary: (a) => `벽 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
   },
@@ -600,6 +606,7 @@ export const CAPABILITIES: Capability[] = [
         b: ptSchema('끝점 (벽/그리드)'),
         at: ptSchema('단면 중심점 (기둥)'),
         height: { type: 'integer', description: '벽/기둥 높이 mm' },
+        sagitta: { type: 'integer', description: '벽 곡선 새지타 mm (부호=휘는 쪽 / 0=직선)' },
         typeId: { type: 'string', description: '타입 교체' },
         offset: { type: 'integer', description: '개구부 중심 거리 mm' },
         widthOverride: { type: 'integer' },
