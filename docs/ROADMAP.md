@@ -91,12 +91,21 @@
 | Track | 내용 | 상태 |
 |---|---|---|
 | **A 허브** | federation Y.Map 채널(comments/views 패턴, snapshot 4경로, SCHEMA v3→4) + ReferenceLayer 프로덕션 승격 + FederationReconciler(명령형, gen-guard, sig early-out) + 추출기 figcad-room(derive 재사용)·glTF(GLTFLoader)·IFC(web-ifc StreamAllMeshes, 미터·Y-up 라운드트립 게이트) + Navigator "연동 모델" UI | ✅ `24bb355`·`2d9e0bb`·`bde6046` 등 (core 328·interop 33·tsc·build, 리뷰 2건 수정) |
-| B 병합 lint 알림 | flag-not-block — DocChange.remote + 배너 | ⬜ |
-| C 곡선 벽 어휘 | sagitta 호 중심선 (AI 천장) | ⬜ |
-| D~G | .3dm Brep 표시·Lane-2 페이로드·AI clean-up 프리미티브·3D-Tiles | ⬜ |
-| R1~R4 연구 | 머지 스파이크·brep SOTA·branch/merge·경쟁지형+생성AI (throwaway/문서, 빌드 안 함) | 🔄 R4✅(`competitive-landscape.md`·`generative-ai-scope.md`) · R1 부분(timeout) |
+| B 병합 lint 알림 | flag-not-block — DocChange.remote + findingsOn + LintPanel 배너 | ✅ (core 330, 버그 1 테스트가 잡아 수정) |
+| C 곡선 벽 어휘 | sagitta 호 중심선 (AI 천장) — 직선경로 바이트 무변경 격리, MSU(interop=다음) | ✅ (core 345, 멀티리뷰) |
+| **D~G** | .3dm Brep 표시·Lane-2 페이로드·AI clean-up 프리미티브·3D-Tiles | ⬜ **다음 세션** |
+| R1 머지 스파이크 | coordination-free 머지 = 무효 잦으나(관련 동시편집 ~100%) lint가 100% 검출 → 경로A "머지+항상플래그+사람해결"로 생존·**M13-B 필수 격상**·서버권위 불필요·F2 3-way 과잉 | ✅ `docs/merge-spike-results.md` |
+| R4 경쟁+생성AI | `competitive-landscape.md`(Motif·Qonic 위협)·`generative-ai-scope.md`(ingest clean-up=ADOPT·mesh-bake REJECT) | ✅ |
+| R2 brep SOTA / R3 branch-merge | brep→파라 2026 SOTA+기계적 sub-case(→G 피드) / F2 설계(R1이 "offline만" 선판정) | 🔄 R2 진행 · R3=R1로 대부분 답 |
 
 **불변①**: 외부 모델 = 별도표현(ReferenceLayer, Y.Doc 미진입), 채널엔 ref만. **A4 게이트**: snapshot→derive bbox+vertex 정합. **IFC 방위**: Figcad 라운드트립 자기일관 검증 — 실 Revit/ArchiCAD 방위는 wake-up 시각검증.
+
+### M13 남은 일 (다음 세션 — 클린스톱, eyes-open 스코프)
+- **깨어나서 시각검증(#1)**: federation 오버레이 정합(figcad-room/glTF/IFC가 네이티브와 안 어긋나나)·곡선 벽 3D/평면 "맞게 보이나". 구조 게이트는 통과(bbox/vertex·골든) — 픽셀은 사람 몫.
+- **배포**: M12 미배포분 + M13 전체 로컬커밋 미배포. `cd apps/server && wrangler deploy`(승인 시, B 서버변경 없음 — B는 core/web만).
+- **D .3dm Brep 표시**: glTF(A5a)가 이미 Rhino7+ export 경로 커버 → D는 정제. ⚠️ rhino3dm-wasm은 *캐시된 render mesh* 있는 .3dm만 테셀 가능(raw Brep meshing 커널 없음 = skip+count). 검증=실 .3dm 에셋 필요.
+- **C5 곡선 벽 interop**: 현재 arc=직선 chord export(곡률 손실). IFC IfcArcIndex·.3dm ArcCurve·DXF bulge.
+- **F Lane-2 페이로드 / G AI clean-up 프리미티브 / E 3D-Tiles(대형·게이트 엄격)**: 플랜 `docs-fuzzy-micali.md` 참조.
 
 ## v1.5 백로그 (감독 하 진행)
 | 항목 | 판정 |
