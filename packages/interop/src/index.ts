@@ -4,6 +4,7 @@
 
 export { exportIfc } from './ifcExport';
 export { importIfc, type IfcImportResult } from './ifcImport';
+export { importIfcMeshes, type ExtractedMesh } from './ifcMeshes';
 export { ifcGuidFromId } from './ifcGuid';
 export { exportRhino, importRhino, type RhinoImportResult } from './rhino3dm';
 export { exportDrawingDxf, exportDxf, importDxf, type DxfImportResult } from './dxf';

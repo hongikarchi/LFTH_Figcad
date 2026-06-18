@@ -23,7 +23,8 @@ function triggerDownload(data: BlobPart, filename: string, mime: string): void {
 
 // --- IFC (web-ifc WASM) ---
 let ifcApiPromise: Promise<import('web-ifc').IfcAPI> | null = null;
-async function getIfcApi(): Promise<import('web-ifc').IfcAPI> {
+/** 단일 web-ifc IfcAPI 인스턴스 (WASM 1회 Init, 실패 시 캐시 비워 재시도). federation 추출기도 공유. */
+export async function getIfcApi(): Promise<import('web-ifc').IfcAPI> {
   if (!ifcApiPromise) {
     // 실패 시 캐시 비워 재시도 가능하게 (rejected promise 고착 방지)
     ifcApiPromise = (async () => {
