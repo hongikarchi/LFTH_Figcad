@@ -6,6 +6,9 @@ import { Engine } from './engine/Engine';
 import { CameraRig } from './engine/CameraRig';
 import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
+import { ReferenceLayer } from './engine/ReferenceLayer';
+import { FederationReconciler } from './engine/FederationReconciler';
+import { FEDERATION_EXTRACTORS } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
 import { HudLayer } from './hud/HudLayer';
 import { ToolController } from './tools/ToolController';
@@ -93,6 +96,10 @@ const engine = new Engine(canvas, () => rig.active);
 engine.addTicker((dt) => rig.tick(dt));
 buildScene(engine.scene);
 const sceneManager = new SceneManager(store, engine);
+// M13 멀티모델 허브: 외부 모델 read-only 오버레이(별도 표현, derive·store 밖 — 불변①).
+// reconciler가 동기화된 federation 채널을 ReferenceLayer(로컬 메시)에 반영(명령형 — 불변③).
+const referenceLayer = new ReferenceLayer(engine);
+const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS);
 const hud = new HudLayer();
 engine.addTicker(() => {
   hud.reproject(rig.active);
@@ -299,8 +306,8 @@ if (import.meta.env.DEV) {
     import('@figcad/core'),
     import('./interop/ifcClient'),
     import('./ai/sketchCapture'),
-    import('./engine/ReferenceLayer'),
-  ]).then(([{ lint }, ifc, sketch, { ReferenceLayer }]) => {
+    import('./interop/federationExtract'),
+  ]).then(([{ lint }, ifc, sketch, federationExtract]) => {
     (window as unknown as Record<string, unknown>)['__figcad'] = {
       store,
       ydoc,
@@ -312,8 +319,10 @@ if (import.meta.env.DEV) {
       lint,
       ifc, // { downloadIfc, parseIfc } — web-ifc는 호출 시에만 로드
       sketch, // { rasterizeSketch, hasSketch, clearSketch, getStrokes } — E2E용
-      // F6 스파이크: 읽기전용 레퍼런스 채널(개발 전용 — 기본 UI 밖). store·ops 무관.
-      referenceLayer: new ReferenceLayer(engine),
+      // M13 멀티모델 허브: 프로덕션 referenceLayer + reconciler (federation 채널 구동).
+      referenceLayer,
+      federation,
+      federationExtract, // { extractFigcadRoom, FEDERATION_EXTRACTORS } — A4 스모크/오프라인 추출용
       ui: useUiStore,
     };
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { DocStore, seedDocument, SEED_IDS } from '../src/store';
+import { DocStore, seedDocument } from '../src/store';
+import { buildDeriveIndex, DeriveCache } from '../src/geometry';
 
 function setup() {
   const store = new DocStore();
@@ -113,5 +114,65 @@ describe('federation 채널 — 동시 추가 무클로버 (평면 엔트리)', 
     const namesB = b.listFederationSources().map((s) => s.name).sort();
     expect(namesA).toEqual(['A모델', 'B모델']);
     expect(namesB).toEqual(['A모델', 'B모델']);
+  });
+});
+
+// A4 게이트 — figcad-room 추출 경로(snapshot→fromSnapshot→derive→메시)가 월드좌표를
+// 보존하는지 *구조적으로* 검증. unit/scale/좌표 변환버그를 naive 스모크 전에 잡는다.
+function meshStats(store: DocStore): { vertexCount: number; bbox: number[] } {
+  const index = buildDeriveIndex(store);
+  const cache = new DeriveCache();
+  let vertexCount = 0;
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  const consume = (pos: Float32Array) => {
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i]!, y = pos[i + 1]!, z = pos[i + 2]!;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+    vertexCount += pos.length / 3;
+  };
+  for (const el of store.listElements()) {
+    const geo = cache.derive(store, el.id, index);
+    if (!geo) continue;
+    if (geo.positions.length) consume(geo.positions);
+    if (geo.panels && geo.panels.positions.length) consume(geo.panels.positions);
+  }
+  return { vertexCount, bbox: [minX, minY, minZ, maxX, maxY, maxZ] };
+}
+
+describe('federation — A4 게이트: 추출 좌표 정합(bbox+vertex 일치)', () => {
+  it('snapshot→fromSnapshot→derive 가 원본과 동일 bbox+vertex (월드미터 보존)', () => {
+    const { store, seed } = setup();
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [4000, 0] });
+    store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [4000, 0], b: [4000, 3000] });
+    store.createSlab({
+      levelId: seed.levelId,
+      typeId: seed.slabTypeId,
+      boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]],
+    });
+    store.createColumn({ levelId: seed.levelId, typeId: seed.columnTypeId, at: [1000, 1000] });
+    store.createCurtainWall({
+      levelId: seed.levelId,
+      typeId: seed.curtainWallTypeId,
+      a: [0, 3000],
+      b: [4000, 3000],
+      uSpacing: 1000,
+      vSpacing: 1500,
+    });
+
+    const original = meshStats(store);
+    expect(original.vertexCount).toBeGreaterThan(0);
+    // bbox는 월드 미터 — 4m 벽이면 x 범위 ~4. mm(4000)로 새지 않았음을 sanity 체크.
+    expect(original.bbox[3]).toBeLessThan(100); // maxX < 100m (mm로 안 샘)
+    expect(original.bbox[3]).toBeGreaterThan(1); // maxX > 1m (m로 정상)
+
+    const overlay = meshStats(DocStore.fromSnapshot(store.snapshot()));
+    expect(overlay.vertexCount).toBe(original.vertexCount);
+    expect(overlay.bbox).toEqual(original.bbox);
   });
 });
