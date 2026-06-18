@@ -7,7 +7,7 @@ import { z } from 'zod';
  * 불변 규칙: 지오메트리는 여기 없다 — 항상 파라미터에서 파생.
  */
 
-export const CORE_SCHEMA_VERSION = 3; // v2 = 코멘트 채널, v3 = 도면 뷰 채널 (구버전 문서는 해당 채널 부재→[] 호환)
+export const CORE_SCHEMA_VERSION = 4; // v2 = 코멘트 채널, v3 = 도면 뷰 채널, v4 = federation 채널 (구버전 문서는 해당 채널 부재→[] 호환)
 
 export type Id = string;
 
@@ -444,6 +444,24 @@ export const DrawingViewSchema = z.object({
   scale: z.number().int().optional(), // 1:N 축척 (기본 100)
 });
 export type DrawingView = z.infer<typeof DrawingViewSchema>;
+
+/**
+ * Federation 소스 — 요소가 아닌 별도 채널(ydoc 'federation' 맵, v4). 멀티모델 라이브 허브:
+ * 외부 툴(Rhino·Revit·CAD·SketchUp)에서 저작된 모델을 *읽기전용 레퍼런스 메시*로 한 화면에 겹쳐 봄.
+ * **불변① 무위반**: 지오메트리는 여기 없다 — `ref`(room id/업로드 URL/tileset URL)만 저장,
+ * 각 클라가 ref에서 페치해 메시로 파생(별도 표현 = ReferenceLayer, derive·store·Y.Doc 밖).
+ * 코멘트·뷰와 동일 평면 id 엔트리·엔트리별 LWW 패턴. 가시성=글로벌 동기화(모두 같은 federation).
+ */
+export const FederationSourceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sourceType: z.enum(['3dm', 'ifc', 'figcad-room', 'gltf', '3dtiles']),
+  ref: z.string(), // room id / 업로드 URL / tileset URL — 절대 지오메트리 아님(불변①)
+  visible: z.boolean(),
+  addedBy: z.string(),
+  ts: z.number().int(), // 추가 시각 epoch ms
+});
+export type FederationSource = z.infer<typeof FederationSourceSchema>;
 
 export interface DocMeta {
   schemaVersion: number;

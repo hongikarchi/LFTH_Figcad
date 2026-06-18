@@ -4,6 +4,7 @@ import {
   CommentSchema,
   CORE_SCHEMA_VERSION,
   DrawingViewSchema,
+  FederationSourceSchema,
   ElementSchema,
   ElemTypeSchema,
   LevelSchema,
@@ -27,6 +28,7 @@ import {
   type SlabElement,
   type Comment,
   type DrawingView,
+  type FederationSource,
   type ZoneElement,
   type StairElement,
   type TextElement,
@@ -141,6 +143,8 @@ export interface DocSnapshot {
   comments?: Comment[];
   /** 도면 뷰 (v3). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
   views?: DrawingView[];
+  /** federation 소스 (v4). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
+  federation?: FederationSource[];
 }
 
 export type DocObserver = (change: DocChange) => void;
@@ -176,6 +180,7 @@ export class DocStore {
   private yElements: Y.Map<unknown>;
   private yComments: Y.Map<unknown>;
   private yViews: Y.Map<unknown>;
+  private yFederation: Y.Map<unknown>;
 
   // 읽기 미러 (Yjs 이벤트로만 갱신)
   private levels = new Map<Id, Level>();
@@ -183,6 +188,7 @@ export class DocStore {
   private elements = new Map<Id, Element>();
   private comments = new Map<Id, Comment>();
   private views = new Map<Id, DrawingView>();
+  private federationSources = new Map<Id, FederationSource>();
   private observers = new Set<DocObserver>();
 
   constructor(ydoc?: Y.Doc) {
@@ -193,6 +199,7 @@ export class DocStore {
     this.yElements = this.ydoc.getMap('elements');
     this.yComments = this.ydoc.getMap('comments');
     this.yViews = this.ydoc.getMap('views');
+    this.yFederation = this.ydoc.getMap('federation');
 
     // 기존 콘텐츠(프로바이더/캐시에서 온 doc) 미러 초기화
     for (const id of this.yLevels.keys()) this.mirrorLevel(id);
@@ -200,6 +207,7 @@ export class DocStore {
     for (const id of this.yElements.keys()) this.mirrorElement(id);
     for (const id of this.yComments.keys()) this.mirrorComment(id);
     for (const id of this.yViews.keys()) this.mirrorView(id);
+    for (const id of this.yFederation.keys()) this.mirrorFederationSource(id);
 
     this.yLevels.observe((e) => {
       const change: DocChange = { added: [], updated: [], removed: [] };
@@ -271,6 +279,15 @@ export class DocStore {
       }
       this.notifyAll();
     });
+    // federation 소스 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 통지로 reconciler가
+    // ReferenceLayer를 재조정(ref 페치→메시 add/remove). 요소 재파생엔 안 섞임.
+    this.yFederation.observe((e) => {
+      for (const [id, c] of e.changes.keys) {
+        if (c.action === 'delete') this.federationSources.delete(id);
+        else this.mirrorFederationSource(id);
+      }
+      this.notifyAll();
+    });
   }
 
   private mirrorComment(id: Id): void {
@@ -281,6 +298,11 @@ export class DocStore {
   private mirrorView(id: Id): void {
     const parsed = DrawingViewSchema.safeParse(this.yViews.get(id));
     if (parsed.success) this.views.set(id, parsed.data);
+  }
+
+  private mirrorFederationSource(id: Id): void {
+    const parsed = FederationSourceSchema.safeParse(this.yFederation.get(id));
+    if (parsed.success) this.federationSources.set(id, parsed.data);
   }
 
   private mirrorLevel(id: Id): void {
@@ -1031,6 +1053,37 @@ export class DocStore {
     return this.views.get(id);
   }
 
+  // ===== Federation 소스 (M13) — 별도 'federation' 채널. 외부 모델 read-only 오버레이.
+  // 지오메트리는 채널에 없음(불변① — ref만). 코멘트/뷰와 동일 평면 LWW. undo 비추적. =====
+
+  /** 외부 모델 소스 추가 — id·ts 자동. 반환 = 새 id */
+  addFederationSource(params: Omit<FederationSource, 'id' | 'ts'>): Id {
+    const id = nanoid(12);
+    const s = FederationSourceSchema.parse({ ...params, id, ts: Date.now() });
+    this.transact(() => this.yFederation.set(id, s));
+    return id;
+  }
+
+  /** 소스 제거 — reconciler가 ReferenceLayer에서 해당 메시 unload */
+  removeFederationSource(id: Id): void {
+    if (!this.federationSources.has(id)) return;
+    this.transact(() => this.yFederation.delete(id));
+  }
+
+  /** 가시성 토글 (글로벌 동기화 — 엔트리별 LWW) */
+  setSourceVisible(id: Id, visible: boolean): void {
+    const cur = this.federationSources.get(id);
+    if (!cur) return;
+    this.transact(() => this.yFederation.set(id, { ...cur, visible }));
+  }
+
+  listFederationSources(): FederationSource[] {
+    return [...this.federationSources.values()];
+  }
+  getFederationSource(id: Id): FederationSource | undefined {
+    return this.federationSources.get(id);
+  }
+
   // ===== 편집 ops (M3.5) — 전부 단일 transact = undo 1스텝, 협업 원자적 =====
 
   /** 검증 후 새 id로 요소 기록 (transact 내부에서 호출) — 유니온이라 런타임 zod 검증 */
@@ -1324,6 +1377,7 @@ export class DocStore {
       elements: [...this.elements.values()],
       comments: [...this.comments.values()],
       views: [...this.views.values()],
+      federation: [...this.federationSources.values()],
     };
   }
 
@@ -1363,6 +1417,11 @@ export class DocStore {
       const p = DrawingViewSchema.safeParse(v);
       if (p.success) views.push(p.data);
     }
+    const federation: FederationSource[] = [];
+    for (const v of ydoc.getMap('federation').values()) {
+      const p = FederationSourceSchema.safeParse(v);
+      if (p.success) federation.push(p.data);
+    }
     return {
       meta: {
         schemaVersion: (yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
@@ -1374,6 +1433,7 @@ export class DocStore {
       elements,
       comments,
       views,
+      federation,
     };
   }
 
@@ -1394,6 +1454,8 @@ export class DocStore {
       }
       for (const c of snap.comments ?? []) store.yComments.set(c.id, CommentSchema.parse(c));
       for (const v of snap.views ?? []) store.yViews.set(v.id, DrawingViewSchema.parse(v));
+      for (const s of snap.federation ?? [])
+        store.yFederation.set(s.id, FederationSourceSchema.parse(s));
     }, LOCAL_ORIGIN);
     return store;
   }
@@ -1420,6 +1482,11 @@ export class DocStore {
     // 도면 뷰도 직교 채널 — 커밋 복원(views 부재)은 보존, JSON 백업(views 명시)만 교체
     const replaceViews = snap.views !== undefined;
     const views = replaceViews ? snap.views!.map((v) => DrawingViewSchema.parse(v)) : [];
+    // federation도 직교 채널 — 커밋 복원(federation 부재)은 보존, JSON 백업(명시)만 교체
+    const replaceFederation = snap.federation !== undefined;
+    const federation = replaceFederation
+      ? snap.federation!.map((s) => FederationSourceSchema.parse(s))
+      : [];
     this.transact(() => {
       for (const k of [...this.yElements.keys()]) this.yElements.delete(k);
       for (const k of [...this.yLevels.keys()]) this.yLevels.delete(k);
@@ -1441,6 +1508,10 @@ export class DocStore {
       if (replaceViews) {
         for (const k of [...this.yViews.keys()]) this.yViews.delete(k);
         for (const v of views) this.yViews.set(v.id, v);
+      }
+      if (replaceFederation) {
+        for (const k of [...this.yFederation.keys()]) this.yFederation.delete(k);
+        for (const s of federation) this.yFederation.set(s.id, s);
       }
     });
   }
