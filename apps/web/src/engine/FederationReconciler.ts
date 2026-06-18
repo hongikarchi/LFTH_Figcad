@@ -24,6 +24,7 @@ interface LocalState {
 export class FederationReconciler {
   private local = new Map<Id, LocalState>();
   private gen = 0;
+  private lastSig = '';
   private listeners = new Set<() => void>();
 
   constructor(
@@ -55,15 +56,21 @@ export class FederationReconciler {
   /** idempotent — 매 store 변경마다 안전하게 호출. */
   private reconcile(): void {
     const sources = this.store.listFederationSources();
+    // 시그니처 early-out: federation 채널의 id·ref·visible만 의미. 요소 편집(드래그 20-30Hz)엔
+    // 불변 → 매 틱 재할당·notify 낭비를 차단. 가시성 토글/추가/제거는 sig를 바꿔 통과시킨다.
+    const sig = sources
+      .map((s) => `${s.id}:${s.ref}:${s.visible ? 1 : 0}`)
+      .sort()
+      .join('|');
+    if (sig === this.lastSig) return;
+    this.lastSig = sig;
+
     const ids = new Set(sources.map((s) => s.id));
 
-    // 제거된 소스: ReferenceLayer에서 unload
-    for (const name of this.ref.list()) {
-      if (!ids.has(name)) {
-        this.ref.remove(name);
-        this.local.delete(name);
-      }
-    }
+    // 제거된 소스: ReferenceLayer 메시 unload + 로컬 상태 정리.
+    for (const name of this.ref.list()) if (!ids.has(name)) this.ref.remove(name);
+    // ref.list()는 'ready'만 담는다 — error/loading 중 제거된 소스의 로컬 엔트리도 직접 정리(누수 방지).
+    for (const id of [...this.local.keys()]) if (!ids.has(id)) this.local.delete(id);
 
     for (const s of sources) {
       const st = this.local.get(s.id);
