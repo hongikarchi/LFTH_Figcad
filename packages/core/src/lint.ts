@@ -56,6 +56,14 @@ export interface LintFinding {
   fix?: LintFix;
 }
 
+/**
+ * findings 중 주어진 id 집합을 건드리는 것만 추린다 — AI critic(ai.ts `critiqueOpLog`,
+ * 이번 턴 touched)과 협업 병합 알림(M13-B LintPanel, 원격 머지된 ids) 공유 헬퍼.
+ */
+export function findingsOn(findings: LintFinding[], ids: ReadonlySet<Id>): LintFinding[] {
+  return findings.filter((f) => f.elementIds.some((id) => ids.has(id)));
+}
+
 // --- 검사 임계값 (mm) ---
 const OVERLAP_LATERAL_MAX = 50; // 겹침 벽: 중심선 측면 간격 한계
 const OVERLAP_PARALLEL_SIN = 0.035; // ≈ 2° — 이하면 평행 취급

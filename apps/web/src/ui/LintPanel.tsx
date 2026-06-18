@@ -1,5 +1,13 @@
-import { useEffect, useReducer } from 'react';
-import { lint, type DocStore, type Element, type LintFinding, type LintSeverity } from '@figcad/core';
+import { useEffect, useReducer, useState } from 'react';
+import {
+  lint,
+  findingsOn,
+  type DocStore,
+  type Element,
+  type Id,
+  type LintFinding,
+  type LintSeverity,
+} from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import type { ViewActions } from './QuickOptions';
 
@@ -22,7 +30,12 @@ const LINT_DEBOUNCE_MS = 400;
 
 interface LintCacheEntry {
   result: LintFinding[];
+  /** 직전 디바운스 창에서 *원격 머지*로 새로 도입된 findings (M13-B 협업 병합 알림 — flag-not-block) */
+  remote: LintFinding[];
   dirty: boolean;
+  /** 이번 창에 원격 변경이 있었나 + 그 머지된 요소 ids (창 끝에 lint를 스코프) */
+  sawRemote: boolean;
+  mergedIds: Set<Id>;
   timer: ReturnType<typeof setTimeout> | null;
   listeners: Set<() => void>;
 }
@@ -34,19 +47,32 @@ function lintEntry(store: DocStore): LintCacheEntry {
   if (!entry) {
     const created: LintCacheEntry = {
       result: lint(store),
+      remote: [],
       dirty: false,
+      sawRemote: false,
+      mergedIds: new Set<Id>(),
       timer: null,
       listeners: new Set(),
     };
     lintCache.set(store, created);
-    store.observe(() => {
+    store.observe((change) => {
       created.dirty = true;
+      // 원격 머지 출신(DocChange.remote)이면 머지된 요소 ids 누적 — 창 끝에 그 요소만 스코프.
+      if (change.remote) {
+        created.sawRemote = true;
+        for (const id of change.added) created.mergedIds.add(id);
+        for (const id of change.updated) created.mergedIds.add(id);
+      }
       if (created.timer) return; // 연속 변경은 기존 타이머로 합침
       created.timer = setTimeout(() => {
         created.timer = null;
         if (!created.dirty) return;
         created.dirty = false;
         created.result = lint(store);
+        // 병합 후 settle 1회: 원격 머지가 *건드린* 요소의 findings만 알림(기존 이슈 잔소리 금지).
+        created.remote = created.sawRemote ? findingsOn(created.result, created.mergedIds) : [];
+        created.sawRemote = false;
+        created.mergedIds.clear();
         for (const l of created.listeners) l();
       }, LINT_DEBOUNCE_MS);
     });
@@ -66,6 +92,19 @@ export function useLint(store: DocStore): LintFinding[] {
     };
   }, [store]);
   return lintEntry(store).result;
+}
+
+/** 협업 병합 알림 구독 — 직전 머지가 도입한 findings (flag-not-block 배너용) */
+export function useRemoteLintFlags(store: DocStore): LintFinding[] {
+  const [, bump] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const entry = lintEntry(store);
+    entry.listeners.add(bump);
+    return () => {
+      entry.listeners.delete(bump);
+    };
+  }, [store]);
+  return lintEntry(store).remote;
 }
 
 /** 점프 앵커 (mm) — 요소 종류별 대표점 + 레벨 */
@@ -111,8 +150,14 @@ function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId
 export function LintPanel({ store, actions }: { store: DocStore; actions: ViewActions }) {
   const lintOpen = useUiStore((s) => s.lintOpen);
   const findings = useLint(store);
+  const remoteFlags = useRemoteLintFlags(store);
+  const [dismissed, setDismissed] = useState('');
 
   if (!lintOpen) return null;
+
+  // 협업 병합 배너 — flag-not-block(머지는 LWW로 이미 적용, 알리기만). 같은 세트는 닫으면 재표시 안 함.
+  const remoteSig = remoteFlags.map((f) => `${f.code}|${f.elementIds.join()}`).join('~');
+  const showRemoteBanner = remoteFlags.length > 0 && remoteSig !== dismissed;
 
   const jump = (f: LintFinding) => {
     const el = store.getElement(f.elementIds[0]!);
@@ -144,6 +189,24 @@ export function LintPanel({ store, actions }: { store: DocStore; actions: ViewAc
           ✕
         </button>
       </div>
+      {showRemoteBanner && (
+        <div
+          className="lint-merge-banner"
+          onClick={() => remoteFlags[0] && jump(remoteFlags[0])}
+          title="협업 병합으로 새로 생긴 문제 — 눌러서 이동"
+        >
+          <span>🔀 협업 병합으로 {remoteFlags.length}건의 새 문제</span>
+          <button
+            className="lint-merge-dismiss"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDismissed(remoteSig);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="lint-list">
         {findings.length === 0 && <div className="lint-clean">✓ 데이터 위생 문제가 없습니다</div>}
         {findings.map((f) => (

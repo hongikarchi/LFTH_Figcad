@@ -1,6 +1,6 @@
 import type { DocStore } from './store';
 import type { Id } from './schema';
-import { lint, type LintFinding } from './lint';
+import { lint, findingsOn, type LintFinding } from './lint';
 import {
   buildAiTools,
   isMutatingCapability,
@@ -152,7 +152,7 @@ export function critiqueOpLog(store: DocStore, log: OpLogEntry[]): Critique {
   } catch {
     return { errors: [], warnings: [] };
   }
-  const mine = findings.filter((f) => f.elementIds.some((id) => touched.has(id)));
+  const mine = findingsOn(findings, touched);
   return {
     errors: mine.filter((f) => f.severity === 'error'),
     warnings: mine.filter((f) => f.severity !== 'error'),

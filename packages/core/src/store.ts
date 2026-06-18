@@ -131,6 +131,12 @@ export interface DocChange {
   added: Id[];
   updated: Id[];
   removed: Id[];
+  /**
+   * 이 변경이 *원격 머지* 출신인가 (트랜잭션 origin이 LOCAL_ORIGIN 아님).
+   * 협업 병합 후 유효성 알림(M13-B)용 — web가 yjs origin을 직접 못 읽으니(불변② — yjs는 core 안에서만)
+   * core가 노출. optional이라 기존 5개 observe caller는 무변경.
+   */
+  remote?: boolean;
 }
 
 /** 문서 전체 plain JSON — AI 드라이런·백업·export 공용 */
@@ -260,6 +266,11 @@ export class DocStore {
           }
         }
       }
+      // 원격 머지 출신 표시 — 한 observeDeep 발화의 모든 이벤트는 같은 트랜잭션 공유.
+      // 로컬 ops만 LOCAL_ORIGIN(객체). 원격 applyUpdate origin=undefined/null·provider → 전부 remote.
+      // (events 비면 안전하게 local 취급 — fallback을 LOCAL_ORIGIN으로 두되 origin undefined는 remote.)
+      const origin = events.length ? events[0]!.transaction.origin : LOCAL_ORIGIN;
+      change.remote = origin !== LOCAL_ORIGIN;
       this.emit(change);
     });
     // 코멘트 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 DocChange로 emit해
