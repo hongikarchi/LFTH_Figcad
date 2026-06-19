@@ -282,6 +282,17 @@ namespace Figcad
             }
             Collect(doc.Objects, Transform.Identity, 0);
 
+            // 1b) 원점 recenter — 부지/측량 좌표 모델(원점서 km 단위 떨어짐)은 Figcad 카메라(원점 근처)에
+            //     안 보임. 전체 bbox min을 원점으로 평행이동. ingest=PR 1회 import라 정합 문제 없음
+            //     (roundtrip 재정렬용 offset 저장은 v1.5). MCP 실증: -1.99M 모델 → [0..95m] 가시.
+            var gbb = BoundingBox.Empty;
+            foreach (var b in breps) gbb.Union(b.GetBoundingBox(true));
+            if (gbb.IsValid)
+            {
+                var off = Transform.Translation(-gbb.Min.X, -gbb.Min.Y, -gbb.Min.Z);
+                foreach (var b in breps) b.Transform(off);
+            }
+
             // 2) 인식 → ops
             var ops = new List<string>();
             int nCol = 0, nWall = 0, nSlab = 0, nBeam = 0, nResidual = 0;
