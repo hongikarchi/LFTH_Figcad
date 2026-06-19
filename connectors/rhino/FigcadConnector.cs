@@ -231,6 +231,189 @@ namespace Figcad
                    " · 배치 " + ((ops.Count + BATCH - 1) / BATCH) + (failedTotal > 0 ? " (실패로 writeback 보류)" : "");
         }
 
+        // ===== M13-G: Brep 인식 Push (기계적 리프트) =====================================
+        // 압출/실린더 Brep → 기둥·벽·슬라브·보 ops. 적중률 측정 77~94%(구조요소 ~100%,
+        // docs/brep-lifting-2026.md). 인식 = cap-pair(반대법선 평면쌍, 면적최대)→축·길이,
+        // cap OuterLoop→프로필 폴리곤(PolyCurve.Explode). 블록 인스턴스는 InstanceXform 재귀 적용.
+        // 불변①: ops/파라만 방출(메시 bake 금지). ingest=PR: 인식분 + 잔여 카운트 = 충실도 보고.
+        //
+        // ⚠️ 스캐폴드 — 이 코드는 Figcad 빌드 env(JS)서 컴파일 안 됨. Rhino 8 스크립트에디터/
+        //    .rhp에서 빌드·튜닝할 것. RhinoCommon API 호출은 MCP로 사전 검증(TryGetPlane/
+        //    TryGetCylinder/AreaMassProperties/OuterLoop.To3dCurve/PolyCurve.Explode/InstanceXform).
+        // 한계(문서화): ① section/thickness는 기존 column/wall TYPE서 옴(create_type 없음) —
+        //    인식은 위치·footprint·높이·축만, 단면은 타입 근사(ingest 후 clean-up서 정밀화=v1.5).
+        //    ② in-block 지오는 figcad:id writeback 불가 → 재-Push 중복 가능. ingest=PR *1회 import*
+        //    용도(연속 sync 아님). ③ 분류 임계(기둥 foot≤1200·벽 foot≤600·슬라브 span>3000)는
+        //    이 모델 기준 — 실사용서 튜닝.
+        public static string PushBreps(RhinoDoc doc, FigcadConfig cfg)
+        {
+            string snapBody = Http.GetStringAsync(Url(cfg, "pull")).GetAwaiter().GetResult();
+            var snap = (Dictionary<string, object>)Json.Parse(snapBody);
+            string levelId = null, wallTypeId = null, slabTypeId = null, columnTypeId = null, beamTypeId = null;
+            foreach (Dictionary<string, object> l in (List<object>)snap["levels"]) { levelId = (string)l["id"]; break; }
+            foreach (Dictionary<string, object> t in (List<object>)snap["types"])
+            {
+                string k = (string)t["kind"];
+                if (k == "wall" && wallTypeId == null) wallTypeId = (string)t["id"];
+                else if (k == "slab" && slabTypeId == null) slabTypeId = (string)t["id"];
+                else if (k == "column" && columnTypeId == null) columnTypeId = (string)t["id"];
+                else if (k == "beam" && beamTypeId == null) beamTypeId = (string)t["id"];
+            }
+            double tol = Math.Max(doc.ModelAbsoluteTolerance, 0.01);
+
+            // 1) 재귀 수집: 블록 인스턴스 변환 누적 적용 (figcad 소유 스킵). top-level만 writeback 가능.
+            var breps = new List<Brep>();
+            void Collect(IEnumerable<RhinoObject> objs, Transform xf, int depth)
+            {
+                if (depth > 8) return;
+                foreach (var o in objs)
+                {
+                    if (!string.IsNullOrEmpty(o.Attributes.GetUserString(IdKey))) continue;
+                    var io = o as InstanceObject;
+                    if (io != null) { try { Collect(io.InstanceDefinition.GetObjects(), xf * io.InstanceXform, depth + 1); } catch { } continue; }
+                    Brep b = null;
+                    var ex = o.Geometry as Extrusion;
+                    if (ex != null) b = ex.ToBrep();
+                    else { var bp = o.Geometry as Brep; if (bp != null && bp.IsSolid) b = (Brep)bp.Duplicate(); }
+                    if (b == null) continue;
+                    b.Transform(xf);
+                    breps.Add(b);
+                }
+            }
+            Collect(doc.Objects, Transform.Identity, 0);
+
+            // 2) 인식 → ops
+            var ops = new List<string>();
+            int nCol = 0, nWall = 0, nSlab = 0, nBeam = 0, nResidual = 0;
+            foreach (var b in breps)
+            {
+                string kind;
+                var op = RecognizeBrep(b, tol, levelId, wallTypeId, slabTypeId, columnTypeId, beamTypeId, out kind);
+                if (op == null) { nResidual++; continue; }
+                ops.Add(op);
+                if (kind == "column") nCol++; else if (kind == "wall") nWall++; else if (kind == "slab") nSlab++; else if (kind == "beam") nBeam++;
+            }
+            if (ops.Count == 0) return "PushBreps: 인식된 압출/실린더 없음 (Brep " + breps.Count + " · 잔여 " + nResidual + ")";
+
+            // 3) 배치 POST (Push와 동일 패턴, writeback은 생략 — in-block id 매핑 불가, ingest=PR 1회)
+            const int BATCH = 1500;
+            int applied = 0, failedTotal = 0;
+            for (int off = 0; off < ops.Count; off += BATCH)
+            {
+                var slice = ops.GetRange(off, Math.Min(BATCH, ops.Count - off));
+                var content = new StringContent("{\"ops\":[" + string.Join(",", slice) + "]}", Encoding.UTF8, "application/json");
+                var resp = Http.PostAsync(Url(cfg, "apply"), content).GetAwaiter().GetResult();
+                var res = (Dictionary<string, object>)Json.Parse(resp.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                applied += Convert.ToInt32(D(res["applied"]));
+                failedTotal += ((List<object>)res["failed"]).Count;
+            }
+            // 충실도 보고 (ingest=PR)
+            return "PushBreps 충실도 보고: 적용 " + applied + " · 실패 " + failedTotal +
+                   " | 기둥 " + nCol + " · 벽 " + nWall + " · 슬라브 " + nSlab + " · 보 " + nBeam +
+                   " · 자유곡면/미인식 잔여 " + nResidual + " (Lane-2 passthrough 대상)";
+        }
+
+        // Brep 1개 인식 → create_* op (또는 null=잔여). out kind = column/wall/slab/beam.
+        static string RecognizeBrep(Brep b, double tol, string lv, string wt, string st, string ct, string bt, out string kind)
+        {
+            kind = null;
+            if (lv == null) return null;
+            // 실린더면 보유 = 원형기둥 후보
+            bool isCyl = false; double dia = 0;
+            foreach (var f in b.Faces)
+            {
+                var s = f.UnderlyingSurface();
+                Cylinder cy;
+                if (s != null && !s.IsPlanar(tol) && s.TryGetCylinder(out cy, tol)) { isCyl = true; dia = cy.Radius * 2; break; }
+            }
+            // cap-pair: 반대법선(dot<-0.9) 평면쌍 중 면적최대 = 압출 캡. 축=법선, 길이=평면거리.
+            var pf = new List<KeyValuePair<BrepFace, Plane>>();
+            var areas = new List<double>();
+            foreach (var f in b.Faces)
+            {
+                var s = f.UnderlyingSurface();
+                Plane pl;
+                if (s != null && s.TryGetPlane(out pl, tol))
+                {
+                    var amp = AreaMassProperties.Compute(f);
+                    pf.Add(new KeyValuePair<BrepFace, Plane>(f, pl));
+                    areas.Add(amp != null ? amp.Area : 0);
+                }
+            }
+            BrepFace cap = null; double len = 0, best = -1; Vector3d axis = Vector3d.ZAxis;
+            for (int i = 0; i < pf.Count; i++)
+                for (int j = i + 1; j < pf.Count; j++)
+                {
+                    if (pf[i].Value.Normal * pf[j].Value.Normal < -0.9)
+                    {
+                        double d = Math.Abs(pf[i].Value.DistanceTo(pf[j].Value.Origin));
+                        double minA = Math.Min(areas[i], areas[j]);
+                        if (d > tol && minA > best) { best = minA; cap = areas[i] >= areas[j] ? pf[i].Key : pf[j].Key; len = d; axis = pf[i].Value.Normal; }
+                    }
+                }
+            if (cap == null) return null; // 압출 미인식 = 잔여(Lane-2)
+            axis.Unitize();
+            var verts = ProfileVerts(cap);
+            if (verts.Count < 3) return null;
+            var bb = new BoundingBox(verts);
+            double dx = bb.Max.X - bb.Min.X, dy = bb.Max.Y - bb.Min.Y;
+            double cx = (bb.Min.X + bb.Max.X) / 2, cyc = (bb.Min.Y + bb.Max.Y) / 2, cz = (bb.Min.Z + bb.Max.Z) / 2;
+            double foot = Math.Min(dx, dy), span = Math.Max(dx, dy);
+            bool vert = Math.Abs(axis.Z) > 0.8;
+
+            if (isCyl && vert && ct != null) { kind = "column"; return "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + ct + "\",\"at\":[" + R(cx) + "," + R(cyc) + "],\"baseOffset\":" + R(bb.Min.Z) + ",\"height\":" + R(len) + "}}"; }
+            if (vert)
+            {
+                if (span > 3000 && len < foot && st != null)
+                {
+                    var sb = new StringBuilder("[");
+                    for (int i = 0; i < verts.Count; i++) { if (i > 0) sb.Append(","); sb.Append("[" + R(verts[i].X) + "," + R(verts[i].Y) + "]"); }
+                    sb.Append("]");
+                    kind = "slab"; return "{\"op\":\"create_slab\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + st + "\",\"boundary\":" + sb + "}}";
+                }
+                if (foot <= 600 && span > foot * 2.5 && wt != null)
+                {
+                    // 벽: 프로필 장축이 중심선
+                    double ax, ay, bx, by;
+                    if (dx >= dy) { ax = bb.Min.X; ay = cyc; bx = bb.Max.X; by = cyc; } else { ax = cx; ay = bb.Min.Y; bx = cx; by = bb.Max.Y; }
+                    kind = "wall"; return "{\"op\":\"create_wall\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + wt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "]}}";
+                }
+                if (foot <= 1200 && ct != null) { kind = "column"; return "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + ct + "\",\"at\":[" + R(cx) + "," + R(cyc) + "],\"baseOffset\":" + R(bb.Min.Z) + ",\"height\":" + R(len) + "}}"; }
+                return null; // 수직이나 임계 미스 = 잔여
+            }
+            // 수평 압출 = 보 (축 따라 a→b, 프로필 중심)
+            if (bt != null)
+            {
+                double hx = axis.X, hy = axis.Y, hl = Math.Sqrt(hx * hx + hy * hy);
+                if (hl < 1e-6) return null;
+                hx /= hl; hy /= hl;
+                double ax = cx - hx * len / 2, ay = cyc - hy * len / 2, bx = cx + hx * len / 2, by = cyc + hy * len / 2;
+                kind = "beam"; return "{\"op\":\"create_beam\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + bt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "],\"zOffset\":" + R(cz) + "}}";
+            }
+            return null;
+        }
+
+        // cap 면 OuterLoop → 월드 프로필 정점 (PolyCurve 대응 — TryGetPolyline 실패 시 Explode)
+        static List<Point3d> ProfileVerts(BrepFace cap)
+        {
+            var outLoop = cap.OuterLoop;
+            var verts = new List<Point3d>();
+            if (outLoop == null) return verts;
+            var c = outLoop.To3dCurve();
+            if (c == null) return verts;
+            Polyline pl;
+            if (c.TryGetPolyline(out pl)) { foreach (var p in pl) verts.Add(p); }
+            else
+            {
+                var pc = c as PolyCurve;
+                if (pc != null) { foreach (var seg in pc.Explode()) verts.Add(seg.PointAtStart); }
+                else { var d = c.DivideByCount(16, true); if (d != null) foreach (var t in d) verts.Add(c.PointAt(t)); }
+            }
+            // 닫힘 중복 끝점 제거
+            if (verts.Count > 1 && verts[0].DistanceTo(verts[verts.Count - 1]) < 1) verts.RemoveAt(verts.Count - 1);
+            return verts;
+        }
+
         // --- helpers ---
         static string R(double v) => Math.Round(v).ToString(CultureInfo.InvariantCulture);
         static double Opt(Dictionary<string, object> d, string k, double def) => d.ContainsKey(k) && d[k] != null ? D(d[k]) : def;
@@ -339,4 +522,9 @@ namespace Figcad
     // }
     // FigcadPushCommand 동일 패턴 (Push 호출). HTTP 콜백이 UI 스레드 밖이면
     // RhinoApp.InvokeOnUiThread로 doc 수정 마샬.
+    //
+    // M13-G: FigcadPushBrepsCommand — FigcadConnector.PushBreps(doc, cfg) 호출 (Brep 기계적 리프트).
+    //   스크립트에디터 1회 실행: FigcadConnector.PushBreps(RhinoDoc.ActiveDoc, new FigcadConfig{Room="..."});
+    //   반환 = 충실도 보고("기둥 N·벽 M·슬라브·보 · 잔여 K"). ingest=PR 1회 import 용도(연속 sync 아님).
+    //   ⚠️ Push와 달리 figcad:id writeback 없음(in-block 지오) → 재실행 시 중복. 새 룸에 1회 권장.
 }
