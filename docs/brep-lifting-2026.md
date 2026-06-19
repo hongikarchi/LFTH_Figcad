@@ -211,3 +211,19 @@
 **판정(R2 게이트 통과)**: 기계적 리프트가 실 건축 Brep의 **대부분(77~94%)을 커버하고, liftable한 게 정확히 Figcad kind(기둥·보·슬라브·벽·계단)에 집중**. 잔여는 파사드 디테일(원래 passthrough). → **Track G 기계적-리프트 빌드 GO** (단 커넥터/RhinoCommon 경로 — wasm32가 브라우저 OCCT 차단).
 
 **측정 caveat(정직)**: ① 원 436MB(260416, 24819 obj·72% Brep)가 아닌 더 작은 입면스터디 파일 — 적중률은 파일별 다를 수 있음(파사드-heavy 모델은 낮음). ② "전부 평면 solid=prism"은 *상한 프록시* — 진짜 압출인식(일정 프로필·단일 축)은 더 엄격하니 실 liftable은 다소 낮음. 단 구조 레이어 100% 집중은 프록시 정밀도와 무관하게 견고. ③ 분류만 했고 파라미터 추출(프로필·축·치수)→ops 방출은 G 빌드 본체.
+
+## 부록 — Track G 인식 프로토타입 (2026-06-19, RhinoCommon MCP)
+
+> 측정(GO) 후 G 코어 파이프라인 실증: Brep → 인식 → 파라미터 추출 → **Figcad op 방출**. 같은 실 모델, RhinoCommon(커넥터 경로 — wasm32가 브라우저 OCCT 차단, R2). 프로토타입 = MCP C# 스크립트(미커밋 — 검증용).
+
+**결과**: 497 ops 방출 — 각기둥 170 · 원형기둥 42 · 보 199 · 슬라브 86 · 미스(모호 비율) 67. 인스턴스 변환 적용 후 **월드 좌표 정확**(x≈-1.9M, 슬라브 ~27×8m, 기둥 분산 배치).
+
+**입증된 것**: ① 인식→파라→op 파이프라인 동작(create_column/slab/beam well-formed). ② **핵심 G 요구사항 = 블록 인스턴스 변환 처리** — `InstanceXform` 재귀 누적 + 지오에 적용(블록 def는 로컬좌표라 미적용 시 전부 원점). 프로토타입서 해결. ③ Brep+Extrusion 모집단 = 측정과 일치.
+
+**미해결(프로덕션 G 본체)**: ⚠️ 분류가 **bbox-비율 휴리스틱**이라 거침 — 413×160×**640mm "기둥"** 같은 오분류(작은 블록을 기둥으로). 정확 인식엔 **진짜 프로필/축 추출**(R2의 OCCT BRepAdaptor_Surface::GetType + 압출방향 검출 + cap 프로필 추출)이 필요, bbox 아님. section·height·중심선이 그래야 정확.
+
+**G 빌드 다음 단계**:
+1. 인식 정밀화 — bbox→실 프로필/축 추출(평면 cap 2개 식별→프로필, 압출축, 실린더=축+반지름).
+2. `connectors/rhino/FigcadConnector.cs` Push 경로에 포팅(현재 곡선만 매핑 → Brep 인식 추가). RhinoCommon이라 MCP로 검증, `.rhp` 패키징은 이 환경 밖.
+3. ingest=PR(positioning §8): staging→충실도 보고("기둥 N·슬라브 M 변환·자유곡면 K passthrough")→merge. 못 올린 잔여(파사드)는 Lane-2 명시.
+4. 불변①: ops/파라만 방출(메시 bake 금지) — 이미 op 경유라 충족.
