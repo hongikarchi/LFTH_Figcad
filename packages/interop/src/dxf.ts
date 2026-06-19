@@ -4,6 +4,8 @@ import {
   DocStore,
   deriveDrawing,
   sectionRing,
+  arcPolyline,
+  curvedWallFootprint,
   type ColumnType,
   type DocSnapshot,
   type DrawingView,
@@ -66,25 +68,34 @@ export function exportDxf(snap: DocSnapshot): string {
 
   for (const el of snap.elements) {
     if (el.kind === 'wall') {
-      d.setActiveLayer('Wall Axis');
-      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
-      // 풋프린트 (시각용)
-      const t = (wallTypes.get(el.typeId)?.thickness ?? DEFAULT_THICKNESS) / 2;
-      const dx = el.b[0] - el.a[0];
-      const dy = el.b[1] - el.a[1];
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / len) * t;
-      const ny = (dx / len) * t;
-      d.setActiveLayer('Walls');
-      d.drawPolyline(
-        [
-          [el.a[0] + nx, el.a[1] + ny],
-          [el.b[0] + nx, el.b[1] + ny],
-          [el.b[0] - nx, el.b[1] - ny],
-          [el.a[0] - nx, el.a[1] - ny],
-        ],
-        true,
-      );
+      const thickness = wallTypes.get(el.typeId)?.thickness ?? DEFAULT_THICKNESS;
+      if (el.sagitta) {
+        // 곡선 벽(C5): 중심선·풋프린트를 호 테셀 폴리라인으로 — 직선 chord 곡률 손실 방지.
+        d.setActiveLayer('Wall Axis');
+        d.drawPolyline(arcPolyline(el.a, el.b, el.sagitta), false);
+        d.setActiveLayer('Walls');
+        d.drawPolyline(curvedWallFootprint(el.a, el.b, el.sagitta, thickness), true);
+      } else {
+        d.setActiveLayer('Wall Axis');
+        d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+        // 풋프린트 (시각용)
+        const t = thickness / 2;
+        const dx = el.b[0] - el.a[0];
+        const dy = el.b[1] - el.a[1];
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / len) * t;
+        const ny = (dx / len) * t;
+        d.setActiveLayer('Walls');
+        d.drawPolyline(
+          [
+            [el.a[0] + nx, el.a[1] + ny],
+            [el.b[0] + nx, el.b[1] + ny],
+            [el.b[0] - nx, el.b[1] - ny],
+            [el.a[0] - nx, el.a[1] - ny],
+          ],
+          true,
+        );
+      }
     } else if (el.kind === 'slab') {
       d.setActiveLayer('Slab');
       d.drawPolyline(

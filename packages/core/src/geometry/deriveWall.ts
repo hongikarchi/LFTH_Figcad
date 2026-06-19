@@ -411,9 +411,18 @@ function deriveArcWall(input: WallDeriveInput): DerivedGeometry {
 function arcWallFootprint(input: WallDeriveInput): Pt[] {
   const { wall, type } = input;
   if (Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]) === 0) return [];
-  const poly = arcPolyline(wall.a, wall.b, wall.sagitta!);
+  return curvedWallFootprint(wall.a, wall.b, wall.sagitta!, type.thickness);
+}
+
+/**
+ * 곡선 벽 풋프린트(닫힘 폴리곤, 문서 mm) — WallDeriveInput 없이 호출하는 interop export용 공유 API.
+ * 호 중심선(arcPolyline)을 정점 법선으로 ±thickness/2 오프셋한 두 레일(outer ++ reverse inner).
+ * interop이 곡선 벽을 직선 chord로 내보내 곡률을 잃는 걸 방지(C5) — 메시 아님, 파라미터서 파생.
+ */
+export function curvedWallFootprint(a: Pt, b: Pt, sagitta: number, thickness: number): Pt[] {
+  const poly = arcPolyline(a, b, sagitta);
   const vn = vertexNormals(poly);
-  const half = type.thickness / 2;
+  const half = thickness / 2;
   const outer: Pt[] = poly.map((p, i) => [Math.round(p[0] + vn[i]![0] * half), Math.round(p[1] + vn[i]![1] * half)]);
   const inner: Pt[] = poly.map((p, i) => [Math.round(p[0] - vn[i]![0] * half), Math.round(p[1] - vn[i]![1] * half)]);
   return [...outer, ...inner.slice().reverse()];

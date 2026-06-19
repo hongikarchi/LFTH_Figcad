@@ -23,7 +23,7 @@ description: interop WASM 로딩·포맷별 손실·import 한계
 - 현 .3dm import = **wall/slab/grid만 매핑**, column/beam/stair/railing/roof는 스킵+count.
 - 외부 임의 파일 = best-effort (open curve→wall, closed→slab).
 - 실파일은 **부분 import** = 인터롭 갭. 신규 kind 추가 시 export는 반드시(체크리스트 9), import는 점진.
-- **곡선(arc) 벽 = 현(chord) export 갭 (M13-C 보류, C5에서 닫음):** `wall.sagitta`(곡선 중심선)는 현재 IFC/.3dm/DXF export가 직선 현으로만 내보냄 = **조용한 곡률 손실**. C5에서 IfcArcIndex / Rhino ArcCurve / DXF bulge 라운드트립으로 닫을 것. 그 전까지 알려진 갭(닫을 일 — 지금 아님).
+- **곡선(arc) 벽 export = C5에서 닫음 ✅:** `wall.sagitta`(곡선 중심선)를 IFC/.3dm/DXF가 **호 테셀 dense 폴리라인**(`arcPolyline`+`curvedWallFootprint`)으로 내보냄 — 직선 현 손실 없음, 곡률 보존. (IFC=로컬좌표 IfcPolyline axis + IfcArbitraryClosedProfileDef body, .3dm=PolylineCurve, DXF=다정점 LWPOLYLINE.) 잔여(후속): 진짜 파라메트릭 arc 엔티티(IfcArcIndex/ArcCurve/bulge) + re-import 시 sagitta 복원(현재 재import는 폴리라인→직선 벽 = import 일반 한계).
 - 대형 .3dm(수백 MB)은 브라우저 WASM 메모리 캡(탭 ~200-300MB) 초과 → 통짜 import 불가. subset 또는 connector 경로.
 
 ## 배제 확정

@@ -16,7 +16,7 @@ import type {
   WallElement,
   WallType,
 } from '@figcad/core';
-import { resolveOpening } from '@figcad/core';
+import { resolveOpening, arcPolyline, curvedWallFootprint, type Pt } from '@figcad/core';
 import { ifcGuidFromId } from './ifcGuid';
 
 /**
@@ -161,17 +161,41 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
       const baseOffset = wall.baseOffset ?? 0;
       const objPlace = local(storeyPlace, place3(pt3(wall.a[0], wall.a[1], baseOffset), dir3(ux, uy, 0)));
 
-      // Body: 중심선 따라 len, 두께 thickness, 높이 height 박스
-      const profile = w(
-        new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(len / 2, 0) as never, null)) as never, len as never, thickness as never),
-      );
-      const solid = w(
-        new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, 1) as never, height as never),
-      );
-      const bodyRep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
-      // Axis: 2D 중심선
-      const axisLine = w(new I.IfcPolyline([pt2(0, 0) as never, pt2(len, 0) as never]));
-      const axisRep = w(new I.IfcShapeRepresentation(ctx as never, label('Axis'), label('Curve2D'), [axisLine as never]));
+      // Body + Axis. objPlace는 wall.a서 dir로 회전된 로컬프레임 → 로컬좌표로 표현.
+      let bodyRep;
+      let axisRep;
+      if (wall.sagitta) {
+        // 곡선 벽(C5): 호 중심선·풋프린트를 로컬좌표 투영 폴리라인으로 — 직선 chord 곡률 손실 방지.
+        // 로컬 = 현 a 기준, x=dir 투영·y=좌측법선 투영(deriveWall sagitta 규약과 일치).
+        const nrm: Pt = [-uy, ux];
+        const toLocal = (p: Pt): [number, number] => [
+          (p[0] - wall.a[0]) * ux + (p[1] - wall.a[1]) * uy,
+          (p[0] - wall.a[0]) * nrm[0] + (p[1] - wall.a[1]) * nrm[1],
+        ];
+        const axisPts = arcPolyline(wall.a, wall.b, wall.sagitta).map(toLocal);
+        const axisLine = w(new I.IfcPolyline(axisPts.map((p) => pt2(p[0], p[1]) as never)));
+        axisRep = w(new I.IfcShapeRepresentation(ctx as never, label('Axis'), label('Curve2D'), [axisLine as never]));
+        const fpLocal = curvedWallFootprint(wall.a, wall.b, wall.sagitta, thickness).map(toLocal);
+        const ring = [...fpLocal, fpLocal[0]!]; // 닫기
+        const fpPoly = w(new I.IfcPolyline(ring.map((p) => pt2(p[0], p[1]) as never)));
+        const profile = w(new I.IfcArbitraryClosedProfileDef(I.IfcProfileTypeEnum.AREA, null, fpPoly as never));
+        const solid = w(
+          new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, 1) as never, height as never),
+        );
+        bodyRep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
+      } else {
+        // Body: 중심선 따라 len, 두께 thickness, 높이 height 박스
+        const profile = w(
+          new I.IfcRectangleProfileDef(I.IfcProfileTypeEnum.AREA, null, w(new I.IfcAxis2Placement2D(pt2(len / 2, 0) as never, null)) as never, len as never, thickness as never),
+        );
+        const solid = w(
+          new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, 1) as never, height as never),
+        );
+        bodyRep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
+        // Axis: 2D 중심선
+        const axisLine = w(new I.IfcPolyline([pt2(0, 0) as never, pt2(len, 0) as never]));
+        axisRep = w(new I.IfcShapeRepresentation(ctx as never, label('Axis'), label('Curve2D'), [axisLine as never]));
+      }
       const shape = w(new I.IfcProductDefinitionShape(null, null, [axisRep as never, bodyRep as never]));
 
       const wallEntity = w(

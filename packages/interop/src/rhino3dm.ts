@@ -2,6 +2,8 @@ import rhino3dm from 'rhino3dm';
 import {
   DocStore,
   sectionRing,
+  arcPolyline,
+  curvedWallFootprint,
   type BeamType,
   type ColumnType,
   type DocSnapshot,
@@ -102,31 +104,41 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
   for (const el of snap.elements) {
     if (el.kind === 'wall') {
       const z = (elev.get(el.levelId) ?? 0) + (el.baseOffset ?? 0);
-      // 중심선 (import 소스)
-      objects.add(
-        new rhino.PolylineCurve([
-          [el.a[0], el.a[1], z],
-          [el.b[0], el.b[1], z],
-        ]),
-        attr(axisLayer),
-      );
-      // 풋프린트 사각형 (시각용) — 두께 양옆
-      const t = (wallTypes.get(el.typeId)?.thickness ?? DEFAULT_THICKNESS) / 2;
-      const dx = el.b[0] - el.a[0];
-      const dy = el.b[1] - el.a[1];
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / len) * t;
-      const ny = (dx / len) * t;
-      objects.add(
-        new rhino.PolylineCurve([
-          [el.a[0] + nx, el.a[1] + ny, z],
-          [el.b[0] + nx, el.b[1] + ny, z],
-          [el.b[0] - nx, el.b[1] - ny, z],
-          [el.a[0] - nx, el.a[1] - ny, z],
-          [el.a[0] + nx, el.a[1] + ny, z],
-        ]),
-        attr(wallLayer),
-      );
+      const thickness = wallTypes.get(el.typeId)?.thickness ?? DEFAULT_THICKNESS;
+      if (el.sagitta) {
+        // 곡선 벽(C5): 중심선·풋프린트를 호 테셀 폴리라인으로 — 직선 chord 곡률 손실 방지.
+        const axisPts = arcPolyline(el.a, el.b, el.sagitta).map((p) => [p[0], p[1], z] as number[]);
+        objects.add(new rhino.PolylineCurve(axisPts), attr(axisLayer));
+        const fp = curvedWallFootprint(el.a, el.b, el.sagitta, thickness).map((p) => [p[0], p[1], z] as number[]);
+        fp.push(fp[0]!); // 닫기
+        objects.add(new rhino.PolylineCurve(fp), attr(wallLayer));
+      } else {
+        // 중심선 (import 소스)
+        objects.add(
+          new rhino.PolylineCurve([
+            [el.a[0], el.a[1], z],
+            [el.b[0], el.b[1], z],
+          ]),
+          attr(axisLayer),
+        );
+        // 풋프린트 사각형 (시각용) — 두께 양옆
+        const t = thickness / 2;
+        const dx = el.b[0] - el.a[0];
+        const dy = el.b[1] - el.a[1];
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / len) * t;
+        const ny = (dx / len) * t;
+        objects.add(
+          new rhino.PolylineCurve([
+            [el.a[0] + nx, el.a[1] + ny, z],
+            [el.b[0] + nx, el.b[1] + ny, z],
+            [el.b[0] - nx, el.b[1] - ny, z],
+            [el.a[0] - nx, el.a[1] - ny, z],
+            [el.a[0] + nx, el.a[1] + ny, z],
+          ]),
+          attr(wallLayer),
+        );
+      }
     } else if (el.kind === 'slab') {
       const z = elev.get(el.levelId) ?? 0;
       const pts = el.boundary.map((p) => [p[0], p[1], z] as number[]);

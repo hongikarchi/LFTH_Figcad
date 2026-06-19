@@ -39,7 +39,6 @@ export type LintCode =
   | 'unjoined-endpoint' // 끝점이 거의 만나지만 정확히 안 붙음 (마이터 조인 불발)
   | 'orphan-dimension' // 치수 바인딩이 삭제된 요소를 가리킴 (추종 안 됨)
   | 'orphan-label' // 라벨 타깃이 삭제된 요소를 가리킴 (fallback 텍스트 표시)
-  | 'arc-export-loss' // 곡선(sagitta) 벽 — interop(IFC/.3dm/DXF) export 시 직선 chord로 손실 (C5 전까지)
   | 'extreme-dimension'; // 극단적으로 짧은 벽/낮은 벽/작은 슬라브 등
 
 export interface LintFix {
@@ -173,17 +172,6 @@ export function lint(store: DocStore): LintFinding[] {
         code: 'orphan-label',
         severity: 'warning',
         message: '레이블 타깃이 삭제된 요소를 가리킴 — fallback 텍스트로 표시 (속성 추종 안 됨)',
-        elementIds: [el.id],
-      });
-    }
-
-    // 곡선 벽 interop 손실 — sagitta는 IFC/.3dm/DXF export 시 직선 chord로 베이크됨(C5 전까지).
-    // 조용한 손실 금지(interop.md) → info로 surface. C5(IfcArcIndex·ArcCurve·bulge) 구현 시 제거.
-    if (el.kind === 'wall' && el.sagitta) {
-      findings.push({
-        code: 'arc-export-loss',
-        severity: 'info',
-        message: '곡선 벽 — IFC/.3dm/DXF 내보내기 시 직선(현)으로 변환됨 (곡률 손실, 인터롭 곡선 지원 전까지)',
         elementIds: [el.id],
       });
     }
