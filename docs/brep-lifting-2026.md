@@ -186,3 +186,28 @@
 | 압출 위상 | CADOps-Net 2208.10555 · prismatic-from-voxel 2209.01161 (abstract만) | MEDIUM |
 
 **검증 한계 투명성**: load-bearing 판정(ML 합성전용·실데이터 갭·결정론 도구 실재·건축=압출)은 전부 1차 소스 fetch 검증. 일부 PDF 본문·페이월은 abstract/검색요약 대체(태그). 적대적 검토 = "피처인식 99%≠파라리프팅"(§1.3)·"scan-sim≠실스캔"(CADReasoner)·"기계도메인≠BIM"(§1.2) 함정 명시 회피.
+
+---
+
+## 부록 — 436MB 측정 대용: 실 Rhino 모델 적중률 측정 (2026-06-19, Rhino MCP/RhinoCommon)
+
+> §Exec의 미측정 질문("기계적 sub-case가 실 건축 Brep *대부분* 커버하나")을 실측. 원 436MB(260416)는 미오픈 — 사용자가 연결한 실 건축 모델 `260617_입면 스터디.3dm`(3722 obj, 블록 인스턴스 재귀 포함)에서 RhinoCommon(=OCCT급 B-rep 커널, R2 권장 툴체인)으로 분류. mm·tol 0.01.
+
+**분류기(결정적)**: Extrusion=선형압출(liftable) · Brep solid 전부평면=prism(벽/슬라브/기둥) · Brep solid+실린더면=원형기둥 · 나머지=freeform 잔여 · 열린 surface=non-solid.
+
+| 분류 | 수 | 매핑 |
+|---|---|---|
+| Extrusion | 130 | wall/slab/column |
+| Brep prism(전부평면 solid) | 199 | wall/slab/column |
+| Brep cylinder | 203 | round column |
+| Brep freeform | 32 | Lane-2 잔여 |
+| Brep non-solid(열린 surface) | 123 | Lane-2(파사드 패널) |
+| **합(Brep+Extrusion)** | **687** | |
+
+**기계적 적중률 = 532/687 = 77.4%** (non-solid 제외 시 532/564 = **94.3%**).
+
+**레이어별 핵심 패턴 — liftable이 구조/1차 건축요소에 집중**: 기둥 H-500x500 109/109 · 보 H-300x500 130/130 · 슬라브 10/10 · 벽 A-Wall 27/27·F-Wall 42/50 · 계단 47/47 · 주차 78/78 = **~100%**. 잔여(0% liftable) = 파사드 장식(up-light 0/56·crease panel 0/27·strip·panel·window) = 자유곡면/열린 surface = **어차피 Figcad kind 아님 = Lane-2 passthrough가 맞음**.
+
+**판정(R2 게이트 통과)**: 기계적 리프트가 실 건축 Brep의 **대부분(77~94%)을 커버하고, liftable한 게 정확히 Figcad kind(기둥·보·슬라브·벽·계단)에 집중**. 잔여는 파사드 디테일(원래 passthrough). → **Track G 기계적-리프트 빌드 GO** (단 커넥터/RhinoCommon 경로 — wasm32가 브라우저 OCCT 차단).
+
+**측정 caveat(정직)**: ① 원 436MB(260416, 24819 obj·72% Brep)가 아닌 더 작은 입면스터디 파일 — 적중률은 파일별 다를 수 있음(파사드-heavy 모델은 낮음). ② "전부 평면 solid=prism"은 *상한 프록시* — 진짜 압출인식(일정 프로필·단일 축)은 더 엄격하니 실 liftable은 다소 낮음. 단 구조 레이어 100% 집중은 프록시 정밀도와 무관하게 견고. ③ 분류만 했고 파라미터 추출(프로필·축·치수)→ops 방출은 G 빌드 본체.
