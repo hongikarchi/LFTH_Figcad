@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Figcad ↔ Rhino 커넥터 플러그인 (.rhp). Rhino 8 / Windows.
+    빌드: VS 2022로 열거나  `dotnet build -c Release`  → bin/Release/net7.0-windows/Figcad.rhp
+    설치(테스트): 그 .rhp를 Rhino 창에 드래그&드롭 (또는 PluginManager > Install).
+    배포(애드온): 아래 manifest.yml로  `yak build`  →  Figcad-0.1.0-*.yak  → `yak install` 또는 Package Manager.
+    ⚠️ 이 .csproj는 이 환경(JS)서 검증 못 함 — VS/dotnet에서 빌드. RhinoCommon 버전/TFM는 설치된 Rhino에 맞게 조정 가능.
+    Mac/Rhino 7 대상이면 TFM·RhinoCommon 버전 조정 필요(여기선 Rhino 8 Win 기준).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <Version>0.1.0</Version>
+    <Title>Figcad Connector</Title>
+    <Company>LFTH</Company>
+    <!-- Rhino 플러그인 = .rhp 확장자 + 동적 로딩 -->
+    <TargetExt>.rhp</TargetExt>
+    <AssemblyName>Figcad</AssemblyName>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Rhino가 런타임에 제공 → 복사 안 함(ExcludeAssets runtime) -->
+    <PackageReference Include="RhinoCommon" Version="8.*" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 커넥터 코어(Pull/Push/PushBreps + Json) 재사용 — 상위 폴더의 단일 소스 링크 -->
+    <Compile Include="..\FigcadConnector.cs" />
+  </ItemGroup>
+
+</Project>
