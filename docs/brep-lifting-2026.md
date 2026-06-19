@@ -227,3 +227,19 @@
 2. `connectors/rhino/FigcadConnector.cs` Push 경로에 포팅(현재 곡선만 매핑 → Brep 인식 추가). RhinoCommon이라 MCP로 검증, `.rhp` 패키징은 이 환경 밖.
 3. ingest=PR(positioning §8): staging→충실도 보고("기둥 N·슬라브 M 변환·자유곡면 K passthrough")→merge. 못 올린 잔여(파사드)는 Lane-2 명시.
 4. 불변①: ops/파라만 방출(메시 bake 금지) — 이미 op 경유라 충족.
+
+### G 정밀화 (a) — 진척 + 환경 경계 (2026-06-19)
+
+bbox 휴리스틱 → **진짜 압출 인식**으로 정밀화 시도. MCP/RhinoCommon로 검증.
+
+**검증된 것**: ① cap-pair 검출 API 동작 — `face.UnderlyingSurface().TryGetPlane` → 반대법선(dot<-0.9) 평면쌍 = 압출 cap, 평면거리 = 압출길이, 법선 = 축. 1-object 실증. ② 축 방향(|z|>0.8=수직→기둥/벽/슬라브 / 수평→보) 분류 가능.
+
+**정밀화 미해결 (2 fix 식별)**: ① **프로필 추출**: cap outer loop이 PolyCurve라 `TryGetPolyline` 실패 → `PolyCurve.Explode()` 세그먼트 시작점으로 폴리곤 추출해야(또는 trim 순회). ② **cap-pair 선택 견고성**: 첫 반대법선 쌍이 진짜 cap 아닐 수 있음(side 쌍 오선택) — 면적유사+최대면적으로 골라야 하나 H-section 등 비단순 prism엔 area-match 미스(실측 1-object서 발생). 요소타입별 임계(기둥 foot≤1200·벽 foot≤600·슬라브 span>3000) 튜닝 필요.
+
+**환경 경계 (정직)**: 인식기 튜닝은 *다수 객체 대상 반복*이 필요한데 — MCP는 heavy 스크립트서 "No data received"(누적부하, 1객체/콜만 안정), 이 env는 .NET 컴파일 불가. **인식기의 진짜 dev loop = `connectors/rhino/FigcadConnector.cs`(Rhino 내 per-object 실행, MCP 한계 없음) = .rhp 환경(사용자측).** MCP로 더 못 민다.
+
+**FigcadConnector.cs 포팅 청사진**(다음, .NET 환경):
+1. Push 경로(현재 곡선만)에 Brep/Extrusion 재귀(InstanceXform 누적·적용 — v2서 검증).
+2. per-Brep: cap-pair(면적최대 반대법선쌍)→축·길이, cap OuterLoop Explode→프로필 폴리곤.
+3. 분류: 수직+compact→`create_column`(프로필 bbox 또는 실린더→circle) · 수직+thin-long→`create_wall`(프로필 장축=중심선, 두께=단축, 높이=길이) · 수직+big-poly→`create_slab`(프로필=boundary) · 수평→`create_beam`(축=a→b).
+4. ingest=PR: 인식분 ops + 잔여(파사드/비-cap) Lane-2 카운트 → 충실도 보고. 불변① ops만(메시 bake 금지).
