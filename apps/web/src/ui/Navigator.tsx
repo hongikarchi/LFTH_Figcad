@@ -285,6 +285,49 @@ export function Navigator({
     setFedInput('');
   };
 
+  // glTF/IFC 업로드(M13-F) — 파일을 서버 R2(?op=fed-upload)에 올려 *협업자 전원이 페치 가능한*
+  // blob URL로. ref = 그 전체 URL (extractGltf/extractIfc가 fetch). object-URL은 올린 사람만 봄.
+  const fedHost = () => (import.meta.env.DEV ? `${location.hostname}:8787` : location.host);
+  const fedBase = () => `${location.protocol === 'https:' ? 'https' : 'http'}://${fedHost()}`;
+  const uploadFederationFile = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.glb,.gltf,.ifc';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+      const sourceType: FederationSource['sourceType'] | null =
+        ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : null;
+      if (!sourceType) {
+        window.alert('glTF(.glb/.gltf) 또는 IFC(.ifc) 파일만 지원');
+        return;
+      }
+      const room = new URL(location.href).searchParams.get('p');
+      if (!room) return;
+      try {
+        const buf = await file.arrayBuffer();
+        const roomKey = new URL(location.href).searchParams.get('key');
+        const res = await fetch(
+          `${fedBase()}/parties/doc/${room}?op=fed-upload&ext=${ext}${roomKey ? `&key=${encodeURIComponent(roomKey)}` : ''}`,
+          { method: 'POST', body: buf },
+        );
+        if (!res.ok) throw new Error(`업로드 실패 (${res.status})`);
+        const { url } = (await res.json()) as { url: string };
+        store.addFederationSource({
+          name: file.name,
+          sourceType,
+          ref: `${fedBase()}/parties/doc/${room}${url}`, // 전체 blob URL — 협업자도 페치 가능
+          visible: true,
+          addedBy: fedAuthor,
+        });
+      } catch (e) {
+        window.alert(`연동 모델 업로드 실패: ${e instanceof Error ? e.message : e}`);
+      }
+    };
+    input.click();
+  };
+
   const sources = store.listFederationSources();
   const SOURCE_BADGE: Record<FederationSource['sourceType'], string> = {
     'figcad-room': 'Figcad',
@@ -492,6 +535,11 @@ export function Navigator({
           onClick={addFederationRoom}
         >
           <Icon name="upload" size={14} />
+        </button>
+      </div>
+      <div className="nav-row">
+        <button className="nav-item indent" title="glTF(.glb/.gltf)·IFC(.ifc) 파일을 올려 read-only 오버레이로" onClick={uploadFederationFile}>
+          glTF / IFC 업로드…
         </button>
       </div>
 

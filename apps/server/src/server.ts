@@ -6,6 +6,7 @@ import { DocStore } from '@figcad/core';
 import { handleAgentRequest } from './agent';
 import { createCommit, handleVersionRequest, isSafeRoom } from './version';
 import { handleConnectorRequest } from './apply';
+import { handleFederationBlob } from './federation';
 
 interface Env {
   Doc: DurableObjectNamespace;
@@ -101,6 +102,10 @@ export class Doc extends YServer<Env> {
       return this.serializeCommit(() =>
         handleConnectorRequest(request, this.name, this.liveStore(), persist, this.env.ROOM_KEY),
       );
+    }
+    // M13-F: federation 페이로드 업로드/서빙 (R2 COMMITS 버킷). 커밋 직렬화 불필요(문서 무변경).
+    if (op === 'fed-upload' || op === 'fed-blob') {
+      return handleFederationBlob(request, this.name, this.env.COMMITS, this.env.ROOM_KEY);
     }
     return this.serializeCommit(() =>
       handleVersionRequest(
