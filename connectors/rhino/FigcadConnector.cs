@@ -335,9 +335,10 @@ namespace Figcad
                 Plane pl;
                 if (s != null && s.TryGetPlane(out pl, tol))
                 {
-                    var amp = AreaMassProperties.Compute(f);
                     pf.Add(new KeyValuePair<BrepFace, Plane>(f, pl));
-                    areas.Add(amp != null ? amp.Area : 0);
+                    // cap 크기 프록시 = 면 bbox 대각 (AreaMassProperties는 564 Brep서 너무 느림 — MCP 실증:
+                    // bbox로 바꾸니 타임아웃 0·인식 85%(479/564). 정확 면적 불필요 — 최대쌍 선택+유사도용).
+                    areas.Add(f.GetBoundingBox(true).Diagonal.Length);
                 }
             }
             BrepFace cap = null; double len = 0, best = -1; Vector3d axis = Vector3d.ZAxis;
