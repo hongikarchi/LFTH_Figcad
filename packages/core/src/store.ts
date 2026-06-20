@@ -877,6 +877,12 @@ export class DocStore {
       if (next.height !== undefined) next.height = quantize(next.height);
       if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
       if (next.sagitta !== undefined) next.sagitta = quantize(next.sagitta);
+      // 개구부 보유 벽을 곡선화하면 deriveArcWall이 구멍 안 뚫음 → 차단(Codex #2 보강).
+      // 로컬 편집 가드 — import/Yjs 머지 경로는 lint(arc-wall-opening)가 backstop.
+      if (next.sagitta) {
+        const hasOpenings = [...this.elements.values()].some((e) => e.kind === 'opening' && e.hostId === id);
+        if (hasOpenings) throw new Error('개구부가 있는 벽은 곡선으로 바꿀 수 없습니다 (개구부 먼저 삭제)');
+      }
     } else if (next.kind === 'opening') {
       next.offset = quantize(next.offset);
       for (const k of ['widthOverride', 'heightOverride', 'sillOverride'] as const) {

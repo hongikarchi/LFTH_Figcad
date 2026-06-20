@@ -352,11 +352,15 @@ namespace Figcad
         static string KindFromLayer(string p)
         {
             if (string.IsNullOrEmpty(p)) return null;
-            p = p.ToLowerInvariant();
-            if (p.Contains("column") || p.Contains("기둥")) return "column";
-            if (p.Contains("connection") || p.Contains("beam") || p.Contains("girder") || p.Contains("보")) return "beam";
-            if (p.Contains("wall") || p.Contains("벽")) return "wall";
-            if (p.Contains("slab") || p.Contains("floor") || p.Contains("슬라브") || p.Contains("바닥")) return "slab";
+            // 토큰 분리(::, -, _, 공백 등) 후 *whole-token* 매칭 — 부분문자열은 오탐("wallpaper"→wall,
+            // "flooring"→floor, "scolumn"→column). 한글은 token-contains(어절 분리 불확실)로 절충.
+            var toks = new HashSet<string>(p.ToLowerInvariant().Split(new[] { ':', '-', '_', ' ', '/', '.', ',' }, StringSplitOptions.RemoveEmptyEntries));
+            bool Has(params string[] ks) { foreach (var k in ks) if (toks.Contains(k)) return true; return false; }
+            bool HasKo(params string[] ks) { foreach (var k in ks) if (p.Contains(k)) return true; return false; }
+            if (Has("column", "col") || HasKo("기둥")) return "column";
+            if (Has("connection", "beam", "girder") || HasKo("보")) return "beam";
+            if (Has("wall") || HasKo("벽")) return "wall";
+            if (Has("slab", "floor") || HasKo("슬라브", "바닥")) return "slab";
             return null;
         }
 

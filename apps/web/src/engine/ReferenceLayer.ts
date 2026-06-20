@@ -94,6 +94,7 @@ export class ReferenceLayer {
    */
   visibleBounds(): THREE.Box3 {
     const box = new THREE.Box3();
+    if (!this.group.visible) return box; // setAllVisible(false)로 루트 숨김 → 빈 bbox (전부 안 보임)
     for (const g of this.sources.values()) if (g.visible) box.expandByObject(g);
     return box;
   }

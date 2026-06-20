@@ -167,14 +167,28 @@ describe('곡선 벽 개구부 차단 + lint (Codex #2)', () => {
     expect(() => s.createOpening({ hostId: arc, typeId: SEED_IDS.door900, offset: 2000 })).toThrow();
   });
 
-  it('곡선 벽 개구부가 (import/머지로) 들어오면 lint arc-wall-opening', () => {
+  it('updateElement: 개구부 보유 벽 곡선화 차단 (Codex #2 보강)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const straight = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    s.createOpening({ hostId: straight, typeId: SEED_IDS.door900, offset: 2000 });
+    expect(() => s.updateElement(straight, { sagitta: 600 })).toThrow(); // 개구부 있어 차단
+    // 개구부 없으면 곡선화 OK
+    const bare = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 3000], b: [4000, 3000] });
+    expect(() => s.updateElement(bare, { sagitta: 600 })).not.toThrow();
+  });
+
+  it('lint arc-wall-opening: import/머지로 곡선 벽+개구부 유입 시 플래그(backstop)', () => {
     const s = new DocStore();
     seedDocument(s);
     const straight = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
     const op = s.createOpening({ hostId: straight, typeId: SEED_IDS.door900, offset: 2000 });
     expect(lint(s).some((f) => f.code === 'arc-wall-opening')).toBe(false);
-    // 벽을 사후 곡선화(머지 시나리오) → 개구부가 곡선 벽 호스트가 됨
-    s.updateElement(straight, { sagitta: 600 });
+    // import/머지 시나리오: snapshot서 host에 sagitta 주입(updateElement 가드 우회 = 외부 경로) → 재import
+    const snap = s.snapshot();
+    const w = snap.elements.find((e) => e.id === straight) as { sagitta?: number };
+    w.sagitta = 600;
+    s.importSnapshot(snap);
     const found = lint(s).filter((f) => f.code === 'arc-wall-opening');
     expect(found).toHaveLength(1);
     expect(found[0]!.elementIds).toContain(op);
