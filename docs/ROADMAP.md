@@ -97,6 +97,7 @@
 | F federation 페이로드 | 서버 R2(COMMITS) 업로드/blob 라우트(보안 프리픽스 가드) + Navigator glTF/IFC 업로드 → 협업자 공유. **첫 서버변경** | ✅ (server 10) |
 | **G Brep 기계적 리프트** | 적중률 측정(실모델 77~94%, 구조요소~100%) → FigcadConnector.PushBreps(cap-pair 인식→기둥/벽/슬라브/보 ops, InstanceXform 재귀, store-original) + .rhp/.yak 플러그인. **로컬 end-to-end 실증**(Rhino→프레임479+glTF오버레이 정합). | 🔶 실증완료·**튜닝 필요(보 과분류)** `docs/brep-lifting-2026.md` |
 | M13 줌 익스텐트 | 3D 뷰 fitBounds(요소+레퍼런스, 그리드 제외)+'F'키+federation 자동맞춤 — import/federation 빈화면 해결 | ✅ `b5dd312`·`2cde809` |
+| M13 projectOrigin | recenter+기억 라운드트립 무손실(Revit Base Point) — DocMeta.projectOrigin(v5)·rebaseSnapshot(±1 단일경계)·서버 ?op=origin·interop export 복원·federation 오버레이 정합·커넥터 PushBreps recenter. MCP 검증(원점 1959m→42m, origin 기억) | ✅ (core 350·라운드트립 테스트) |
 | **D·E** | .3dm 네이티브·3D-Tiles | ⬜ 다음 |
 | R1 머지 스파이크 | coordination-free 머지 = 무효 잦으나(~100%) lint 100% 검출 → 경로A 조건부 생존·**M13-B 필수**·서버권위 불필요 | ✅ `docs/merge-spike-results.md` |
 | R2 brep SOTA | ML 미성숙(전부 합성벤치) — G1 DEFER 정당. 기계적 sub-case→G로 실현 | ✅ `docs/brep-lifting-2026.md` |
@@ -105,7 +106,9 @@
 **불변①**: 외부 모델 = 별도표현(ReferenceLayer, Y.Doc 미진입), 채널엔 ref만. **store-original**: 좌표 안 옮김 → 라운드트립 무손실 by construction(부지좌표 ~1.96km도 jitter 0, fitView가 카메라 담당). **A4 게이트**: snapshot→derive bbox+vertex 정합.
 
 ### M13 남은 일 (다음 — eyes-open)
-- **G 보 과분류 튜닝**(최우선·작음): 얇은 수평 프리즘을 보로 오인(353개+outlier 1=모델 23m밖). `RecognizeBrep` 보 임계(현 = 비-수직 전부 보) 강화 — 길이/단면비·실제 수평여부. 정합 자체는 OK(491/492 모델 내).
+- **G 인식 v2 = 레이어-시맨틱**(보 과분류 진짜 fix): 순수 지오 추측은 H형강(필렛, 최대면적면이 축과 평행)서 fragile — 임계 튜닝 6라운드 비수렴(회귀). 결론 = **레이어명(H-300x500=보·H-500x500=기둥·A-Wall=벽·S-Slab=슬라브) 힌트(kind) + 지오(params)**. 기존 Push 레이어관례와 동형. `docs/brep-lifting-2026.md` 참조. (현 PushBreps는 MVP — 보 과분류 잔존, 정합 OK.)
+- **G 단면 측정 버그**(인식 v2 시 포함): 현 `RecognizeBrep`이 단면을 X-Y로만 측정 → 수평 부재(Y/X축 보) 단면 퇴화. perp-plane 투영으로 수정해야(MCP 진단됨).
+- **커넥터 Pull +origin 복원**: PushBreps recenter는 됨(MCP 검증). Pull이 원좌표로 되돌리는 +origin은 미배선(데이터모델·라운드트립은 TS 테스트 입증).
 - **배포**(승인 시): M12+M13 전체 미배포. **F=서버변경** → build 후 `wrangler deploy`. (용량 절약 위해 로컬 우선 — 사용자 선택.)
 - **D .3dm 네이티브**: glTF가 Rhino7+ 커버 → 한계적. **E 3D-Tiles**: 대형 신규 서브시스템(최후).
 - **로컬 데브 함정**: dist 재빌드 후 miniflare(dev.mjs) **반드시 재시작**(에셋 매니페스트 startup 고착 → 새 JS 404 → 흰화면).
