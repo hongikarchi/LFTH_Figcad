@@ -337,11 +337,24 @@ export class DocStore {
   }
 
   get meta(): DocMeta {
+    const po = this.yMeta.get('projectOrigin');
     return {
       schemaVersion: (this.yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
       projectName: (this.yMeta.get('projectName') as string) ?? '새 프로젝트',
       units: 'mm',
+      ...(Array.isArray(po) && po.length === 2 ? { projectOrigin: [Number(po[0]), Number(po[1])] as [number, number] } : {}),
     };
+  }
+
+  /** 프로젝트 원점 offset 설정 (recenter import 시 1회 — 부지좌표 복원용 기억). [0,0]이면 제거. */
+  setProjectOrigin(origin: [number, number] | null): void {
+    this.transact(() => {
+      if (!origin || (origin[0] === 0 && origin[1] === 0)) this.yMeta.delete('projectOrigin');
+      else this.yMeta.set('projectOrigin', [Math.round(origin[0]), Math.round(origin[1])]);
+    });
+  }
+  getProjectOrigin(): [number, number] | null {
+    return this.meta.projectOrigin ?? null;
   }
 
   private transact(fn: () => void): void {
@@ -1446,11 +1459,13 @@ export class DocStore {
       const p = FederationSourceSchema.safeParse(v);
       if (p.success) federation.push(p.data);
     }
+    const po = yMeta.get('projectOrigin');
     return {
       meta: {
         schemaVersion: (yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
         projectName: (yMeta.get('projectName') as string) ?? '새 프로젝트',
         units: 'mm',
+        ...(Array.isArray(po) && po.length === 2 ? { projectOrigin: [Number(po[0]), Number(po[1])] as [number, number] } : {}),
       },
       levels,
       types,
@@ -1468,6 +1483,7 @@ export class DocStore {
       store.yMeta.set('schemaVersion', snap.meta.schemaVersion);
       store.yMeta.set('projectName', snap.meta.projectName);
       store.yMeta.set('units', snap.meta.units);
+      if (snap.meta.projectOrigin) store.yMeta.set('projectOrigin', snap.meta.projectOrigin);
       for (const lv of snap.levels) store.yLevels.set(lv.id, LevelSchema.parse(lv));
       for (const t of snap.types) store.yTypes.set(t.id, ElemTypeSchema.parse(t));
       for (const el of snap.elements) {
@@ -1518,6 +1534,8 @@ export class DocStore {
       this.yMeta.set('schemaVersion', snap.meta.schemaVersion);
       this.yMeta.set('projectName', snap.meta.projectName);
       this.yMeta.set('units', snap.meta.units);
+      if (snap.meta.projectOrigin) this.yMeta.set('projectOrigin', snap.meta.projectOrigin);
+      else this.yMeta.delete('projectOrigin');
       for (const lv of levels) this.yLevels.set(lv.id, lv);
       for (const t of types) this.yTypes.set(t.id, t);
       for (const el of elements) {
@@ -1772,4 +1790,37 @@ export function seedDocument(store: DocStore): SeedRefs {
     roofTypeId: SEED_IDS.roof,
     curtainWallTypeId: SEED_IDS.curtainwall,
   };
+}
+
+/**
+ * 스냅샷의 모든 요소 좌표를 projectOrigin만큼 평행이동 (XY mm) — 단일 export/import 경계 변환.
+ * `sign=+1` export(원좌표 복원, meta.projectOrigin 소비=제거) · `sign=-1` import(원점근처로).
+ * POSITIONAL 단일소스로 모든 좌표필드(segment a/b·polygon boundary·point at) 처리, hosted(opening)는
+ * 호스트 상대라 스킵. origin 없거나 [0,0]이면 그대로 반환. 모든 exporter가 이 한 함수만 거치게 = 무누락.
+ */
+export function rebaseSnapshot(snap: DocSnapshot, sign: 1 | -1): DocSnapshot {
+  const o = snap.meta.projectOrigin;
+  if (!o || (o[0] === 0 && o[1] === 0)) return snap;
+  const dx = sign * o[0];
+  const dy = sign * o[1];
+  const shiftPt = (p: Pt): Pt => [p[0] + dx, p[1] + dy];
+  const elements = snap.elements.map((el) => {
+    const cat = POSITIONAL[el.kind];
+    if (cat === 'segment') {
+      const e = el as { a: Pt; b: Pt };
+      return { ...el, a: shiftPt(e.a), b: shiftPt(e.b) };
+    }
+    if (cat === 'polygon') {
+      const e = el as { boundary: Pt[] };
+      return { ...el, boundary: e.boundary.map(shiftPt) };
+    }
+    if (cat === 'point') {
+      const e = el as { at: Pt };
+      return { ...el, at: shiftPt(e.at) };
+    }
+    return el; // hosted(opening) — 호스트 상대, 절대좌표 없음
+  }) as Element[];
+  // export(+1) = 원좌표 복원 → origin 소비(제거). import(-1) = 원점근처 → origin 유지(기억).
+  const meta: DocMeta = sign === 1 ? { ...snap.meta, projectOrigin: undefined } : snap.meta;
+  return { ...snap, meta, elements };
 }

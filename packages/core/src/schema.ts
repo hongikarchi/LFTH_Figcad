@@ -7,7 +7,7 @@ import { z } from 'zod';
  * 불변 규칙: 지오메트리는 여기 없다 — 항상 파라미터에서 파생.
  */
 
-export const CORE_SCHEMA_VERSION = 4; // v2 = 코멘트 채널, v3 = 도면 뷰 채널, v4 = federation 채널 (구버전 문서는 해당 채널 부재→[] 호환)
+export const CORE_SCHEMA_VERSION = 5; // v2 코멘트 · v3 도면뷰 · v4 federation · v5 projectOrigin (구버전 부재→없음 호환)
 
 export type Id = string;
 
@@ -471,6 +471,13 @@ export interface DocMeta {
   schemaVersion: number;
   projectName: string;
   units: 'mm';
+  /**
+   * 프로젝트 원점 offset [x,y] mm (v5). 부지/측량 좌표 모델을 원점 근처로 recenter할 때
+   * "옮긴 양"을 기억 — Revit Project Base/Survey Point 패턴. import는 좌표에서 빼고(원점근처 저장),
+   * export(커넥터 Pull·interop)는 더해서 원좌표 복원. 프로젝트당 1회 설정·재사용(멀티모델 정합).
+   * 없음 = recenter 안 함(좌표 그대로). Z는 rebase 안 함(모델 Z는 원점 근처라 불필요).
+   */
+  projectOrigin?: [number, number];
 }
 
 // --- 파생 입력 스냅샷 (derive 순수성 보장) ---
