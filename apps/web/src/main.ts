@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
+import * as THREE from 'three';
 import * as Y from 'yjs';
 import { DocStore, seedDocument } from '@figcad/core';
 import { Engine } from './engine/Engine';
@@ -100,6 +101,25 @@ const sceneManager = new SceneManager(store, engine);
 // reconciler가 동기화된 federation 채널을 ReferenceLayer(로컬 메시)에 반영(명령형 — 불변③).
 const referenceLayer = new ReferenceLayer(engine);
 const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS);
+
+// 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.
+// import/federation 모델은 원점서 멀거나 커서 기본 카메라엔 빈 화면 → 이게 해결. 'F' 키 + federation 로드 후 1회 자동.
+function fitView(): boolean {
+  const box = new THREE.Box3().setFromObject(engine.scene);
+  if (box.isEmpty() || !isFinite(box.min.x)) return false;
+  rig.fitBounds(box.min, box.max);
+  engine.requestRender();
+  return true;
+}
+window.addEventListener('keydown', (e) => {
+  if ((e.key === 'f' || e.key === 'F') && !/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName)) fitView();
+});
+// federation 소스가 처음 ready 되면 1회 자동 맞춤(오버레이가 화면 밖이면 무의미하므로).
+let didFitFed = false;
+federation.onChange(() => {
+  if (didFitFed) return;
+  if (referenceLayer.list().length > 0) { didFitFed = true; setTimeout(fitView, 100); }
+});
 const hud = new HudLayer();
 engine.addTicker(() => {
   hud.reproject(rig.active);

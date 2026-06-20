@@ -4,7 +4,7 @@ export type ViewMode = '3d' | 'plan';
 
 const TWEEN_DURATION = 0.3; // seconds
 const MIN_DISTANCE = 1;
-const MAX_DISTANCE = 200;
+const MAX_DISTANCE = 5000; // 대형 모델(경기장 ~100m·import 매스) 전체맞춤 허용 (구 200 = 95m 건물 못 담음)
 const MIN_PHI = 0.05;
 const MAX_PHI = Math.PI / 2 - 0.02;
 
@@ -31,8 +31,8 @@ export class CameraRig {
   private savedPhi = Math.PI / 4.5; // 평면 진입 시 복원용
 
   constructor(aspect: number) {
-    this.persp = new THREE.PerspectiveCamera(55, aspect, 0.1, 2000);
-    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
+    this.persp = new THREE.PerspectiveCamera(55, aspect, 0.1, 50000);
+    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50000);
     this.updateFrustum(aspect);
     this.apply();
     window.addEventListener('resize', () =>
@@ -150,6 +150,21 @@ export class CameraRig {
   /** 타깃을 월드 좌표(m)로 이동 — 요소 점프용. 각도·거리는 유지 */
   focusOn(x: number, y: number, z: number): void {
     this.target.set(x, y, z);
+    this.apply();
+  }
+
+  /**
+   * 바운딩 박스(월드 m) 전체가 화면에 들어오게 타깃·거리 맞춤 (줌 익스텐트).
+   * import/federation 모델은 원점서 멀거나 크다 — 이게 없으면 빈 화면. fov 기반 거리 산출.
+   */
+  fitBounds(min: THREE.Vector3, max: THREE.Vector3): void {
+    if (!isFinite(min.x) || !isFinite(max.x) || max.x < min.x) return;
+    this.target.set((min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2);
+    const radius = Math.max(max.x - min.x, max.y - min.y, max.z - min.z) * 0.5 || 1;
+    const fov = (this.persp.fov * Math.PI) / 180;
+    const dist = (radius / Math.sin(fov / 2)) * 1.15; // 여유 15%
+    this.distance = THREE.MathUtils.clamp(dist, MIN_DISTANCE, MAX_DISTANCE);
+    this.updateFrustum(window.innerWidth / window.innerHeight);
     this.apply();
   }
 
