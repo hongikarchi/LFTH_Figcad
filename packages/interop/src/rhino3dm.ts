@@ -381,6 +381,7 @@ export function import3dmMeshes(
       // ObjectType.Mesh = 32 (rhino3dm enum). Mesh 아니면 skip+count.
       if (!geo || geo.objectType !== rhino.ObjectType.Mesh) {
         skipped++;
+        (geo as { delete?: () => void } | undefined)?.delete?.(); // Emscripten 힙 해제(누수 방지)
         continue;
       }
       const mesh = geo as unknown as import('rhino3dm').Mesh;
@@ -409,7 +410,9 @@ export function import3dmMeshes(
         }
       }
       if (pos.length) meshes.push({ positions: new Float32Array(pos) });
+      (geo as { delete?: () => void }).delete?.(); // Emscripten 힙 해제 — 대형 .3dm 반복 import 누수 방지(IFC ifcMeshes 패턴)
     }
+    (doc as { delete?: () => void }).delete?.();
     return { meshes, skipped };
   });
 }

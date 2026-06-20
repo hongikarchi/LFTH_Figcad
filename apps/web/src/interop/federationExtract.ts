@@ -122,7 +122,12 @@ export async function extract3dm(ref: string): Promise<ReferenceMesh[]> {
     import('@figcad/interop/rhino'),
     import('rhino3dm/rhino3dm.wasm?url').then((m) => m.default),
   ]);
-  const { meshes } = await import3dmMeshes(bytes, { wasmUrl });
+  const { meshes, skipped } = await import3dmMeshes(bytes, { wasmUrl });
+  // Mesh 없는 .3dm(pure-Brep/블록 = 260617류)은 빈 오버레이 — "ready·0메시"가 성공처럼 보이는
+  // 착시 방지(Codex risk). 콘솔 경고 + 전부 스킵이면 throw(reconciler가 error 표시 → 사용자 인지).
+  if (skipped > 0) console.warn(`[federation .3dm] Mesh 아닌 객체 ${skipped}개 스킵 (raw Brep/블록 = glTF 경로 권장)`);
+  if (meshes.length === 0)
+    throw new Error(`.3dm에 표시 가능한 Mesh 없음 (객체 ${skipped}개 전부 Brep/블록) — Rhino7+ glTF export 권장`);
   return meshes.map((m) => ({ positions: m.positions })); // normals 생략 → ReferenceLayer 계산
 }
 
