@@ -34,11 +34,16 @@ export class ReferenceLayer {
     engine.scene.add(this.group);
   }
 
-  /** 외부 모델 추가 (읽기전용). 같은 name이면 교체. */
-  add(name: string, meshes: ReferenceMesh[]): void {
+  /**
+   * 외부 모델 추가 (읽기전용). 같은 name이면 교체.
+   * offset(월드 미터) = projectOrigin recenter 보정 — 네이티브 프레임이 recenter됐으면
+   * 원좌표 glTF/IFC 오버레이를 -origin만큼 옮겨 정합(M13 projectOrigin).
+   */
+  add(name: string, meshes: ReferenceMesh[], offset?: [number, number, number]): void {
     this.remove(name);
     const g = new THREE.Group();
     g.name = `reference:${name}`;
+    if (offset) g.position.set(offset[0], offset[1], offset[2]);
     const mat = new THREE.MeshLambertMaterial({
       color: REF_COLOR,
       transparent: true,

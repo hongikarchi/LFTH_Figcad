@@ -1,4 +1,8 @@
-import type { DocSnapshot, DocStore, DrawingView } from '@figcad/core';
+import { rebaseSnapshot, type DocSnapshot, type DocStore, type DrawingView } from '@figcad/core';
+
+// export = 외부 핸드오프(Revit/ArchiCAD/Rhino는 부지좌표 기대) → projectOrigin 복원(+1).
+// 모든 풀모델 exporter가 이 한 곳을 거친다(advisor: 무누락). origin 없으면 no-op.
+const restore = (s: DocSnapshot): DocSnapshot => rebaseSnapshot(s, 1);
 
 /**
  * 외부 포맷 export/import 클라이언트 — 무거운 라이브러리(web-ifc/rhino3dm WASM,
@@ -43,7 +47,7 @@ export async function getIfcApi(): Promise<import('web-ifc').IfcAPI> {
 
 export async function exportIfcBytes(snapshot: DocSnapshot): Promise<Uint8Array> {
   const [{ exportIfc }, api] = await Promise.all([import('@figcad/interop/ifc'), getIfcApi()]);
-  return exportIfc(api, snapshot);
+  return exportIfc(api, restore(snapshot));
 }
 export async function downloadIfc(snapshot: DocSnapshot): Promise<void> {
   const bytes = await exportIfcBytes(snapshot);
@@ -58,14 +62,13 @@ export async function parseIfc(bytes: Uint8Array): Promise<ImportResult> {
 async function rhinoWasmUrl(): Promise<string> {
   return (await import('rhino3dm/rhino3dm.wasm?url')).default;
 }
-export async function downloadRhino(snapshot: DocSnapshot): Promise<void> {
-  const [{ exportRhino }, wasmUrl] = await Promise.all([import('@figcad/interop/rhino'), rhinoWasmUrl()]);
-  const bytes = await exportRhino(snapshot, { wasmUrl });
-  triggerDownload(bytes as BlobPart, `${snapshot.meta.projectName || 'figcad'}.3dm`, 'application/octet-stream');
-}
 export async function exportRhinoBytes(snapshot: DocSnapshot): Promise<Uint8Array> {
   const [{ exportRhino }, wasmUrl] = await Promise.all([import('@figcad/interop/rhino'), rhinoWasmUrl()]);
-  return exportRhino(snapshot, { wasmUrl });
+  return exportRhino(restore(snapshot), { wasmUrl });
+}
+export async function downloadRhino(snapshot: DocSnapshot): Promise<void> {
+  const bytes = await exportRhinoBytes(snapshot);
+  triggerDownload(bytes as BlobPart, `${snapshot.meta.projectName || 'figcad'}.3dm`, 'application/octet-stream');
 }
 export async function parseRhino(bytes: Uint8Array): Promise<ImportResult> {
   const [{ importRhino }, wasmUrl] = await Promise.all([import('@figcad/interop/rhino'), rhinoWasmUrl()]);
@@ -75,7 +78,7 @@ export async function parseRhino(bytes: Uint8Array): Promise<ImportResult> {
 // --- DXF (2D, 텍스트) ---
 export async function exportDxfText(snapshot: DocSnapshot): Promise<string> {
   const { exportDxf } = await import('@figcad/interop/dxf');
-  return exportDxf(snapshot);
+  return exportDxf(restore(snapshot));
 }
 export async function downloadDxf(snapshot: DocSnapshot): Promise<void> {
   triggerDownload(await exportDxfText(snapshot), `${snapshot.meta.projectName || 'figcad'}.dxf`, 'application/dxf');

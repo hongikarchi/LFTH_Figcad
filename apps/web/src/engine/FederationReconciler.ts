@@ -105,7 +105,11 @@ export class FederationReconciler {
         if (!cur || cur.gen !== myGen) return; // stale: 로드 중 제거/교체됨
         const live = this.store.getFederationSource(s.id);
         if (!live) return; // 로드 끝났는데 소스 사라짐
-        this.ref.add(s.id, meshes);
+        // projectOrigin recenter 보정: 네이티브가 -origin 됐으면 원좌표 오버레이도 -origin(월드 미터).
+        // 월드맵: doc[x,y]mm → world[x*.001, _, y*.001]. origin[x,y]mm → offset [-x*.001, 0, -y*.001].
+        const o = this.store.getProjectOrigin();
+        const offset: [number, number, number] | undefined = o ? [-o[0] / 1000, 0, -o[1] / 1000] : undefined;
+        this.ref.add(s.id, meshes, offset);
         this.ref.setVisible(s.id, live.visible);
         this.local.set(s.id, { status: 'ready', ref: s.ref, gen: myGen });
         this.notify();

@@ -68,6 +68,24 @@ export async function handleConnectorRequest(
     return json(200, store.snapshot());
   }
 
+  // 프로젝트 원점 offset (M13 recenter+기억) — 커넥터가 Push 전 빼고/Pull 후 더할 양 저장·조회.
+  if (op === 'origin') {
+    if (request.method === 'GET') return json(200, { origin: store.getProjectOrigin() });
+    if (request.method === 'POST') {
+      let body: { x?: unknown; y?: unknown };
+      try {
+        body = (await request.json()) as { x?: unknown; y?: unknown };
+      } catch {
+        return json(400, { error: '본문은 {x:number, y:number}' });
+      }
+      if (typeof body.x !== 'number' || typeof body.y !== 'number')
+        return json(400, { error: '{x,y} 숫자 필요' });
+      store.setProjectOrigin([body.x, body.y]);
+      await persist();
+      return json(200, { origin: store.getProjectOrigin() });
+    }
+  }
+
   // oplog 적용 (커넥터 Push / 라이브 쓰기)
   if (op === 'apply' && request.method === 'POST') {
     const len = Number(request.headers.get('content-length') ?? '0');
