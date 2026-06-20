@@ -282,9 +282,34 @@ namespace Figcad
             }
             Collect(doc.Objects, Transform.Identity, 0);
 
-            // 좌표 = 원본 그대로 (recenter 안 함) — 라운드트립 무손실(by construction): Pull이 이 좌표로
-            // Rhino 지오 재생성 = 원 부지좌표. offset 저장·복원 불필요(어떤 export 경로도 안 잊음).
-            // 원점서 먼/큰 모델 가시성은 *렌더* 문제 → Figcad 'F'(전체맞춤, fitView)가 담당, 데이터 미이동.
+            // 1b) recenter + origin 기억 (M13 projectOrigin, Revit Base Point 패턴): 부지/측량 좌표
+            //     모델은 원점서 km라 Figcad서 멀다 → 전체 bbox min(XY)을 빼 원점 근처로 저장하고,
+            //     그 offset을 룸에 기억(?op=origin POST). export(Pull·interop)는 다시 더해 원좌표 복원.
+            //     이미 origin 있는 룸(2차 import)이면 그 origin 재사용(멀티모델 정합). 무누락 = 서버 rebaseSnapshot.
+            double ox = 0, oy = 0;
+            try
+            {
+                var ob = Http.GetStringAsync(Url(cfg, "origin")).GetAwaiter().GetResult();
+                var od = (Dictionary<string, object>)Json.Parse(ob);
+                if (od.ContainsKey("origin") && od["origin"] is List<object> ol && ol.Count == 2) { ox = D(ol[0]); oy = D(ol[1]); }
+            }
+            catch { }
+            if (ox == 0 && oy == 0 && breps.Count > 0)
+            {
+                var gbb = BoundingBox.Empty;
+                foreach (var b in breps) gbb.Union(b.GetBoundingBox(true));
+                if (gbb.IsValid)
+                {
+                    ox = Math.Round(gbb.Min.X); oy = Math.Round(gbb.Min.Y);
+                    var setc = new StringContent("{\"x\":" + R(ox) + ",\"y\":" + R(oy) + "}", Encoding.UTF8, "application/json");
+                    try { Http.PostAsync(Url(cfg, "origin"), setc).GetAwaiter().GetResult(); } catch { }
+                }
+            }
+            if (ox != 0 || oy != 0)
+            {
+                var shift = Transform.Translation(-ox, -oy, 0);
+                foreach (var b in breps) b.Transform(shift);
+            }
 
             // 2) 인식 → ops
             var ops = new List<string>();
