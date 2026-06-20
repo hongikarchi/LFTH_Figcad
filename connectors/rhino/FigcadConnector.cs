@@ -261,8 +261,9 @@ namespace Figcad
             }
             double tol = Math.Max(doc.ModelAbsoluteTolerance, 0.01);
 
-            // 1) 재귀 수집: 블록 인스턴스 변환 누적 적용 (figcad 소유 스킵). top-level만 writeback 가능.
-            var breps = new List<Brep>();
+            // 1) 재귀 수집: 블록 인스턴스 변환 누적 적용 + leaf 레이어 full-path 추적(G2 레이어-시맨틱
+            //    kind 판별용 — S-Column=기둥·S-Connection=보 등 부모경로가 시맨틱). figcad 소유 스킵.
+            var breps = new List<(Brep b, string layer)>();
             void Collect(IEnumerable<RhinoObject> objs, Transform xf, int depth)
             {
                 if (depth > 8) return;
@@ -277,7 +278,8 @@ namespace Figcad
                     else { var bp = o.Geometry as Brep; if (bp != null && bp.IsSolid) b = (Brep)bp.Duplicate(); }
                     if (b == null) continue;
                     b.Transform(xf);
-                    breps.Add(b);
+                    string lp = (o.Attributes.LayerIndex >= 0 && o.Attributes.LayerIndex < doc.Layers.Count) ? doc.Layers[o.Attributes.LayerIndex].FullPath : "";
+                    breps.Add((b, lp));
                 }
             }
             Collect(doc.Objects, Transform.Identity, 0);
@@ -297,7 +299,7 @@ namespace Figcad
             if (ox == 0 && oy == 0 && breps.Count > 0)
             {
                 var gbb = BoundingBox.Empty;
-                foreach (var b in breps) gbb.Union(b.GetBoundingBox(true));
+                foreach (var pr in breps) gbb.Union(pr.b.GetBoundingBox(true));
                 if (gbb.IsValid)
                 {
                     ox = Math.Round(gbb.Min.X); oy = Math.Round(gbb.Min.Y);
@@ -308,21 +310,23 @@ namespace Figcad
             if (ox != 0 || oy != 0)
             {
                 var shift = Transform.Translation(-ox, -oy, 0);
-                foreach (var b in breps) b.Transform(shift);
+                foreach (var pr in breps) pr.b.Transform(shift);
             }
 
-            // 2) 인식 → ops
+            // 2) 인식 → ops. 모델 bbox(outlier 가드 — 인식 좌표가 모델 밖이면 스킵).
+            var modelBB = BoundingBox.Empty;
+            foreach (var pr in breps) modelBB.Union(pr.b.GetBoundingBox(true));
             var ops = new List<string>();
             int nCol = 0, nWall = 0, nSlab = 0, nBeam = 0, nResidual = 0;
-            foreach (var b in breps)
+            foreach (var pr in breps)
             {
                 string kind;
-                var op = RecognizeBrep(b, tol, levelId, wallTypeId, slabTypeId, columnTypeId, beamTypeId, out kind);
+                var op = RecognizeByLayer(pr.b, pr.layer, levelId, wallTypeId, slabTypeId, columnTypeId, beamTypeId, modelBB, tol, out kind);
                 if (op == null) { nResidual++; continue; }
                 ops.Add(op);
                 if (kind == "column") nCol++; else if (kind == "wall") nWall++; else if (kind == "slab") nSlab++; else if (kind == "beam") nBeam++;
             }
-            if (ops.Count == 0) return "PushBreps: 인식된 압출/실린더 없음 (Brep " + breps.Count + " · 잔여 " + nResidual + ")";
+            if (ops.Count == 0) return "PushBreps: 인식된 구조부재 없음 (Brep " + breps.Count + " · 잔여 " + nResidual + " — 레이어 시맨틱 매칭 0)";
 
             // 3) 배치 POST (Push와 동일 패턴, writeback은 생략 — in-block id 매핑 불가, ingest=PR 1회)
             const int BATCH = 1500;
@@ -342,83 +346,85 @@ namespace Figcad
                    " · 자유곡면/미인식 잔여 " + nResidual + " (Lane-2 passthrough 대상)";
         }
 
-        // Brep 1개 인식 → create_* op (또는 null=잔여). out kind = column/wall/slab/beam.
-        static string RecognizeBrep(Brep b, double tol, string lv, string wt, string st, string ct, string bt, out string kind)
+        // 레이어 full-path → Figcad kind (부모경로가 시맨틱: S-Column=기둥·S-Connection=보·A-Wall=벽·
+        // S-Slab=슬라브). 순수 지오 분류는 H형강서 fragile(MCP 6라운드 비수렴) → 레이어가 kind, 지오가 params.
+        // 미지 레이어(stair/railing/glass/logo 등)=null=잔여(Lane-2). 관례 없는 모델은 전부 잔여(정직 — garbage보다 나음).
+        static string KindFromLayer(string p)
         {
-            kind = null;
-            if (lv == null) return null;
-            // 실린더면 보유 = 원형기둥 후보
-            bool isCyl = false; double dia = 0;
-            foreach (var f in b.Faces)
-            {
-                var s = f.UnderlyingSurface();
-                Cylinder cy;
-                if (s != null && !s.IsPlanar(tol) && s.TryGetCylinder(out cy, tol)) { isCyl = true; dia = cy.Radius * 2; break; }
-            }
-            // cap-pair: 반대법선(dot<-0.9) 평면쌍 중 면적최대 = 압출 캡. 축=법선, 길이=평면거리.
-            var pf = new List<KeyValuePair<BrepFace, Plane>>();
-            var areas = new List<double>();
+            if (string.IsNullOrEmpty(p)) return null;
+            p = p.ToLowerInvariant();
+            if (p.Contains("column") || p.Contains("기둥")) return "column";
+            if (p.Contains("connection") || p.Contains("beam") || p.Contains("girder") || p.Contains("보")) return "beam";
+            if (p.Contains("wall") || p.Contains("벽")) return "wall";
+            if (p.Contains("slab") || p.Contains("floor") || p.Contains("슬라브") || p.Contains("바닥")) return "slab";
+            return null;
+        }
+
+        // 수평 cap(법선 |z|>0.8) 최대면 — 슬라브 boundary 추출용.
+        static BrepFace HorizCap(Brep b, double tol)
+        {
+            BrepFace best = null; double bestA = -1;
             foreach (var f in b.Faces)
             {
                 var s = f.UnderlyingSurface();
                 Plane pl;
-                if (s != null && s.TryGetPlane(out pl, tol))
+                if (s != null && s.TryGetPlane(out pl, tol) && Math.Abs(pl.Normal.Z) > 0.8)
                 {
-                    pf.Add(new KeyValuePair<BrepFace, Plane>(f, pl));
-                    // cap 크기 프록시 = 면 bbox 대각 (AreaMassProperties는 564 Brep서 너무 느림 — MCP 실증:
-                    // bbox로 바꾸니 타임아웃 0·인식 85%(479/564). 정확 면적 불필요 — 최대쌍 선택+유사도용).
-                    areas.Add(f.GetBoundingBox(true).Diagonal.Length);
+                    double a = f.GetBoundingBox(true).Diagonal.Length;
+                    if (a > bestA) { bestA = a; best = f; }
                 }
             }
-            BrepFace cap = null; double len = 0, best = -1; Vector3d axis = Vector3d.ZAxis;
-            for (int i = 0; i < pf.Count; i++)
-                for (int j = i + 1; j < pf.Count; j++)
-                {
-                    if (pf[i].Value.Normal * pf[j].Value.Normal < -0.9)
-                    {
-                        double d = Math.Abs(pf[i].Value.DistanceTo(pf[j].Value.Origin));
-                        double minA = Math.Min(areas[i], areas[j]);
-                        if (d > tol && minA > best) { best = minA; cap = areas[i] >= areas[j] ? pf[i].Key : pf[j].Key; len = d; axis = pf[i].Value.Normal; }
-                    }
-                }
-            if (cap == null) return null; // 압출 미인식 = 잔여(Lane-2)
-            axis.Unitize();
-            var verts = ProfileVerts(cap);
-            if (verts.Count < 3) return null;
-            var bb = new BoundingBox(verts);
-            double dx = bb.Max.X - bb.Min.X, dy = bb.Max.Y - bb.Min.Y;
-            double cx = (bb.Min.X + bb.Max.X) / 2, cyc = (bb.Min.Y + bb.Max.Y) / 2, cz = (bb.Min.Z + bb.Max.Z) / 2;
-            double foot = Math.Min(dx, dy), span = Math.Max(dx, dy);
-            bool vert = Math.Abs(axis.Z) > 0.8;
+            return best;
+        }
 
-            if (isCyl && vert && ct != null) { kind = "column"; return "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + ct + "\",\"at\":[" + R(cx) + "," + R(cyc) + "],\"baseOffset\":" + R(bb.Min.Z) + ",\"height\":" + R(len) + "}}"; }
-            if (vert)
+        // Brep 1개 인식 (G2 레이어-시맨틱): kind=레이어, params=지오 bbox(+슬라브 cap 프로필). null=잔여.
+        // kind 고정이라 오분류 위험 0. outlier(모델 bbox 밖) 스킵. MCP 실증: 기둥109·보130·벽77·슬라브10.
+        static string RecognizeByLayer(Brep b, string layer, string lv, string wt, string st, string ct, string bt, BoundingBox modelBB, double tol, out string kind)
+        {
+            kind = null;
+            if (lv == null) return null;
+            string k = KindFromLayer(layer);
+            if (k == null) return null; // 미지 레이어 = 잔여(Lane-2)
+            var bb = b.GetBoundingBox(true);
+            if (!bb.IsValid) return null;
+            double cx = (bb.Min.X + bb.Max.X) / 2, cy = (bb.Min.Y + bb.Max.Y) / 2;
+            // outlier 가드 — 인식 좌표가 모델 bbox 밖(±1m)이면 스킵
+            if (modelBB.IsValid && (cx < modelBB.Min.X - 1000 || cx > modelBB.Max.X + 1000 || cy < modelBB.Min.Y - 1000 || cy > modelBB.Max.Y + 1000)) return null;
+            double dx = bb.Max.X - bb.Min.X, dy = bb.Max.Y - bb.Min.Y, dz = bb.Max.Z - bb.Min.Z;
+            bool xl = dx >= dy; // 수평 장축
+
+            if (k == "column" && ct != null)
             {
-                if (span > 3000 && len < foot && st != null)
-                {
-                    var sb = new StringBuilder("[");
-                    for (int i = 0; i < verts.Count; i++) { if (i > 0) sb.Append(","); sb.Append("[" + R(verts[i].X) + "," + R(verts[i].Y) + "]"); }
-                    sb.Append("]");
-                    kind = "slab"; return "{\"op\":\"create_slab\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + st + "\",\"boundary\":" + sb + "}}";
-                }
-                if (foot <= 600 && span > foot * 2.5 && wt != null)
-                {
-                    // 벽: 프로필 장축이 중심선
-                    double ax, ay, bx, by;
-                    if (dx >= dy) { ax = bb.Min.X; ay = cyc; bx = bb.Max.X; by = cyc; } else { ax = cx; ay = bb.Min.Y; bx = cx; by = bb.Max.Y; }
-                    kind = "wall"; return "{\"op\":\"create_wall\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + wt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "]}}";
-                }
-                if (foot <= 1200 && ct != null) { kind = "column"; return "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + ct + "\",\"at\":[" + R(cx) + "," + R(cyc) + "],\"baseOffset\":" + R(bb.Min.Z) + ",\"height\":" + R(len) + "}}"; }
-                return null; // 수직이나 임계 미스 = 잔여
+                kind = "column";
+                return "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + ct + "\",\"at\":[" + R(cx) + "," + R(cy) + "],\"baseOffset\":" + R(bb.Min.Z) + ",\"height\":" + R(dz) + "}}";
             }
-            // 수평 압출 = 보 (축 따라 a→b, 프로필 중심)
-            if (bt != null)
+            if (k == "beam" && bt != null)
             {
-                double hx = axis.X, hy = axis.Y, hl = Math.Sqrt(hx * hx + hy * hy);
-                if (hl < 1e-6) return null;
-                hx /= hl; hy /= hl;
-                double ax = cx - hx * len / 2, ay = cyc - hy * len / 2, bx = cx + hx * len / 2, by = cyc + hy * len / 2;
-                kind = "beam"; return "{\"op\":\"create_beam\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + bt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "],\"zOffset\":" + R(cz) + "}}";
+                double ax = xl ? bb.Min.X : cx, ay = xl ? cy : bb.Min.Y, bx = xl ? bb.Max.X : cx, by = xl ? cy : bb.Max.Y;
+                kind = "beam";
+                return "{\"op\":\"create_beam\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + bt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "],\"zOffset\":" + R((bb.Min.Z + bb.Max.Z) / 2) + "}}";
+            }
+            if (k == "wall" && wt != null)
+            {
+                // 벽 중심선 = 수평 장축(평면). 두께/높이는 타입.
+                double ax = xl ? bb.Min.X : cx, ay = xl ? cy : bb.Min.Y, bx = xl ? bb.Max.X : cx, by = xl ? cy : bb.Max.Y;
+                kind = "wall";
+                return "{\"op\":\"create_wall\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + wt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "]}}";
+            }
+            if (k == "slab" && st != null)
+            {
+                var cap = HorizCap(b, tol);
+                var prof = cap != null ? ProfileVerts(cap) : null;
+                if (prof == null || prof.Count < 3)
+                {
+                    // 폴백: bbox 사각 풋프린트
+                    prof = new List<Point3d> { new Point3d(bb.Min.X, bb.Min.Y, 0), new Point3d(bb.Max.X, bb.Min.Y, 0), new Point3d(bb.Max.X, bb.Max.Y, 0), new Point3d(bb.Min.X, bb.Max.Y, 0) };
+                }
+                var sb = new StringBuilder("[");
+                for (int i = 0; i < prof.Count; i++) { if (i > 0) sb.Append(","); sb.Append("[" + R(prof[i].X) + "," + R(prof[i].Y) + "]"); }
+                sb.Append("]");
+                kind = "slab";
+                return "{\"op\":\"create_slab\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + st + "\",\"boundary\":" + sb + "}}";
             }
             return null;
         }
