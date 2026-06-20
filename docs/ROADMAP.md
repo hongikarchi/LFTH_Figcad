@@ -95,19 +95,20 @@
 | C 곡선 벽 어휘 | sagitta 호 중심선 (AI 천장) — 직선경로 바이트 무변경 격리, robustness | ✅ (core 346, 멀티리뷰) |
 | C5 곡선 interop | IFC/.3dm/DXF 곡률 보존 export(dense 폴리라인) — arc-export-loss footgun 닫음 | ✅ (interop 35) |
 | F federation 페이로드 | 서버 R2(COMMITS) 업로드/blob 라우트(보안 프리픽스 가드) + Navigator glTF/IFC 업로드 → 협업자 공유. **첫 서버변경** | ✅ (server 10) |
-| **D·G·E** | .3dm 네이티브·AI clean-up 프리미티브·3D-Tiles | ⬜ **다음 세션(각 제약)** |
+| **G Brep 기계적 리프트** | 적중률 측정(실모델 77~94%, 구조요소~100%) → FigcadConnector.PushBreps(cap-pair 인식→기둥/벽/슬라브/보 ops, InstanceXform 재귀, store-original) + .rhp/.yak 플러그인. **로컬 end-to-end 실증**(Rhino→프레임479+glTF오버레이 정합). | 🔶 실증완료·**튜닝 필요(보 과분류)** `docs/brep-lifting-2026.md` |
+| M13 줌 익스텐트 | 3D 뷰 fitBounds(요소+레퍼런스, 그리드 제외)+'F'키+federation 자동맞춤 — import/federation 빈화면 해결 | ✅ `b5dd312`·`2cde809` |
+| **D·E** | .3dm 네이티브·3D-Tiles | ⬜ 다음 |
 | R1 머지 스파이크 | coordination-free 머지 = 무효 잦으나(~100%) lint 100% 검출 → 경로A 조건부 생존·**M13-B 필수**·서버권위 불필요 | ✅ `docs/merge-spike-results.md` |
-| R2 brep SOTA | ML 미성숙(전부 합성벤치) — G1 DEFER 정당. 기계적 sub-case(박스압출→벽 등)=커넥터+OCCT, 436MB 적중률 측정 선행 | ✅ `docs/brep-lifting-2026.md` |
+| R2 brep SOTA | ML 미성숙(전부 합성벤치) — G1 DEFER 정당. 기계적 sub-case→G로 실현 | ✅ `docs/brep-lifting-2026.md` |
 | R4 경쟁+생성AI | `competitive-landscape.md`(Motif·Qonic 위협)·`generative-ai-scope.md`(ingest clean-up=ADOPT·mesh-bake REJECT) | ✅ |
 
-**불변①**: 외부 모델 = 별도표현(ReferenceLayer, Y.Doc 미진입), 채널엔 ref만. **A4 게이트**: snapshot→derive bbox+vertex 정합. **IFC 방위**: Figcad 라운드트립 자기일관 검증 — 실 Revit/ArchiCAD 방위는 wake-up 시각검증.
+**불변①**: 외부 모델 = 별도표현(ReferenceLayer, Y.Doc 미진입), 채널엔 ref만. **store-original**: 좌표 안 옮김 → 라운드트립 무손실 by construction(부지좌표 ~1.96km도 jitter 0, fitView가 카메라 담당). **A4 게이트**: snapshot→derive bbox+vertex 정합.
 
-### M13 남은 일 (사용자 방향 — eyes-open 스코프)
-- **깨어나서 시각검증(#1)**: federation 오버레이 정합(figcad-room/glTF/IFC가 네이티브와 안 어긋나나)·곡선 벽 3D/평면 "맞게 보이나". 구조 게이트는 통과(bbox/vertex·골든·라운드트립) — 픽셀은 사람 몫.
-- **배포**: M12 미배포분 + M13 전체 로컬커밋 미배포. **F가 서버변경 포함** → `pnpm -F @figcad/web build` 후 `cd apps/server && wrangler deploy`(승인 시). F 업로드 라이브검증은 miniflare `dev.mjs`/배포 필요(dev-node.mjs=R2 없음).
-- **D .3dm 네이티브**: glTF가 이미 Rhino7+ 커버 → 한계적 정제. rhino3dm-wasm 명시 Mesh만 신뢰성 추출, raw Brep=v1.5 메싱.
-- **G AI clean-up(기계적)**: R2 결론 = 커넥터+OCCT(wasm32가 브라우저 차단). **선행: 436MB로 case-1/2 적중률 측정**(R2 권고)이 빌드 가치 판가름.
-- **E 3D-Tiles**: 대형 신규 뷰어 서브시스템(플랜상 최후). 플랜 `docs-fuzzy-micali.md` 참조.
+### M13 남은 일 (다음 — eyes-open)
+- **G 보 과분류 튜닝**(최우선·작음): 얇은 수평 프리즘을 보로 오인(353개+outlier 1=모델 23m밖). `RecognizeBrep` 보 임계(현 = 비-수직 전부 보) 강화 — 길이/단면비·실제 수평여부. 정합 자체는 OK(491/492 모델 내).
+- **배포**(승인 시): M12+M13 전체 미배포. **F=서버변경** → build 후 `wrangler deploy`. (용량 절약 위해 로컬 우선 — 사용자 선택.)
+- **D .3dm 네이티브**: glTF가 Rhino7+ 커버 → 한계적. **E 3D-Tiles**: 대형 신규 서브시스템(최후).
+- **로컬 데브 함정**: dist 재빌드 후 miniflare(dev.mjs) **반드시 재시작**(에셋 매니페스트 startup 고착 → 새 JS 404 → 흰화면).
 
 ## v1.5 백로그 (감독 하 진행)
 | 항목 | 판정 |
