@@ -117,14 +117,24 @@
 
 검증: core **353**·tsc·web build·C# 컴파일 clean. 멀티에이전트 리뷰 1패스(3건 수정). 미배포.
 
-### M13 남은 일 (다음 — eyes-open)
-- **커넥터 Pull +origin 복원**: PushBreps recenter는 됨(MCP 검증). Pull이 원좌표로 되돌리는 +origin은 미배선(데이터모델·라운드트립은 TS 테스트 입증).
-- **G 잔여 kind**: stair/railing/주차(L-PARKING) 등 = 현재 Lane-2. 레이어-시맨틱 키워드·params 추출 확장 시 흡수(향후).
-- **.rhp 재빌드**: G2·recenter 반영하려면 Rhino 플러그인 언로드 후 `dotnet build`(현재 로드중이라 .rhp 잠김).
-- **배포**: M12+M13+M13.5 전체 미배포(로컬 우선). **D .3dm 네이티브·E 3D-Tiles** = 후순위.
-- **배포**(승인 시): M12+M13 전체 미배포. **F=서버변경** → build 후 `wrangler deploy`. (용량 절약 위해 로컬 우선 — 사용자 선택.)
-- **D .3dm 네이티브**: glTF가 Rhino7+ 커버 → 한계적. **E 3D-Tiles**: 대형 신규 서브시스템(최후).
-- **로컬 데브 함정**: dist 재빌드 후 miniflare(dev.mjs) **반드시 재시작**(에셋 매니페스트 startup 고착 → 새 JS 404 → 흰화면).
+## M13.6 — 마무리 (Pull+origin·.rhp·계단난간·.3dm네이티브) ✅ (2026-06-21)
+| 항목 | 내용 | 상태 |
+|---|---|---|
+| 커넥터 Pull +origin | ?op=origin GET 후 전 좌표 +origin → 원 부지좌표 복원. 라운드트립 무손실(MCP 원좌표 정확 복원) | ✅ `4dfdf42` |
+| .rhp 재빌드 | bin/Release/Figcad.rhp 갱신(Pull+origin·G2·recenter·계단난간). Rhino 등록=새 빌드(명령 시 lazy-load) | ✅ |
+| G 잔여 계단·난간 | KindFromLayer+RecognizeByLayer stair/railing(MCP 계단47·난간26 전부). L-PARKING/logo/glass=Lane-2 | ✅ `c6251a8` |
+| D .3dm 네이티브 | import3dmMeshes(Mesh객체 Z-up→Y-up)+extract3dm+'3dm'등록+Navigator. 게이트 rhino-meshes 3 | ✅ (interop 38) |
+| 리뷰 후속 | wasm 누수(.delete)·.3dm 빈오버레이 throw/warn | ✅ |
+
+검증: core 353·interop **38**·server 10·tsc·web build·dotnet build clean. 멀티리뷰 1패스(3건). **미배포.**
+**D 한계(정직)**: Mesh 객체 .3dm만(SketchUp·메시모델). pure-Brep/블록 Rhino(260617=Instance687·Mesh0)=빈오버레이→glTF 경로.
+
+### M13 남은 일 (재계획 대상 — eyes-open)
+- **E 3D-Tiles HLOD**: 대형 신규 뷰어 서브시스템(436MB 스트리밍). 재계획서 결정.
+- **배포**: M12+M13 전체 미배포(F=서버변경 포함, 로컬 우선 — Cloudflare 용량). 재계획 후 `pnpm -F @figcad/web build` → `wrangler deploy`.
+- **G 잔여**: L-PARKING(78=매칭kind 없음)·logo/glass=Lane-2 유지. stair/railing 곡선=bbox 근사(v1.5 파라).
+- **소품**: ROOM_KEY per-room=단일키 가정(문서화) · 곡선벽 re-import sagitta=v1.5(우리 export=폴리라인 자기왕복 무관).
+- **로컬 데브 함정**: dist 재빌드 후 miniflare(dev.mjs) **반드시 재시작**(에셋 staleness → 흰화면) + 좀비 프로세스 kill.
 
 ## v1.5 백로그 (감독 하 진행)
 | 항목 | 판정 |
