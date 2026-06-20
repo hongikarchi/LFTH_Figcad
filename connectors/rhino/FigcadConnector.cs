@@ -269,7 +269,7 @@ namespace Figcad
         {
             string snapBody = Http.GetStringAsync(Url(cfg, "pull")).GetAwaiter().GetResult();
             var snap = (Dictionary<string, object>)Json.Parse(snapBody);
-            string levelId = null, wallTypeId = null, slabTypeId = null, columnTypeId = null, beamTypeId = null;
+            string levelId = null, wallTypeId = null, slabTypeId = null, columnTypeId = null, beamTypeId = null, stairTypeId = null, railTypeId = null;
             foreach (Dictionary<string, object> l in (List<object>)snap["levels"]) { levelId = (string)l["id"]; break; }
             foreach (Dictionary<string, object> t in (List<object>)snap["types"])
             {
@@ -278,6 +278,8 @@ namespace Figcad
                 else if (k == "slab" && slabTypeId == null) slabTypeId = (string)t["id"];
                 else if (k == "column" && columnTypeId == null) columnTypeId = (string)t["id"];
                 else if (k == "beam" && beamTypeId == null) beamTypeId = (string)t["id"];
+                else if (k == "stair" && stairTypeId == null) stairTypeId = (string)t["id"];
+                else if (k == "railing" && railTypeId == null) railTypeId = (string)t["id"];
             }
             double tol = Math.Max(doc.ModelAbsoluteTolerance, 0.01);
 
@@ -337,14 +339,14 @@ namespace Figcad
             var modelBB = BoundingBox.Empty;
             foreach (var pr in breps) modelBB.Union(pr.b.GetBoundingBox(true));
             var ops = new List<string>();
-            int nCol = 0, nWall = 0, nSlab = 0, nBeam = 0, nResidual = 0;
+            int nCol = 0, nWall = 0, nSlab = 0, nBeam = 0, nStair = 0, nRail = 0, nResidual = 0;
             foreach (var pr in breps)
             {
                 string kind;
-                var op = RecognizeByLayer(pr.b, pr.layer, levelId, wallTypeId, slabTypeId, columnTypeId, beamTypeId, modelBB, tol, out kind);
+                var op = RecognizeByLayer(pr.b, pr.layer, levelId, wallTypeId, slabTypeId, columnTypeId, beamTypeId, stairTypeId, railTypeId, modelBB, tol, out kind);
                 if (op == null) { nResidual++; continue; }
                 ops.Add(op);
-                if (kind == "column") nCol++; else if (kind == "wall") nWall++; else if (kind == "slab") nSlab++; else if (kind == "beam") nBeam++;
+                if (kind == "column") nCol++; else if (kind == "wall") nWall++; else if (kind == "slab") nSlab++; else if (kind == "beam") nBeam++; else if (kind == "stair") nStair++; else if (kind == "railing") nRail++;
             }
             if (ops.Count == 0) return "PushBreps: 인식된 구조부재 없음 (Brep " + breps.Count + " · 잔여 " + nResidual + " — 레이어 시맨틱 매칭 0)";
 
@@ -363,6 +365,7 @@ namespace Figcad
             // 충실도 보고 (ingest=PR)
             return "PushBreps 충실도 보고: 적용 " + applied + " · 실패 " + failedTotal +
                    " | 기둥 " + nCol + " · 벽 " + nWall + " · 슬라브 " + nSlab + " · 보 " + nBeam +
+                   " · 계단 " + nStair + " · 난간 " + nRail +
                    " · 자유곡면/미인식 잔여 " + nResidual + " (Lane-2 passthrough 대상)";
         }
 
@@ -379,6 +382,8 @@ namespace Figcad
             bool HasKo(params string[] ks) { foreach (var k in ks) if (p.Contains(k)) return true; return false; }
             if (Has("column", "col") || HasKo("기둥")) return "column";
             if (Has("connection", "beam", "girder") || HasKo("보")) return "beam";
+            if (Has("stair", "stairs") || HasKo("계단")) return "stair";
+            if (Has("railing", "handrail", "rail", "guardrail") || HasKo("난간")) return "railing";
             if (Has("wall") || HasKo("벽")) return "wall";
             if (Has("slab", "floor") || HasKo("슬라브", "바닥")) return "slab";
             return null;
@@ -403,7 +408,7 @@ namespace Figcad
 
         // Brep 1개 인식 (G2 레이어-시맨틱): kind=레이어, params=지오 bbox(+슬라브 cap 프로필). null=잔여.
         // kind 고정이라 오분류 위험 0. outlier(모델 bbox 밖) 스킵. MCP 실증: 기둥109·보130·벽77·슬라브10.
-        static string RecognizeByLayer(Brep b, string layer, string lv, string wt, string st, string ct, string bt, BoundingBox modelBB, double tol, out string kind)
+        static string RecognizeByLayer(Brep b, string layer, string lv, string wt, string st, string ct, string bt, string stairT, string railT, BoundingBox modelBB, double tol, out string kind)
         {
             kind = null;
             if (lv == null) return null;
@@ -427,6 +432,19 @@ namespace Figcad
                 double ax = xl ? bb.Min.X : cx, ay = xl ? cy : bb.Min.Y, bx = xl ? bb.Max.X : cx, by = xl ? cy : bb.Max.Y;
                 kind = "beam";
                 return "{\"op\":\"create_beam\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + bt + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "],\"zOffset\":" + R((bb.Min.Z + bb.Max.Z) / 2) + "}}";
+            }
+            if (k == "stair" && stairT != null)
+            {
+                // 계단 run = 수평 장축 a→b. 단/너비는 타입. baseOffset=바닥 Z.
+                double ax = xl ? bb.Min.X : cx, ay = xl ? cy : bb.Min.Y, bx = xl ? bb.Max.X : cx, by = xl ? cy : bb.Max.Y;
+                kind = "stair";
+                return "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + stairT + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "],\"baseOffset\":" + R(bb.Min.Z) + "}}";
+            }
+            if (k == "railing" && railT != null)
+            {
+                double ax = xl ? bb.Min.X : cx, ay = xl ? cy : bb.Min.Y, bx = xl ? bb.Max.X : cx, by = xl ? cy : bb.Max.Y;
+                kind = "railing";
+                return "{\"op\":\"create_railing\",\"args\":{\"levelId\":\"" + lv + "\",\"typeId\":\"" + railT + "\",\"a\":[" + R(ax) + "," + R(ay) + "],\"b\":[" + R(bx) + "," + R(by) + "],\"baseOffset\":" + R(bb.Min.Z) + "}}";
             }
             if (k == "wall" && wt != null)
             {
