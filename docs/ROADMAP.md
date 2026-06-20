@@ -105,10 +105,23 @@
 
 **불변①**: 외부 모델 = 별도표현(ReferenceLayer, Y.Doc 미진입), 채널엔 ref만. **store-original**: 좌표 안 옮김 → 라운드트립 무손실 by construction(부지좌표 ~1.96km도 jitter 0, fitView가 카메라 담당). **A4 게이트**: snapshot→derive bbox+vertex 정합.
 
+## M13.5 — G 인식 v2(레이어-시맨틱) + Codex 리뷰 5건 ✅ (2026-06-21)
+| 항목 | 내용 | 상태 |
+|---|---|---|
+| **G2 레이어-시맨틱** | 순수 지오가 H형강서 fragile → **레이어 full-path가 kind**(S-Column=기둥·S-Connection=보·A-Wall=벽·S-Slab=슬라브), 지오는 params. 오분류 0. MCP 실증 기둥109·보130·벽77·슬라브10(이전 보 353 garbage→130 정확). dotnet build 통과. | ✅ `2152d16` |
+| Codex #1 High | ROOM_KEY federation pull — fetch 시 로컬 ?key=(ref 미저장) | ✅ `f3a3767` |
+| Codex #2 High | 곡선 벽 개구부 차단(createOpening/updateElement throw)+lint(arc-wall-opening, import backstop)+OpeningTool 거부 | ✅ `f3a3767`·`2323a56` |
+| Codex #4 Med | fitView 숨긴 소스 제외 — visibleBounds(root.visible+per-source) | ✅ `f3a3767`·`2323a56` |
+| Codex #5 Low | reload sig에 sourceType(stale loader 방지) | ✅ `f3a3767` |
+| 리뷰 후속 | KindFromLayer 토큰매칭(부분문자열 오탐)·visibleBounds root 가드·updateElement 곡선화 가드 | ✅ `2323a56` |
+
+검증: core **353**·tsc·web build·C# 컴파일 clean. 멀티에이전트 리뷰 1패스(3건 수정). 미배포.
+
 ### M13 남은 일 (다음 — eyes-open)
-- **G 인식 v2 = 레이어-시맨틱**(보 과분류 진짜 fix): 순수 지오 추측은 H형강(필렛, 최대면적면이 축과 평행)서 fragile — 임계 튜닝 6라운드 비수렴(회귀). 결론 = **레이어명(H-300x500=보·H-500x500=기둥·A-Wall=벽·S-Slab=슬라브) 힌트(kind) + 지오(params)**. 기존 Push 레이어관례와 동형. `docs/brep-lifting-2026.md` 참조. (현 PushBreps는 MVP — 보 과분류 잔존, 정합 OK.)
-- **G 단면 측정 버그**(인식 v2 시 포함): 현 `RecognizeBrep`이 단면을 X-Y로만 측정 → 수평 부재(Y/X축 보) 단면 퇴화. perp-plane 투영으로 수정해야(MCP 진단됨).
 - **커넥터 Pull +origin 복원**: PushBreps recenter는 됨(MCP 검증). Pull이 원좌표로 되돌리는 +origin은 미배선(데이터모델·라운드트립은 TS 테스트 입증).
+- **G 잔여 kind**: stair/railing/주차(L-PARKING) 등 = 현재 Lane-2. 레이어-시맨틱 키워드·params 추출 확장 시 흡수(향후).
+- **.rhp 재빌드**: G2·recenter 반영하려면 Rhino 플러그인 언로드 후 `dotnet build`(현재 로드중이라 .rhp 잠김).
+- **배포**: M12+M13+M13.5 전체 미배포(로컬 우선). **D .3dm 네이티브·E 3D-Tiles** = 후순위.
 - **배포**(승인 시): M12+M13 전체 미배포. **F=서버변경** → build 후 `wrangler deploy`. (용량 절약 위해 로컬 우선 — 사용자 선택.)
 - **D .3dm 네이티브**: glTF가 Rhino7+ 커버 → 한계적. **E 3D-Tiles**: 대형 신규 서브시스템(최후).
 - **로컬 데브 함정**: dist 재빌드 후 miniflare(dev.mjs) **반드시 재시작**(에셋 매니페스트 startup 고착 → 새 JS 404 → 흰화면).
