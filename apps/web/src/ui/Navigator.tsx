@@ -292,15 +292,15 @@ export function Navigator({
   const uploadFederationFile = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.glb,.gltf,.ifc';
+    input.accept = '.glb,.gltf,.ifc,.3dm';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
       const ext = (file.name.split('.').pop() ?? '').toLowerCase();
       const sourceType: FederationSource['sourceType'] | null =
-        ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : null;
+        ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : ext === '3dm' ? '3dm' : null;
       if (!sourceType) {
-        window.alert('glTF(.glb/.gltf) 또는 IFC(.ifc) 파일만 지원');
+        window.alert('glTF(.glb/.gltf)·IFC(.ifc)·Rhino(.3dm) 파일만 지원');
         return;
       }
       const room = new URL(location.href).searchParams.get('p');

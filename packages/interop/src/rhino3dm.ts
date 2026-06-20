@@ -357,3 +357,59 @@ export async function importRhino(bytes: Uint8Array, opts?: RhinoOpts): Promise<
   snapshot.meta = { ...snapshot.meta, projectName: '가져온 Rhino 모델' };
   return { snapshot, skipped };
 }
+
+/**
+ * .3dm → federation 오버레이용 삼각망 (M13.6 D). **명시 Mesh 객체만** 추출(raw Brep·Extrusion·
+ * InstanceReference는 메시 없으면 skip+count — 신뢰성, R2 결론. 정밀 .3dm=v1.5). importRhino의
+ * 파라메트릭 복원과 다른 *충실 메시 표시* 경로(extractIfc/importIfcMeshes 대응).
+ * 좌표: rhino = mm·**Z-up**(x동·y북·z높이) → Figcad world m·Y-up = `[x, z, y]*.001`(Z-up→Y-up,
+ * 부호 무반전 — Figcad world Z=+north). non-indexed 삼각형(quad→2tri). normals 생략(consumer가 계산).
+ */
+export function import3dmMeshes(
+  bytes: Uint8Array,
+  opts?: RhinoOpts,
+): Promise<{ meshes: { positions: Float32Array }[]; skipped: number }> {
+  return getRhino(opts).then((rhino) => {
+    const doc = rhino.File3dm.fromByteArray(bytes);
+    if (!doc) throw new Error('.3dm 파싱 실패');
+    const objs = doc.objects();
+    const meshes: { positions: Float32Array }[] = [];
+    let skipped = 0;
+    const MM = 0.001;
+    for (let i = 0; i < objs.count; i++) {
+      const geo = objs.get(i)?.geometry();
+      // ObjectType.Mesh = 32 (rhino3dm enum). Mesh 아니면 skip+count.
+      if (!geo || geo.objectType !== rhino.ObjectType.Mesh) {
+        skipped++;
+        continue;
+      }
+      const mesh = geo as unknown as import('rhino3dm').Mesh;
+      const vl = mesh.vertices();
+      const fl = mesh.faces();
+      const vc = vl.count;
+      const wv: number[][] = new Array(vc);
+      for (let v = 0; v < vc; v++) {
+        const p = vl.get(v); // [x_east, y_north, z_height] mm, Z-up
+        wv[v] = p && p.length >= 3 ? [p[0]! * MM, p[2]! * MM, p[1]! * MM] : [0, 0, 0]; // → [east, height, north] m
+      }
+      const pos: number[] = [];
+      for (let f = 0; f < fl.count; f++) {
+        const face = fl.get(f); // [a,b,c] tri 또는 [a,b,c,d] quad
+        if (!face || face.length < 3) continue;
+        const i0 = face[0], i1 = face[1], i2 = face[2];
+        if (i0 === undefined || i1 === undefined || i2 === undefined) continue;
+        const a = wv[i0], b = wv[i1], c = wv[i2];
+        if (!a || !b || !c) continue;
+        pos.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!);
+        // rhino는 삼각형도 quad[a,b,c,c]로 저장(i3==i2=퇴화) → 진짜 quad일 때만 2nd tri.
+        if (face.length >= 4) {
+          const i3 = face[3];
+          const d = i3 === undefined || i3 === i2 ? undefined : wv[i3];
+          if (d) pos.push(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!);
+        }
+      }
+      if (pos.length) meshes.push({ positions: new Float32Array(pos) });
+    }
+    return { meshes, skipped };
+  });
+}

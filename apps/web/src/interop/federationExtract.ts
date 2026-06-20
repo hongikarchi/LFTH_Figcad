@@ -106,11 +106,32 @@ export async function extractIfc(ref: string): Promise<ReferenceMesh[]> {
   return importIfcMeshes(api, bytes).map((m) => ({ positions: m.positions }));
 }
 
-/** sourceType → 추출기. 미등록(.3dm·3D-Tiles)은 v1.5 — reconciler가 error 표시. */
+/**
+ * D — .3dm 네이티브를 읽기전용 오버레이로. **명시 Mesh 객체만**(raw Brep=v1.5). 변환은
+ * @figcad/interop import3dmMeshes에 격리·테스트됨(rhino-meshes.test.ts): rhino mm·Z-up →
+ * Figcad world m·Y-up [x,z,y]*.001. WASM 로더는 ifcClient.rhinoWasmUrl 패턴(vite ?url).
+ * glTF가 Rhino7+ 이미 커버 → 한계적(Mesh 없는 .3dm은 빈 오버레이 + skip 카운트).
+ */
+export async function extract3dm(ref: string): Promise<ReferenceMesh[]> {
+  const url = ref.trim();
+  if (!url) throw new Error('빈 .3dm ref');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`.3dm 페치 실패 "${url}" (${res.status})`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const [{ import3dmMeshes }, wasmUrl] = await Promise.all([
+    import('@figcad/interop/rhino'),
+    import('rhino3dm/rhino3dm.wasm?url').then((m) => m.default),
+  ]);
+  const { meshes } = await import3dmMeshes(bytes, { wasmUrl });
+  return meshes.map((m) => ({ positions: m.positions })); // normals 생략 → ReferenceLayer 계산
+}
+
+/** sourceType → 추출기. 미등록(3D-Tiles)은 v1.5 — reconciler가 error 표시. */
 export const FEDERATION_EXTRACTORS: Partial<
   Record<'3dm' | 'ifc' | 'figcad-room' | 'gltf' | '3dtiles', Extractor>
 > = {
   'figcad-room': extractFigcadRoom,
   gltf: extractGltf,
   ifc: extractIfc,
+  '3dm': extract3dm,
 };
