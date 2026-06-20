@@ -1,0 +1,5 @@
+# .NET 빌드 산출물 (VS/dotnet build) — .rhp/.yak는 로컬 빌드물, 커밋 안 함
+bin/
+obj/
+*.rhp
+*.yak
