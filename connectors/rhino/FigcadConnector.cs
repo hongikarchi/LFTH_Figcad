@@ -62,6 +62,26 @@ namespace Figcad
             var types = (List<object>)root["types"];
             var elements = (List<object>)root["elements"];
 
+            // projectOrigin 복원(+origin) — recenter import된 좌표를 원 부지좌표로 되돌려 그림(라운드트립
+            // 무손실, rebaseSnapshot(+1)의 C# 등가). 모든 export 경계가 origin 복원을 거친다(무누락). XY만.
+            double ox = 0, oy = 0;
+            try
+            {
+                var ob = Http.GetStringAsync(Url(cfg, "origin")).GetAwaiter().GetResult();
+                var od = (Dictionary<string, object>)Json.Parse(ob);
+                if (od.ContainsKey("origin") && od["origin"] is List<object> ol && ol.Count == 2) { ox = D(ol[0]); oy = D(ol[1]); }
+            }
+            catch { }
+            if (ox != 0 || oy != 0)
+            {
+                void Shift(List<object> p) { if (p != null && p.Count >= 2) { p[0] = D(p[0]) + ox; p[1] = D(p[1]) + oy; } }
+                foreach (Dictionary<string, object> el in elements)
+                {
+                    foreach (var k in new[] { "a", "b", "at" }) if (el.ContainsKey(k) && el[k] is List<object> pt) Shift(pt);
+                    if (el.ContainsKey("boundary") && el["boundary"] is List<object> bd) foreach (var pp in bd) if (pp is List<object> pt2) Shift(pt2);
+                }
+            }
+
             var elev = new Dictionary<string, double>();
             var levelH = new Dictionary<string, double>();
             foreach (Dictionary<string, object> l in levels)
