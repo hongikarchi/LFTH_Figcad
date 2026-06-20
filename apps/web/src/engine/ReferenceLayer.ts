@@ -78,6 +78,11 @@ export class ReferenceLayer {
     return [...this.sources.keys()];
   }
 
+  /** 레퍼런스 메시 루트 그룹 — 줌 익스텐트(fitView)가 오버레이까지 포함해 맞추도록 노출(읽기용). */
+  get root(): THREE.Group {
+    return this.group;
+  }
+
   remove(name: string): void {
     const g = this.sources.get(name);
     if (!g) return;

@@ -282,16 +282,9 @@ namespace Figcad
             }
             Collect(doc.Objects, Transform.Identity, 0);
 
-            // 1b) 원점 recenter — 부지/측량 좌표 모델(원점서 km 단위 떨어짐)은 Figcad 카메라(원점 근처)에
-            //     안 보임. 전체 bbox min을 원점으로 평행이동. ingest=PR 1회 import라 정합 문제 없음
-            //     (roundtrip 재정렬용 offset 저장은 v1.5). MCP 실증: -1.99M 모델 → [0..95m] 가시.
-            var gbb = BoundingBox.Empty;
-            foreach (var b in breps) gbb.Union(b.GetBoundingBox(true));
-            if (gbb.IsValid)
-            {
-                var off = Transform.Translation(-gbb.Min.X, -gbb.Min.Y, -gbb.Min.Z);
-                foreach (var b in breps) b.Transform(off);
-            }
+            // 좌표 = 원본 그대로 (recenter 안 함) — 라운드트립 무손실(by construction): Pull이 이 좌표로
+            // Rhino 지오 재생성 = 원 부지좌표. offset 저장·복원 불필요(어떤 export 경로도 안 잊음).
+            // 원점서 먼/큰 모델 가시성은 *렌더* 문제 → Figcad 'F'(전체맞춤, fitView)가 담당, 데이터 미이동.
 
             // 2) 인식 → ops
             var ops = new List<string>();

@@ -105,7 +105,11 @@ const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EX
 // 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.
 // import/federation 모델은 원점서 멀거나 커서 기본 카메라엔 빈 화면 → 이게 해결. 'F' 키 + federation 로드 후 1회 자동.
 function fitView(): boolean {
-  const box = new THREE.Box3().setFromObject(engine.scene);
+  // 요소 메시(derive) + federation 레퍼런스만 — 고정 원점 그리드 제외(포함 시 원좌표 모델서 bbox가
+  // 원점~모델 전체로 늘어나 fit이 모델을 못 잡음). 둘 다 비면 false.
+  const box = new THREE.Box3();
+  for (const o of sceneManager.pickables) box.expandByObject(o);
+  if (referenceLayer.root.children.length) box.expandByObject(referenceLayer.root);
   if (box.isEmpty() || !isFinite(box.min.x)) return false;
   rig.fitBounds(box.min, box.max);
   engine.requestRender();
