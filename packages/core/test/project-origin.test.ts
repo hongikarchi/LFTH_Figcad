@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DocStore, seedDocument, SEED_IDS, rebaseSnapshot } from '../src/store';
-import type { DocSnapshot, WallElement, SlabElement, ColumnElement } from '../src/schema';
+import { DocStore, seedDocument, SEED_IDS, rebaseSnapshot, type DocSnapshot } from '../src/store';
+import type { Element, WallElement, SlabElement, ColumnElement } from '../src/schema';
 
 // M13 projectOrigin — 부지좌표 recenter + 기억 → export 원좌표 복원 (Revit Project Base Point 패턴).
 
