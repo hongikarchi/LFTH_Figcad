@@ -3,6 +3,12 @@
 > 버전관리되는 lean 상태판. 폴더에 보이고 git에 남고 compact 생존.
 > **정체성 — 3축: 웹 · 실시간 · AI.** **웹**(브라우저, 설치 없음 / iPad Pencil + 데스크톱) · **실시간**(여러 툴 모델·도면 + 여러 사람을 한 화면에서 동시에) · **AI**(손그림→모델, 에이전트 편집). Rhino·CAD·Revit의 모델·도면을 **실시간으로 모아 같이 보고 빚는** 멀티툴 협업 허브 — IFC/DXF/.3dm 양방향 인터롭. 대조·sketch·조율은 거기서 파생. (정밀 모델링·납품도면 *제작*은 전문툴 몫, Figcad는 모으고·조율 — LOD 100~250 수준. "상류"·"핸드오프"=단방향 함의라 안 씀.)
 
+## M14 — 실사용 검증 (배포 + 조율 세션) 🔄 진행
+> 전략문서 재정독 결론: 해자(중립+편집+실시간 멀티플레이어 ON federation)가 **미배포라 aspirational** · Qonic GA·Motif 압박. 사용자 결정 = **실사용 검증 우선**(빌드 최소·학습 최대). 플랜 `~/.claude/plans/docs-fuzzy-micali.md` ▶M14 · 갭 캡처 `docs/realuse-validation.md`.
+- **배포 ✅ (2026-06-21)**: `https://figcad.archivibe.workers.dev` Version `ed8fcb97`. M12+M13 전체(기존 워커 업데이트). 스모크 전부 green(root/asset·origin·pull·fed왕복 R2·ANTHROPIC secret·**AI end-to-end 403없음**).
+- **세션**: 사용자 — `FigcadPushBreps`(룸→deployed, .rhp=deployed 기본) + 2기기 조율. 갭 캡처 = M14 산출 → 다음 재계획.
+- **미룸(갭 후 재계획)**: E 3D-Tiles · ingest=PR · 조율 워크플로 성숙.
+
 ## 4대 불변 규칙
 1. 지오메트리는 문서에 저장·동기화 안 함 — 파라미터에서 순수 함수 파생.
 2. 모든 문서 변경은 DocStore ops 경유 (yjs import는 core·collab 밖 금지).
