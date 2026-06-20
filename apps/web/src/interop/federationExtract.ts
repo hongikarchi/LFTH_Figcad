@@ -26,7 +26,11 @@ function pullBase(): string {
 export async function extractFigcadRoom(ref: string): Promise<ReferenceMesh[]> {
   const roomId = ref.trim();
   if (!roomId) throw new Error('빈 룸 id');
-  const res = await fetch(`${pullBase()}/parties/doc/${encodeURIComponent(roomId)}?op=pull`);
+  // ROOM_KEY 보호 룸: 키를 *fetch 시점에 로컬 URL/auth 컨텍스트*에서 붙인다(collab/provider.ts 패턴).
+  // ⚠️ ref(federation 채널)엔 절대 저장 안 함 — Yjs로 전원 동기화 = 키 유출(Codex #1).
+  const key = new URL(location.href).searchParams.get('key');
+  const keyQ = key ? `&key=${encodeURIComponent(key)}` : '';
+  const res = await fetch(`${pullBase()}/parties/doc/${encodeURIComponent(roomId)}?op=pull${keyQ}`);
   if (!res.ok) {
     // 타겟 룸이 ROOM_KEY 설정 시 401 — 메시지로 surface
     throw new Error(`룸 "${roomId}" 페치 실패 (${res.status}${res.status === 401 ? ' — ROOM_KEY 필요' : ''})`);

@@ -109,7 +109,7 @@ function fitView(): boolean {
   // 원점~모델 전체로 늘어나 fit이 모델을 못 잡음). 둘 다 비면 false.
   const box = new THREE.Box3();
   for (const o of sceneManager.pickables) box.expandByObject(o);
-  if (referenceLayer.root.children.length) box.expandByObject(referenceLayer.root);
+  box.union(referenceLayer.visibleBounds()); // 보이는 federation 소스만(숨긴 먼 소스 제외 — Codex #4)
   if (box.isEmpty() || !isFinite(box.min.x)) return false;
   rig.fitBounds(box.min, box.max);
   engine.requestRender();

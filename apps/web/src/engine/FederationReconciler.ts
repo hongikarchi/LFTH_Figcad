@@ -17,6 +17,7 @@ export type SourceStatus = 'loading' | 'ready' | 'error';
 interface LocalState {
   status: SourceStatus;
   ref: string;
+  sourceType: FederationSource['sourceType']; // ref 같고 type만 바뀌어도 재로드(Codex #5)
   error?: string;
   gen: number;
 }
@@ -59,7 +60,7 @@ export class FederationReconciler {
     // 시그니처 early-out: federation 채널의 id·ref·visible만 의미. 요소 편집(드래그 20-30Hz)엔
     // 불변 → 매 틱 재할당·notify 낭비를 차단. 가시성 토글/추가/제거는 sig를 바꿔 통과시킨다.
     const sig = sources
-      .map((s) => `${s.id}:${s.ref}:${s.visible ? 1 : 0}`)
+      .map((s) => `${s.id}:${s.sourceType}:${s.ref}:${s.visible ? 1 : 0}`)
       .sort()
       .join('|');
     if (sig === this.lastSig) return;
@@ -74,8 +75,8 @@ export class FederationReconciler {
 
     for (const s of sources) {
       const st = this.local.get(s.id);
-      if (!st || st.ref !== s.ref) {
-        // 신규 또는 ref 변경 → (재)로드
+      if (!st || st.ref !== s.ref || st.sourceType !== s.sourceType) {
+        // 신규 또는 ref/sourceType 변경 → (재)로드 (Codex #5)
         this.load(s);
       } else if (st.status === 'ready') {
         // 가시성은 동기화 상태 따라감
@@ -87,13 +88,14 @@ export class FederationReconciler {
 
   private load(s: FederationSource): void {
     const myGen = ++this.gen;
-    this.local.set(s.id, { status: 'loading', ref: s.ref, gen: myGen });
+    this.local.set(s.id, { status: 'loading', ref: s.ref, sourceType: s.sourceType, gen: myGen });
     const extractor = this.extractors[s.sourceType];
     if (!extractor) {
-      // 미등록 sourceType (glTF·IFC·.3dm·3D-Tiles = A5/v1.5)
+      // 미등록 sourceType (.3dm·3D-Tiles = v1.5)
       this.local.set(s.id, {
         status: 'error',
         ref: s.ref,
+        sourceType: s.sourceType,
         error: `${s.sourceType} 소스는 아직 지원 안 함 (v1.5)`,
         gen: myGen,
       });
@@ -111,7 +113,7 @@ export class FederationReconciler {
         const offset: [number, number, number] | undefined = o ? [-o[0] / 1000, 0, -o[1] / 1000] : undefined;
         this.ref.add(s.id, meshes, offset);
         this.ref.setVisible(s.id, live.visible);
-        this.local.set(s.id, { status: 'ready', ref: s.ref, gen: myGen });
+        this.local.set(s.id, { status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen });
         this.notify();
       })
       .catch((err: unknown) => {
@@ -120,6 +122,7 @@ export class FederationReconciler {
         this.local.set(s.id, {
           status: 'error',
           ref: s.ref,
+          sourceType: s.sourceType,
           error: err instanceof Error ? err.message : String(err),
           gen: myGen,
         });

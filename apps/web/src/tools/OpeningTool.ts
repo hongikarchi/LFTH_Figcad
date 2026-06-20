@@ -67,6 +67,11 @@ export class OpeningTool implements Tool {
       this.clearHover();
       return;
     }
+    // 곡선 벽(sagitta)은 개구부 미지원(Codex #2) — hover 거부(ghost 안 뜸, 배치 불가).
+    if (el.sagitta) {
+      this.clearHover();
+      return;
+    }
     const wall = el as WallElement;
     const type = this.ctx.store.getType(this.ctx.typeId(this.openingKind)) as
       | OpeningType

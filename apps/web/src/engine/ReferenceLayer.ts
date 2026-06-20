@@ -88,6 +88,16 @@ export class ReferenceLayer {
     return this.group;
   }
 
+  /**
+   * 보이는(visible) 소스만 합친 월드 bbox — fitView용. Box3.expandByObject는 visible을 무시하므로
+   * (숨긴 먼 소스가 카메라를 빈 공간으로 끌어당김, Codex #4) visible group만 직접 합친다.
+   */
+  visibleBounds(): THREE.Box3 {
+    const box = new THREE.Box3();
+    for (const g of this.sources.values()) if (g.visible) box.expandByObject(g);
+    return box;
+  }
+
   remove(name: string): void {
     const g = this.sources.get(name);
     if (!g) return;

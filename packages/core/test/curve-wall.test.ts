@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { arcPolyline, deriveWall, wallFootprint, wallDeriveKey } from '../src/geometry';
+import { DocStore, seedDocument, SEED_IDS } from '../src/store';
+import { lint } from '../src/lint';
 import type { Level, WallElement, WallType, Pt } from '../src/schema';
 
 const level: Level = { id: 'L1', name: '1층', elevation: 0, height: 3000, order: 0 };
@@ -152,5 +154,29 @@ describe('직선 벽 회귀 — sagitta 없으면 기존 경로(바이트 동일
   it('sagitta:0 = 직선 경로(곡선 분기 안 탐, !sagitta가 0을 falsy 처리)', () => {
     const geo = deriveWall({ wall: wall([0, 0], [4000, 0], 0), type, level });
     expect(geo.positions.length).toBe(12 * 9); // 직선과 동일
+  });
+});
+
+describe('곡선 벽 개구부 차단 + lint (Codex #2)', () => {
+  it('곡선 벽에 createOpening = throw / 직선 벽 = 정상', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const straight = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    expect(() => s.createOpening({ hostId: straight, typeId: SEED_IDS.door900, offset: 2000 })).not.toThrow();
+    const arc = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 2000], b: [4000, 2000], sagitta: 600 });
+    expect(() => s.createOpening({ hostId: arc, typeId: SEED_IDS.door900, offset: 2000 })).toThrow();
+  });
+
+  it('곡선 벽 개구부가 (import/머지로) 들어오면 lint arc-wall-opening', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const straight = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 0], b: [4000, 0] });
+    const op = s.createOpening({ hostId: straight, typeId: SEED_IDS.door900, offset: 2000 });
+    expect(lint(s).some((f) => f.code === 'arc-wall-opening')).toBe(false);
+    // 벽을 사후 곡선화(머지 시나리오) → 개구부가 곡선 벽 호스트가 됨
+    s.updateElement(straight, { sagitta: 600 });
+    const found = lint(s).filter((f) => f.code === 'arc-wall-opening');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.elementIds).toContain(op);
   });
 });

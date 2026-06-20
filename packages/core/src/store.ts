@@ -539,6 +539,9 @@ export class DocStore {
   }): Id {
     const host = this.elements.get(params.hostId);
     if (host?.kind !== 'wall') throw new Error('host wall not found');
+    // 곡선 벽(sagitta≠0)은 deriveArcWall이 개구부 구멍을 안 뚫음(arc-aware cut=v1.5) → 문서유효-지오무효
+    // 방지: 차단(Codex #2). 직선 벽만 개구부 호스트.
+    if (host.sagitta) throw new Error('곡선 벽에는 개구부를 만들 수 없습니다 (직선 벽만 지원)');
     const id = nanoid(12);
     const opening = ElementSchema.parse({
       id,

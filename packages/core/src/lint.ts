@@ -39,6 +39,7 @@ export type LintCode =
   | 'unjoined-endpoint' // 끝점이 거의 만나지만 정확히 안 붙음 (마이터 조인 불발)
   | 'orphan-dimension' // 치수 바인딩이 삭제된 요소를 가리킴 (추종 안 됨)
   | 'orphan-label' // 라벨 타깃이 삭제된 요소를 가리킴 (fallback 텍스트 표시)
+  | 'arc-wall-opening' // 곡선(sagitta) 벽의 개구부 — derive가 구멍 안 뚫음(미지원, import/머지로 유입 가능)
   | 'extreme-dimension'; // 극단적으로 짧은 벽/낮은 벽/작은 슬라브 등
 
 export interface LintFix {
@@ -184,6 +185,16 @@ export function lint(store: DocStore): LintFinding[] {
           severity: 'error',
           message: '고아 개구부 — 호스트 벽이 없어 표시되지 않는 유령 데이터',
           elementIds: [el.id],
+          fix: { label: '개구부 삭제', deleteIds: [el.id] },
+        });
+      } else if (host.sagitta) {
+        // 곡선 벽 개구부 — deriveArcWall이 구멍을 안 뚫음(미지원). createOpening이 차단하나
+        // import/Yjs 머지로 유입 가능 → 플래그(arc-aware cut=v1.5).
+        findings.push({
+          code: 'arc-wall-opening',
+          severity: 'warning',
+          message: '곡선 벽의 개구부 — 미지원이라 벽에 구멍이 뚫리지 않음 (직선 벽만 지원)',
+          elementIds: [el.id, host.id],
           fix: { label: '개구부 삭제', deleteIds: [el.id] },
         });
       } else if (type?.kind === 'opening') {
