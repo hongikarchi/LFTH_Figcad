@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot } from '@figcad/core';
+import { gltfPositionsToFigcad } from '@figcad/interop/coords';
 import type { ReferenceMesh } from '../engine/ReferenceLayer';
 import { getIfcApi } from './ifcClient';
 
@@ -78,11 +79,11 @@ export async function extractGltf(ref: string): Promise<ReferenceMesh[]> {
       geo.dispose();
       return;
     }
-    const positions = new Float32Array(posAttr.array as ArrayLike<number>);
-    const normAttr = geo.getAttribute('normal');
-    const normals = normAttr ? new Float32Array(normAttr.array as ArrayLike<number>) : undefined;
+    // glTF world(north=-Z) → Figcad world(north=+Z): Z 부호반전(박스 실험 측정 확정, @figcad/interop/coords).
+    // Z반전=winding 뒤집힘 → 노멀 드롭, ReferenceLayer가 computeVertexNormals(importIfcMeshes 패턴).
+    const positions = gltfPositionsToFigcad(new Float32Array(posAttr.array as ArrayLike<number>));
     geo.dispose();
-    out.push(normals ? { positions, normals } : { positions });
+    out.push({ positions });
   });
   return out;
 }

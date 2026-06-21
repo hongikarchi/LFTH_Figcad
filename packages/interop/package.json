@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./ifc": "./src/ifc.ts",
     "./rhino": "./src/rhino3dm.ts",
-    "./dxf": "./src/dxf.ts"
+    "./dxf": "./src/dxf.ts",
+    "./coords": "./src/federationCoords.ts"
   },
   "scripts": {
     "test": "vitest run"
