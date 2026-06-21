@@ -18,10 +18,16 @@
 > 작동/파손/**진짜 빠진 것**. 솔직하게. 다음 빌드(ingest-PR·조율성숙·E·커넥터)의 근거.
 
 ### ✅ 작동 (해자 실재 확인된 것)
-- _(세션 후 채움)_ 예: 2명 동시 같은 화면 / federation 오버레이 정합 / 코멘트 앵커 / AI 편집…
+- **멀티플레이어(여러 명 동시 작업) = 정상** (배포서 실확인 2026-06-21) — 해자 핵심이 aspirational 아님 입증.
+- AI 편집(배포): "3m 방 만들어" → 작동(사용자 실확인).
+- 빈 룸 로드·실시간 연결·전체 도구/타입 = 정상.
+- _(세션 더 진행하며 채움)_ federation 오버레이 정합 / 코멘트 앵커 / iPad 펜 …
 
-### ✗ 파손 (배포·실모델서 깨진 것)
-- _(세션 후 채움)_ 예: 큰 모델 로드 느림 / 특정 라우트 에러 / 모바일 UX…
+### ✗ 파손 / 갭 (실모델 조율서 발견 — 2026-06-21)
+- **(해결) 원점서 너무 멀다**: 근본원인 = 사용자 설치 .rhp가 **옛버전**(projectOrigin 안 씀·beam 353 garbage·X -2M). 현재 로직으로 푸시하면 recenter(원점 50m)+G2 인식(beam 130). → **fix = `connectors/rhino/figcad-push.cs`**(현재 로직, Rhino _ScriptEditor/MCP서 실행 = 옛 .rhp 우회). 또는 새 .rhp 재설치(bin/Release, Rhino 재시작 후 첫 명령서 로드).
+- **(설계상 정상) 라이노랑 다르게 보임 = 구조 프레임**: 인식 = 편집가능 *구조 추상*(기둥·보·벽·슬라브·계단·난간 중심선+타입단면). 라이노 풀 솔리드보다 본질적으로 성김. 곡면 외피 = 자유형 → Lane-2(파라 인식 불가). 진짜 시각일치 = **glTF 오버레이**(아래 이슈).
+- **(미해결 — 알려진 이슈) glTF 오버레이 ↔ 프레임 정합**: Rhino .glb 오버레이가 recenter 프레임과 어긋남(X는 정합, **north축 ~140m 변위** = 실지오 아닌 좌표버그). Rhino glTF export의 노드 변환 ↔ Figcad world(Z=+north) 규약 불일치. **north-flip 시도 = 무효**(내 측정이 raw glb accessor 기준 = 틀린 기준, 실제는 노드 matrixWorld 거침). **정확 fix = 추출된 *실제* world bbox 측정**(extractGltf 출력) vs 프레임 → 변위 보정. 로컬 검증 막힘(__figcad tree-shake + miniflare staleness). → **다음 focused 작업**(measure-기반).
+- **로컬 검증 함정**: dist 재빌드 후 miniflare 매번 재시작+좀비kill 필수(에셋 staleness). __figcad가 `import.meta.env.DEV||true`로도 dist서 0 = vite define 이슈(조사 필요). 측정 하니스가 이것들과 싸움.
 
 ### 🕳 진짜 갭 (실제 조율에 빠진 것 = 다음 빌드 후보)
 - _(세션 후 채움)_ 후보 렌즈:

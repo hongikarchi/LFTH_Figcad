@@ -17,3 +17,4 @@ coverage/
 .git-commit-msg.txt
 .mf-r2/
 d_test.*
+cmp_full.glb
