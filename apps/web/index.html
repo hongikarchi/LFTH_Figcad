@@ -65,7 +65,9 @@
       .navigator,
       .edit-actions,
       .quick-options,
-      .topbar {
+      .topbar,
+      .work-rail,
+      .inspector {
         background: var(--glass);
         -webkit-backdrop-filter: blur(24px) saturate(1.6);
         backdrop-filter: blur(24px) saturate(1.6);
@@ -338,6 +340,207 @@
       .hub-add-room button:disabled {
         opacity: 0.4;
         cursor: default;
+      }
+
+      /* ---- Mode tabs (정체성 순 작업 모드, P1) ---- */
+      .mode-tabs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        margin-left: 8px;
+      }
+      .mode-tab {
+        padding: 5px 12px;
+        border: none;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--ink-soft);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+      }
+      .mode-tab:hover:not(:disabled) {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .mode-tab.active {
+        background: var(--ink);
+        color: #fff;
+      }
+      .mode-tab:disabled {
+        color: rgba(0, 0, 0, 0.28);
+        cursor: default;
+      }
+      .mode-soon {
+        font-size: 9px;
+        font-weight: 700;
+        opacity: 0.7;
+      }
+
+      /* ---- Doc 메뉴 (☰, 백업·내보내기) ---- */
+      .doc-menu-wrap {
+        position: relative;
+      }
+      .doc-menu-btn {
+        width: 30px;
+        height: 30px;
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--ink);
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .doc-menu-btn:hover {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .doc-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        z-index: 41;
+        width: 220px;
+        padding: 8px;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .doc-menu-group {
+        padding: 6px 8px 2px;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--ink-soft);
+        letter-spacing: 0.08em;
+      }
+      .doc-menu-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border: none;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: left;
+      }
+      .doc-menu-item:hover:not(:disabled) {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .doc-menu-item:disabled {
+        color: rgba(0, 0, 0, 0.3);
+        cursor: default;
+      }
+      .nav-meta.warn {
+        color: #ff9500;
+        font-weight: 700;
+      }
+
+      /* ---- WorkRail(좌) + Inspector(우): mode-swap 코어 컨테이너 (P1) ---- */
+      .work-rail {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 58px);
+        left: calc(env(safe-area-inset-left, 0px) + 14px);
+        width: 188px;
+        max-height: calc(100vh - 150px);
+        overflow-y: auto;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .inspector {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 58px);
+        right: calc(env(safe-area-inset-right, 0px) + 14px);
+        width: 232px;
+        max-height: calc(100vh - 150px);
+        overflow-y: auto;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .rail-empty {
+        padding: 28px 8px;
+        text-align: center;
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+      /* 재배치된 패널(toolbox/infobox/edit-actions/navigator)은 컨테이너가 chrome 제공 → 자체 chrome 제거 */
+      .work-rail .toolbox,
+      .work-rail .navigator.embedded,
+      .inspector .infobox,
+      .inspector .edit-actions,
+      .inspector .navigator.embedded {
+        position: static;
+        transform: none;
+        top: auto;
+        left: auto;
+        right: auto;
+        width: auto;
+        max-width: none;
+        max-height: none;
+        overflow: visible;
+        background: transparent;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+      }
+      .work-rail .toolbox {
+        padding: 0;
+        gap: 10px;
+      }
+      .work-rail .navigator.embedded,
+      .inspector .navigator.embedded {
+        padding: 0;
+        gap: 2px;
+      }
+      /* Inspector 세로 속성 리스트: InfoBox 가로 스트립 → 세로 스택 */
+      .inspector .infobox {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 6px 2px;
+        white-space: normal;
+      }
+      .inspector .infobox + .infobox,
+      .inspector .edit-actions,
+      .inspector .navigator.embedded {
+        border-top: 1px solid var(--hairline);
+        padding-top: 8px;
+        margin-top: 2px;
+      }
+      .inspector .infobox-field {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .inspector .infobox-title {
+        font-size: 12px;
+        color: var(--ink-soft);
+        letter-spacing: 0.04em;
+      }
+      .inspector .edit-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px 2px 2px;
       }
 
       /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */

@@ -3,6 +3,8 @@ import type { FederationReconciler } from '../engine/FederationReconciler';
 import type { CollabHandle } from './App';
 import { PresenceStrip } from './PresenceStrip';
 import { HubStrip } from './HubStrip';
+import { ModeTabs } from './ModeTabs';
+import { DocMenu } from './DocMenu';
 
 /**
  * Moat-frame (UI/UX 재구성 Part4) — 절대 unmount 안 하는 항상-on 상단 프레임.
@@ -22,10 +24,12 @@ export function TopBar({
   return (
     <div className="topbar">
       <div className="topbar-left">
+        <DocMenu store={store} />
         <span className="topbar-brand">Figcad</span>
         <span className="topbar-room" title="이 프로젝트 룸 (?p=) — 공유 = 이 URL">
           {room}
         </span>
+        <ModeTabs />
       </div>
       <div className="topbar-center">
         <HubStrip store={store} federation={federation} />

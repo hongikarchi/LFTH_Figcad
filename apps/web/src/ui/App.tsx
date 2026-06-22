@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import type { DocStore } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
 import { TopBar } from './TopBar';
-import { Toolbox } from './Toolbox';
-import { InfoBox } from './InfoBox';
-import { Navigator } from './Navigator';
-import { EditActions } from './EditActions';
+import { WorkRail } from './WorkRail';
+import { Inspector } from './Inspector';
 import { QuickOptions, type ViewActions } from './QuickOptions';
 import { AiPanel } from './AiPanel';
 import { LintPanel } from './LintPanel';
@@ -44,10 +42,8 @@ export function App({
   return (
     <>
       <TopBar store={store} federation={federation} collab={collab} />
-      <Toolbox />
-      <InfoBox store={store} />
-      <EditActions store={store} />
-      <Navigator store={store} />
+      <WorkRail store={store} />
+      <Inspector store={store} />
       <QuickOptions store={store} />
       <AiPanel store={store} />
       <LintPanel store={store} actions={actions} />
