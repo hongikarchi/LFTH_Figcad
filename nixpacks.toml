@@ -1,0 +1,18 @@
+# Railway nixpacks 빌드 — Figcad Node 백엔드(apps/server/node-server). 레포 루트서 빌드(pnpm 워크스페이스).
+# Railway 서비스: Root Directory = 레포 루트(기본). 영속 볼륨 /data 마운트 + env DATA_DIR=/data.
+# 빌드: web dist(VITE_BACKEND_URL 비움=same-origin 단일서비스) → node-server self-contained 번들.
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["corepack enable", "corepack pnpm install --frozen-lockfile"]
+
+[phases.build]
+cmds = [
+  "corepack pnpm -F @figcad/web build",
+  "corepack pnpm -F @figcad/server build:node",
+]
+
+[start]
+# node-server는 DIST를 번들 위치 기준 ../../web/dist로 해결(WEB_DIST 불필요). DATA_DIR=/data(볼륨) 권장.
+cmd = "node apps/server/node-dist/server.mjs"
