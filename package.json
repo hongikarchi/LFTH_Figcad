@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "packageManager": "pnpm@11.6.0",
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev": "pnpm --filter @figcad/web dev",
     "build": "pnpm --filter @figcad/web build",

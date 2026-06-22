@@ -1,0 +1,15 @@
+node_modules
+.git
+**/node_modules
+**/dist
+**/node-dist
+apps/server/.data
+apps/server/.data-*
+apps/server/.dev-docs
+*.glb
+*.3dm
+*.ifc
+.claude
+connectors/rhino/bin
+connectors/rhino/obj
+connectors

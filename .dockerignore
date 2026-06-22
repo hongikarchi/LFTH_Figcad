@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+.git
+**/dist
+**/node-dist
+apps/server/.data
+apps/server/.data-*
+apps/server/.dev-docs
+connectors
+*.glb
+*.3dm
+*.ifc
+.claude
+*.log
