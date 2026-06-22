@@ -64,7 +64,8 @@
       .infobox,
       .navigator,
       .edit-actions,
-      .quick-options {
+      .quick-options,
+      .topbar {
         background: var(--glass);
         -webkit-backdrop-filter: blur(24px) saturate(1.6);
         backdrop-filter: blur(24px) saturate(1.6);
@@ -72,6 +73,112 @@
         border-radius: var(--radius);
         box-shadow: var(--shadow);
         z-index: 20;
+      }
+
+      /* ---- Moat-frame TopBar: 항상-on 상단 (실시간 presence + 멀티모델 hub) ---- */
+      .topbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: calc(env(safe-area-inset-top, 0px) + 46px);
+        padding: env(safe-area-inset-top, 0px) 14px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-radius: 0;
+        border-width: 0 0 1px;
+        z-index: 30;
+      }
+      .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .topbar-brand {
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+      .topbar-room {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ink-soft);
+        padding: 2px 7px;
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 6px;
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .topbar-center {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        min-width: 0;
+      }
+      .topbar-right {
+        display: flex;
+        align-items: center;
+      }
+
+      /* ---- Presence strip: 아바타 파일 + 연결 + 공유 (P0-2 헤드라인 해자) ---- */
+      .presence-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .presence-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .avatar-pile {
+        display: flex;
+        align-items: center;
+      }
+      .avatar-pile .avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        margin-left: -6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 0;
+        cursor: default;
+      }
+      .avatar-pile .avatar:first-child {
+        margin-left: 0;
+      }
+      .avatar-pile .avatar.self {
+        cursor: pointer;
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+      .avatar-pile .avatar.more {
+        background: rgba(0, 0, 0, 0.12);
+        color: var(--ink-soft);
+      }
+      .presence-share {
+        margin-left: 6px;
+        padding: 5px 12px;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .presence-share:hover {
+        filter: brightness(1.05);
       }
 
       /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */
@@ -137,7 +244,7 @@
       /* ---- Info Box: 상단 가로 (활성 도구/선택 요소 컨텍스트) ---- */
       .infobox {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 14px);
+        top: calc(env(safe-area-inset-top, 0px) + 58px); /* TopBar(46) 아래 */
         left: 50%;
         transform: translateX(-50%);
         display: flex;
@@ -209,7 +316,7 @@
       /* ---- 편집 액션 팔레트 (펫팔레트 경량판) ---- */
       .edit-actions {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 64px);
+        top: calc(env(safe-area-inset-top, 0px) + 104px); /* InfoBox(58+~38) 아래 */
         left: 50%;
         transform: translateX(-50%);
         display: flex;

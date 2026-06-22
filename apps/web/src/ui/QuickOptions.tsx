@@ -12,19 +12,12 @@ export interface ViewActions {
 /**
  * ArchiCAD Quick Options Bar의 웹 경량판 — 하단 도킹.
  * 활성 탭(뷰)의 현재 설정 표시 + 빠른 변경 (줌, 활성 스토리).
+ * (연결 상태·동시작업 인원은 P0서 상단 PresenceStrip으로 이전.)
  */
-const CONN_LABEL = {
-  connected: '실시간 연결됨',
-  connecting: '연결 중…',
-  offline: '오프라인',
-} as const;
-
 export function QuickOptions({ store }: { store: DocStore }) {
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
-  const connection = useUiStore((s) => s.connection);
-  const peerCount = useUiStore((s) => s.peerCount);
   const aiOpen = useUiStore((s) => s.aiOpen);
   const lintOpen = useUiStore((s) => s.lintOpen);
   const versionOpen = useUiStore((s) => s.versionOpen);
@@ -37,12 +30,6 @@ export function QuickOptions({ store }: { store: DocStore }) {
 
   return (
     <div className="quick-options">
-      <span className={`qo-dot ${connection}`} title={CONN_LABEL[connection]} />
-      <span className="qo-label">
-        {CONN_LABEL[connection]}
-        {connection === 'connected' && peerCount > 0 ? ` · ${peerCount}명 동시 작업` : ''}
-      </span>
-      <span className="qo-sep" />
       <span className="qo-view">{viewName}</span>
       <span className="qo-sep" />
       <label className="qo-story" title="활성 스토리 변경 (뷰 모드 유지 — 3D에서도 전환)">

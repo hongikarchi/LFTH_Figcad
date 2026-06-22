@@ -36,6 +36,15 @@ export type TypeKind =
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
+/** 정체성 순 작업 모드 (UI/UX 재구성 Part4) — P0=상태만 추가, mode 뼈대는 P1 Slice3. */
+export type WorkspaceMode = 'review' | 'model' | 'hub' | 'drawing';
+/** presence 아바타 파일용 협업자 정체성 (커서 위치 아님 — join/leave/rename/color만 변경) */
+export interface PeerIdentity {
+  clientId: number;
+  name: string;
+  color: string;
+  self: boolean;
+}
 
 /**
  * UI 상태 전용 (불변 규칙 3: 문서 상태는 DocStore, 여기는 도구/선택/뷰 모드만).
@@ -46,11 +55,17 @@ interface UiState {
   /** 선택 요소 id 목록 (다중). 단일 선택 = 길이 1 */
   selection: Id[];
   viewMode: ViewModeUi;
+  /** 정체성 순 작업 모드 (P0=미사용 prep, P1 mode 뼈대서 소비) */
+  activeMode: WorkspaceMode;
   /** 도구별 활성 타입 (벽/문/창/슬라브) */
   activeTypes: Record<TypeKind, Id | null>;
   activeLevelId: Id | null;
   connection: ConnectionState;
   peerCount: number;
+  /** 내 표시 이름 (presence 아바타 + 커서 라벨) */
+  userName: string;
+  /** 협업자 정체성 목록 (self + 원격) — 아바타 파일. presence가 signature-diff로만 갱신. */
+  peers: PeerIdentity[];
   /** 선택 후 무장된 편집 액션 (펫팔레트 경량판) */
   editAction: EditAction | null;
   arrayCount: number;
@@ -79,16 +94,20 @@ interface UiState {
   setDrawingOpen: (open: boolean) => void;
   setActiveViewId: (id: Id | null) => void;
   setViewMode: (m: ViewModeUi) => void;
+  setMode: (m: WorkspaceMode) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
   setActiveLevel: (id: Id) => void;
   setConnection: (c: ConnectionState) => void;
   setPeerCount: (n: number) => void;
+  setUserName: (name: string) => void;
+  setPeers: (peers: PeerIdentity[]) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   activeTool: 'wall',
   selection: [],
   viewMode: '3d',
+  activeMode: 'model',
   activeTypes: {
     wall: null,
     door: null,
@@ -104,6 +123,8 @@ export const useUiStore = create<UiState>((set) => ({
   activeLevelId: null,
   connection: 'connecting',
   peerCount: 0,
+  userName: localStorage.getItem('figcad.userName') ?? '게스트',
+  peers: [],
   editAction: null,
   arrayCount: 3,
   rotateAngle: 90,
@@ -136,6 +157,9 @@ export const useUiStore = create<UiState>((set) => ({
   setDrawingOpen: (drawingOpen) => set({ drawingOpen }),
   setActiveViewId: (activeViewId) => set({ activeViewId }),
   setViewMode: (viewMode) => set({ viewMode }),
+  setMode: (activeMode) => set({ activeMode }),
+  setUserName: (userName) => set({ userName }),
+  setPeers: (peers) => set({ peers }),
   setActiveType: (kind, id) =>
     set((s) => ({ activeTypes: { ...s.activeTypes, [kind]: id } })),
   setActiveLevel: (activeLevelId) => set({ activeLevelId }),

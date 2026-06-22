@@ -179,10 +179,20 @@ tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---
 const { provider, projectId } = setupCollab(ydoc);
-const presence = new Presence(provider.awareness, engine, sceneManager, hud, (n) =>
-  useUiStore.getState().setPeerCount(n),
+const presence = new Presence(
+  provider.awareness,
+  engine,
+  sceneManager,
+  hud,
+  (n) => useUiStore.getState().setPeerCount(n),
+  (peers) => useUiStore.getState().setPeers(peers), // 아바타 파일 (signature-diff됨, 커서 이동 무관)
 );
 ctx.collab = presence;
+// presence 초기 정체성 1회 seed (혼자일 때도 내 아바타 표시 — 첫 awareness change 전까지)
+useUiStore.getState().setUserName(presence.userName);
+useUiStore.getState().setPeers([
+  { clientId: provider.awareness.clientID, name: presence.userName, color: presence.color, self: true },
+]);
 
 provider.on('status', (e: { status: string }) => {
   const map = { connected: 'connected', connecting: 'connecting', disconnected: 'offline' } as const;
@@ -322,8 +332,15 @@ const viewActions = {
     engine.requestRender();
   },
 };
+// 협업 핸들 — presence 명령형 객체를 React 패널에 노출 (rename). peers/connection은 uiStore.
+const collab = {
+  setUserName: (name: string) => {
+    presence.setUserName(name);
+    useUiStore.getState().setUserName(name);
+  },
+};
 createRoot(document.getElementById('ui-root')!).render(
-  createElement(App, { store, actions: viewActions, federation }),
+  createElement(App, { store, actions: viewActions, federation, collab }),
 );
 
 engine.requestRender();

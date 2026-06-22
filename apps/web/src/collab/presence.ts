@@ -4,6 +4,7 @@ import type { Id, Pt } from '@figcad/core';
 import type { Engine } from '../engine/Engine';
 import type { SceneManager } from '../engine/SceneManager';
 import type { HudLayer } from '../hud/HudLayer';
+import type { PeerIdentity } from '../state/uiStore';
 
 const PALETTE = ['#0a84ff', '#ff9500', '#34c759', '#ff375f', '#af52de', '#5ac8fa', '#ffd60a'];
 const CURSOR_THROTTLE_MS = 33; // ~30Hz
@@ -51,6 +52,10 @@ export class Presence implements CollabBridge {
   private peers = new Map<number, RemotePeer>();
   private cursorPending: [number, number, number] | null = null;
   private cursorLastSent = 0;
+  private userNameValue = getUserName();
+  // 아바타 파일 thrash 방지(불변③): renderRemote는 커서 이동마다 ~30Hz 발화 →
+  // 정체성(join/leave/rename/color) signature가 바뀔 때만 onPeersIdentity emit.
+  private lastIdentitySig = '';
 
   constructor(
     private awareness: Awareness,
@@ -58,11 +63,12 @@ export class Presence implements CollabBridge {
     private scene: SceneManager,
     private hud: HudLayer,
     private onPeersChange?: (count: number) => void,
+    private onPeersIdentity?: (peers: PeerIdentity[]) => void,
   ) {
     this.color = PALETTE[awareness.clientID % PALETTE.length]!;
     awareness.setLocalState({
       user: {
-        name: getUserName(),
+        name: this.userNameValue,
         color: this.color,
         device: navigator.maxTouchPoints > 1 ? 'touch' : 'desktop',
       },
@@ -72,6 +78,21 @@ export class Presence implements CollabBridge {
     } satisfies PresenceState);
 
     awareness.on('change', () => this.renderRemote());
+  }
+
+  get userName(): string {
+    return this.userNameValue;
+  }
+
+  /** 이름 변경 — awareness user.name + localStorage 갱신, 정체성 재emit */
+  setUserName(name: string): void {
+    const n = name.trim();
+    if (!n) return;
+    this.userNameValue = n;
+    localStorage.setItem('figcad.userName', n);
+    const cur = (this.awareness.getLocalState()?.user ?? {}) as PresenceState['user'];
+    this.awareness.setLocalStateField('user', { ...cur, name: n });
+    this.renderRemote(); // 정체성 signature 변경 → onPeersIdentity emit
   }
 
   // --- 로컬 상태 발행 ---
@@ -108,6 +129,10 @@ export class Presence implements CollabBridge {
     const highlights = new Map<Id, string>();
     const seen = new Set<number>();
     let peerCount = 0;
+    // self 먼저(아바타 파일은 나 + 협업자) — 커서 위치는 제외, 정체성만.
+    const identities: PeerIdentity[] = [
+      { clientId: this.awareness.clientID, name: this.userNameValue, color: this.color, self: true },
+    ];
 
     for (const [clientId, raw] of states) {
       if (clientId === this.awareness.clientID) continue;
@@ -115,6 +140,7 @@ export class Presence implements CollabBridge {
       if (!state.user) continue;
       peerCount++;
       seen.add(clientId);
+      identities.push({ clientId, name: state.user.name, color: state.user.color, self: false });
 
       // 원격 선택/편집 → 사용자 색 하이라이트
       for (const id of state.selection ?? []) highlights.set(id, state.user.color);
@@ -160,6 +186,17 @@ export class Presence implements CollabBridge {
 
     this.scene.setRemoteHighlights(highlights);
     this.onPeersChange?.(peerCount);
+
+    // 정체성 signature diff — 변경 시에만 React로(커서 이동은 sig 불변 → emit 안 함)
+    const sig = identities
+      .map((p) => `${p.clientId}:${p.name}:${p.color}`)
+      .sort()
+      .join('|');
+    if (sig !== this.lastIdentitySig) {
+      this.lastIdentitySig = sig;
+      this.onPeersIdentity?.(identities);
+    }
+
     this.engine.requestRender();
   }
 }
