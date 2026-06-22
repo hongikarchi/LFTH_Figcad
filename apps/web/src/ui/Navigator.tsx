@@ -8,6 +8,7 @@ import type {
 } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
 import { useUiStore } from '../state/uiStore';
+import { backendOrigin } from '../config/backend';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
 import { Icon } from './icons/Icon';
@@ -287,8 +288,7 @@ export function Navigator({
 
   // glTF/IFC 업로드(M13-F) — 파일을 서버 R2(?op=fed-upload)에 올려 *협업자 전원이 페치 가능한*
   // blob URL로. ref = 그 전체 URL (extractGltf/extractIfc가 fetch). object-URL은 올린 사람만 봄.
-  const fedHost = () => (import.meta.env.DEV ? `${location.hostname}:8787` : location.host);
-  const fedBase = () => `${location.protocol === 'https:' ? 'https' : 'http'}://${fedHost()}`;
+  const fedBase = () => backendOrigin();
   const uploadFederationFile = () => {
     const input = document.createElement('input');
     input.type = 'file';

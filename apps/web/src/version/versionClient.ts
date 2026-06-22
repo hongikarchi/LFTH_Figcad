@@ -1,4 +1,5 @@
 import type { DocSnapshot } from '@figcad/core';
+import { backendOrigin } from '../config/backend';
 
 /**
  * M6 버전 관리 클라이언트 — Doc DO 룸 HTTP (?op=commit/log/show).
@@ -23,9 +24,8 @@ function roomUrl(op: string, extra?: Record<string, string>): string {
   const params = new URLSearchParams(location.search);
   const projectId = params.get('p') ?? '';
   const key = params.get('key');
-  const host = import.meta.env.DEV ? `${location.protocol}//${location.hostname}:8787` : '';
   const q = new URLSearchParams({ op, ...(key ? { key } : {}), ...(extra ?? {}) });
-  return `${host}/parties/doc/${encodeURIComponent(projectId)}?${q.toString()}`;
+  return `${backendOrigin()}/parties/doc/${encodeURIComponent(projectId)}?${q.toString()}`;
 }
 
 async function checked<T>(res: Response): Promise<T> {

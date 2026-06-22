@@ -2,6 +2,7 @@ import type * as Y from 'yjs';
 import YProvider from 'y-partyserver/provider';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { nanoid } from 'nanoid';
+import { backendHost, backendWsProtocol } from '../config/backend';
 
 export interface CollabSession {
   provider: YProvider;
@@ -25,12 +26,10 @@ export function setupCollab(ydoc: Y.Doc): CollabSession {
 
   new IndexeddbPersistence(`figcad-${projectId}`, ydoc);
 
-  // vite dev(5173)에서는 같은 머신의 데브 동기화 서버(8787)로 — hostname 기준이라
-  // 데스크톱(localhost)과 LAN의 iPad(PC IP) 둘 다 동작. 배포에서는 같은 호스트.
-  const host = import.meta.env.DEV ? `${location.hostname}:8787` : location.host;
-  const provider = new YProvider(host, projectId, ydoc, {
+  // 백엔드 = config/backend (VITE_BACKEND_URL > DEV 8787 > 동일 origin). LAN iPad = hostname 기반.
+  const provider = new YProvider(backendHost(), projectId, ydoc, {
     party: 'doc',
-    protocol: location.protocol === 'https:' ? 'wss' : 'ws',
+    protocol: backendWsProtocol(),
     ...(key ? { params: { key } } : {}),
   });
 

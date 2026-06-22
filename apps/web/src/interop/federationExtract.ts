@@ -3,6 +3,7 @@ import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot } from '@figc
 import { gltfPositionsToFigcad } from '@figcad/interop/coords';
 import type { ReferenceMesh } from '../engine/ReferenceLayer';
 import { getIfcApi } from './ifcClient';
+import { backendOrigin } from '../config/backend';
 
 /**
  * Federation 소스 추출기 — `ref`(외부 소스 식별자)에서 읽기전용 메시를 만든다.
@@ -16,11 +17,9 @@ import { getIfcApi } from './ifcClient';
  */
 export type Extractor = (ref: string) => Promise<ReferenceMesh[]>;
 
-/** 같은 서버의 다른 룸으로 가는 ?op=pull HTTP base (collab/provider.ts 호스트 규칙과 동일). */
+/** ?op=pull HTTP base — config/backend 단일 소스. */
 function pullBase(): string {
-  const host = import.meta.env.DEV ? `${location.hostname}:8787` : location.host;
-  const proto = location.protocol === 'https:' ? 'https' : 'http';
-  return `${proto}://${host}`;
+  return backendOrigin();
 }
 
 /** A4 — 다른 Figcad 룸을 읽기전용 오버레이로. 라이브 스냅샷 → derive → 메시. */

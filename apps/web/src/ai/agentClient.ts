@@ -1,4 +1,5 @@
 import type { DocSnapshot, OpLogEntry } from '@figcad/core';
+import { backendOrigin } from '../config/backend';
 
 /**
  * /api/agent SSE 클라이언트 — 서버가 드라이런으로 만든 계획(opLog)을 받아온다.
@@ -28,13 +29,8 @@ export interface AgentResult {
 }
 
 function agentUrl(): string {
-  // vite dev(5173) → 같은 머신의 데브 서버(8787, miniflare 경로만 /api/agent 지원).
-  // 배포 = 같은 호스트. provider.ts의 hostname 규칙과 동일 (LAN iPad 포함).
-  const base = import.meta.env.DEV
-    ? `${location.protocol}//${location.hostname}:8787`
-    : '';
   const key = new URL(location.href).searchParams.get('key');
-  return `${base}/api/agent${key ? `?key=${encodeURIComponent(key)}` : ''}`;
+  return `${backendOrigin()}/api/agent${key ? `?key=${encodeURIComponent(key)}` : ''}`;
 }
 
 /** 손그림 스케치 첨부 — PNG base64 + 문서공간 mm 좌표 프레임 */
