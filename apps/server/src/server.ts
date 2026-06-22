@@ -7,6 +7,7 @@ import { handleAgentRequest } from './agent';
 import { createCommit, handleVersionRequest, isSafeRoom } from './version';
 import { handleConnectorRequest } from './apply';
 import { handleFederationBlob } from './federation';
+import { R2BlobStore } from './blobStore';
 
 interface Env {
   Doc: DurableObjectNamespace;
@@ -104,14 +105,15 @@ export class Doc extends YServer<Env> {
       );
     }
     // M13-F: federation 페이로드 업로드/서빙 (R2 COMMITS 버킷). 커밋 직렬화 불필요(문서 무변경).
+    const store = this.env.COMMITS ? new R2BlobStore(this.env.COMMITS) : undefined;
     if (op === 'fed-upload' || op === 'fed-blob') {
-      return handleFederationBlob(request, this.name, this.env.COMMITS, this.env.ROOM_KEY);
+      return handleFederationBlob(request, this.name, store, this.env.ROOM_KEY);
     }
     return this.serializeCommit(() =>
       handleVersionRequest(
         request,
         this.name,
-        this.env.COMMITS,
+        store,
         () => DocStore.snapshotOf(this.document),
         this.env.ROOM_KEY,
       ),
@@ -129,11 +131,11 @@ export class Doc extends YServer<Env> {
     let remaining = 0;
     for (const _ of this.getConnections()) remaining++;
     if (remaining > 0 || !this.env.COMMITS || !isSafeRoom(this.name)) return;
-    const bucket = this.env.COMMITS;
+    const store = new R2BlobStore(this.env.COMMITS);
     try {
       await this.serializeCommit(() =>
         createCommit(
-          bucket,
+          store,
           this.name,
           DocStore.snapshotOf(this.document),
           '자동',

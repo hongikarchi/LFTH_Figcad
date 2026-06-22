@@ -19,6 +19,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260611.1",
+    "@types/node": "^26.0.0",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.28.0",
     "lib0": "^0.2.117",
     "miniflare": "^4.20260609.0",

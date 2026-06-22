@@ -1,4 +1,5 @@
 import { CORS, isSafeRoom, json } from './version';
+import type { BlobStore } from './blobStore';
 
 /**
  * M13-F — Federation 소스 페이로드 저장/서빙 (R2 COMMITS 버킷, `federation/` 프리픽스).
@@ -29,12 +30,12 @@ async function sha256HexBytes(buf: ArrayBuffer): Promise<string> {
 export async function handleFederationBlob(
   request: Request,
   room: string,
-  bucket: R2Bucket | undefined,
+  store: BlobStore | undefined,
   roomKey: string | undefined,
 ): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (!isSafeRoom(room)) return json(400, { error: '허용되지 않는 룸 이름 (A-Za-z0-9_- 1~64자)' });
-  if (!bucket) return json(503, { error: 'R2(COMMITS) 미구성 — federation 업로드 불가' });
+  if (!store) return json(503, { error: 'blob 저장소 미구성 — federation 업로드 불가' });
   const url = new URL(request.url);
   const op = url.searchParams.get('op');
   const prefix = `federation/${room}/`;
@@ -50,7 +51,7 @@ export async function handleFederationBlob(
     const ext = (url.searchParams.get('ext') ?? 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'bin';
     const hash = await sha256HexBytes(buf);
     const key = `${prefix}${hash}.${ext}`;
-    await bucket.put(key, buf, { httpMetadata: { contentType: CONTENT_TYPE[ext] ?? 'application/octet-stream' } });
+    await store.put(key, buf, CONTENT_TYPE[ext] ?? 'application/octet-stream');
     return json(200, { key, url: `?op=fed-blob&key=${encodeURIComponent(key)}` });
   }
 
@@ -58,7 +59,7 @@ export async function handleFederationBlob(
     const key = url.searchParams.get('key') ?? '';
     // 보안: 이 룸의 federation 프리픽스만 — 커밋 blob 등 임의 R2 키 읽기 차단.
     if (!key.startsWith(prefix) || key.includes('..')) return json(400, { error: '허용되지 않는 key' });
-    const obj = await bucket.get(key);
+    const obj = await store.get(key);
     if (!obj) return json(404, { error: 'not found' });
     const ext = key.split('.').pop() ?? 'bin';
     const bytes = await obj.arrayBuffer();

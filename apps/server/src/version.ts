@@ -1,4 +1,5 @@
 import type { DocSnapshot } from '@figcad/core';
+import type { BlobStore } from './blobStore';
 
 /**
  * M6 git식 버전 관리 — 커밋 저장/조회 (R2).
@@ -75,8 +76,8 @@ export async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function readLog(bucket: R2Bucket, room: string): Promise<CommitLog> {
-  const obj = await bucket.get(logKey(room));
+async function readLog(store: BlobStore, room: string): Promise<CommitLog> {
+  const obj = await store.get(logKey(room));
   if (!obj) return { head: null, commits: [] };
   try {
     return (await obj.json()) as CommitLog;
@@ -90,7 +91,7 @@ async function readLog(bucket: R2Bucket, room: string): Promise<CommitLog> {
 
 /** 커밋 생성 — 내용 무변경(head 해시 동일)이면 스킵 */
 export async function createCommit(
-  bucket: R2Bucket,
+  store: BlobStore,
   room: string,
   snap: DocSnapshot,
   author: string,
@@ -98,13 +99,11 @@ export async function createCommit(
 ): Promise<{ skipped: boolean; meta?: CommitMeta; hash: string }> {
   const canonical = canonicalSnapshotJson(snap);
   const hash = await sha256Hex(canonical);
-  const log = await readLog(bucket, room);
+  const log = await readLog(store, room);
   if (log.head === hash) return { skipped: true, hash };
 
   // blob은 콘텐츠 주소 — 복원→재커밋으로 같은 해시가 재등장해도 같은 내용 덮어쓰기라 무해
-  await bucket.put(commitKey(room, hash), canonical, {
-    httpMetadata: { contentType: 'application/json' },
-  });
+  await store.put(commitKey(room, hash), canonical, 'application/json');
   const meta: CommitMeta = {
     hash,
     parent: log.head,
@@ -116,9 +115,7 @@ export async function createCommit(
   log.commits.push(meta);
   if (log.commits.length > MAX_LOG_COMMITS) log.commits = log.commits.slice(-MAX_LOG_COMMITS);
   log.head = hash;
-  await bucket.put(logKey(room), JSON.stringify(log), {
-    httpMetadata: { contentType: 'application/json' },
-  });
+  await store.put(logKey(room), JSON.stringify(log), 'application/json');
   return { skipped: false, meta, hash };
 }
 
@@ -145,14 +142,14 @@ export const json = (status: number, body: unknown): Response =>
 export async function handleVersionRequest(
   request: Request,
   room: string,
-  bucket: R2Bucket | undefined,
+  store: BlobStore | undefined,
   snapshot: () => DocSnapshot,
   roomKey: string | undefined,
 ): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(request.url);
   if (roomKey && url.searchParams.get('key') !== roomKey) return json(401, { error: 'invalid key' });
-  if (!bucket) return json(503, { error: '버전 관리 미설정 — R2 바인딩(COMMITS) 없음' });
+  if (!store) return json(503, { error: '버전 관리 미설정 — blob 저장소 없음' });
   if (!isSafeRoom(room)) return json(400, { error: '허용되지 않는 룸 이름 (A-Za-z0-9_- 1~64자)' });
 
   const op = url.searchParams.get('op');
@@ -164,7 +161,7 @@ export async function handleVersionRequest(
       body = {};
     }
     const result = await createCommit(
-      bucket,
+      store,
       room,
       snapshot(),
       String(body.author ?? ''),
@@ -173,14 +170,14 @@ export async function handleVersionRequest(
     return json(200, result);
   }
   if (op === 'log' && request.method === 'GET') {
-    return json(200, await readLog(bucket, room));
+    return json(200, await readLog(store, room));
   }
   if (op === 'show' && request.method === 'GET') {
     const hash = url.searchParams.get('hash') ?? '';
     if (!/^[0-9a-f]{64}$/.test(hash)) return json(400, { error: 'bad hash' });
-    const obj = await bucket.get(commitKey(room, hash));
+    const obj = await store.get(commitKey(room, hash));
     if (!obj) return json(404, { error: 'no such commit' });
-    return new Response(obj.body, {
+    return new Response(await obj.arrayBuffer(), {
       headers: { 'content-type': 'application/json; charset=utf-8', ...CORS },
     });
   }
