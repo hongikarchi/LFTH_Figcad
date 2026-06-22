@@ -141,6 +141,26 @@ try {
   if (cwEnd[0] === 0 && cwEnd[1] === 0) throw new Error(`커튼월 끝점 이동 안 됨: a=${JSON.stringify(cwEnd)}`);
   console.log(`PASS  커튼월 끝점 핸들 드래그 → a=${JSON.stringify(cwEnd)} (item 7)`);
 
+  // 편집 액션 move — EditActionController 위임 검증: 기준점→목표 두 down, 이동 후 action 해제
+  const mv = await page.evaluate(() => {
+    const { store, seed, ui, tools } = window.__figcad;
+    ui.getState().setTool('select');
+    const id = store.createSlab({
+      levelId: seed.levelId, typeId: seed.slabTypeId,
+      boundary: [[0, 0], [2000, 0], [2000, 2000], [0, 2000]],
+    });
+    ui.getState().setSelection([id]);
+    ui.getState().setEditAction('move');
+    const t = tools.active;
+    const info = (doc) => ({ doc, clientX: 100, clientY: 100, mmPerPixel: 5 });
+    t.down(info([0, 0])); // 기준점 수집
+    t.down(info([1000, 1000])); // 목표 → moveElements + 종료
+    return { v0: store.getElement(id).boundary[0], action: ui.getState().editAction };
+  });
+  if (!(mv.v0[0] === 1000 && mv.v0[1] === 1000)) throw new Error(`편집액션 move 실패: v0=${JSON.stringify(mv.v0)}`);
+  if (mv.action !== null) throw new Error(`move 후 editAction 미해제: ${mv.action}`);
+  console.log(`PASS  편집액션 move → boundary[0]=${JSON.stringify(mv.v0)}, action 해제 (EditActionController)`);
+
   if (errors.length) throw new Error(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
   console.log('\nUX 스모크 통과');
 } catch (err) {
