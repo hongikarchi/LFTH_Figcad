@@ -22,6 +22,9 @@ import {
   Upload,
   X,
   History,
+  Undo2,
+  Redo2,
+  Maximize,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -57,6 +60,9 @@ const LUCIDE: Record<string, LucideIcon> = {
   close: X,
   text: Type,
   box: SquareDashed,
+  undo: Undo2,
+  redo: Redo2,
+  fit: Maximize,
 };
 
 // 건축 요소 = 커스텀 라인 글리프 (24×24, fill none, stroke=currentColor)

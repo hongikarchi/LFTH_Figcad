@@ -9,7 +9,7 @@ import {
   type LintSeverity,
 } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
-import type { ViewActions } from './QuickOptions';
+import type { ViewActions } from './App';
 
 /**
  * M5 검사(lint) 패널 — 좌하단 도킹.

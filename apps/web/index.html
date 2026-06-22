@@ -685,6 +685,67 @@
         cursor: default;
       }
 
+      /* ---- Viewport 컨트롤 클러스터 (P1 Slice7) — 캔버스 우하단, QuickOptions 대체 ---- */
+      .viewport-cluster {
+        position: fixed;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+        right: calc(env(safe-area-inset-right, 0px) + 16px);
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 5px 7px;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: 11px;
+        box-shadow: var(--shadow);
+        z-index: 25;
+      }
+      .viewport-cluster button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 30px;
+        height: 30px;
+        padding: 0 7px;
+        border: none;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .viewport-cluster button:hover:not(:disabled) {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .viewport-cluster button:disabled {
+        color: rgba(0, 0, 0, 0.25);
+        cursor: default;
+      }
+      .viewport-cluster button.active {
+        background: var(--ink);
+        color: #fff;
+      }
+      .viewport-cluster .vc-sep {
+        width: 1px;
+        height: 18px;
+        background: var(--hairline);
+        margin: 0 3px;
+      }
+      .viewport-cluster .vc-story {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink-soft);
+        padding: 0 4px;
+        min-width: 38px;
+        text-align: center;
+      }
+      .viewport-cluster .vc-view {
+        min-width: 40px;
+      }
+
       /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */
       .toolbox {
         position: fixed;

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { resolveCommentPoint, type Comment, type DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
-import type { ViewActions } from './QuickOptions';
+import type { ViewActions } from './App';
 
 /**
  * 협업 코멘트 패널 (M9-B) — 우측 도킹. 소장님↔실무자 리뷰 루프.

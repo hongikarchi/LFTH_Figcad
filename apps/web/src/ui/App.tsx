@@ -4,13 +4,23 @@ import type { FederationReconciler } from '../engine/FederationReconciler';
 import { TopBar } from './TopBar';
 import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
-import { QuickOptions, type ViewActions } from './QuickOptions';
+import { ViewportCluster } from './ViewportCluster';
 import { AiPanel } from './AiPanel';
 import { DrawingPanel } from './DrawingPanel';
 
 /** 협업 명령형 핸들 (presence) — React 패널에 노출되는 부분만. peers/connection은 uiStore. */
 export interface CollabHandle {
   setUserName: (name: string) => void;
+}
+
+/** 뷰/카메라 명령형 액션 — 캔버스 코너 ViewportCluster + lint/comment 점프가 사용 (P1 Slice7). */
+export interface ViewActions {
+  /** 카메라 타깃 이동 (월드 m) — lint/comment 점프용 */
+  focusWorld: (x: number, y: number, z: number) => void;
+  undo: () => void;
+  redo: () => void;
+  /** 전체 맞춤 (zoom-to-fit) */
+  fit: () => void;
 }
 
 /** 문서 변경 시 리렌더 트리거 (React는 문서를 직접 안 들고 매 렌더 fresh 조회) */
@@ -41,7 +51,7 @@ export function App({
       <TopBar store={store} federation={federation} collab={collab} />
       <WorkRail store={store} actions={actions} federation={federation} />
       <Inspector store={store} />
-      <QuickOptions store={store} />
+      <ViewportCluster store={store} actions={actions} />
       <AiPanel store={store} />
       <DrawingPanel store={store} />
     </>

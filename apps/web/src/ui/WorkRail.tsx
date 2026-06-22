@@ -7,8 +7,7 @@ import { CommentPanel } from './CommentPanel';
 import { LintPanel } from './LintPanel';
 import { VersionPanel } from './VersionPanel';
 import { HubManage } from './HubManage';
-import { useDocVersion } from './App';
-import type { ViewActions } from './QuickOptions';
+import { useDocVersion, type ViewActions } from './App';
 
 /**
  * 좌 WorkRail (UI/UX 재구성 P1) — mode별 working surface.

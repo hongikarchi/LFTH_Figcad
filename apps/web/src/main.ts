@@ -331,6 +331,11 @@ const viewActions = {
     rig.focusOn(x, y, z);
     engine.requestRender();
   },
+  undo: doUndo,
+  redo: doRedo,
+  fit: () => {
+    fitView();
+  },
 };
 // 협업 핸들 — presence 명령형 객체를 React 패널에 노출 (rename). peers/connection은 uiStore.
 const collab = {
