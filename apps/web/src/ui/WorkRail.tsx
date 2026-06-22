@@ -1,10 +1,12 @@
 import type { DocStore } from '@figcad/core';
+import type { FederationReconciler } from '../engine/FederationReconciler';
 import { useUiStore } from '../state/uiStore';
 import { Toolbox } from './Toolbox';
 import { ProjectMap } from './ProjectMap';
 import { CommentPanel } from './CommentPanel';
 import { LintPanel } from './LintPanel';
 import { VersionPanel } from './VersionPanel';
+import { HubManage } from './HubManage';
 import { useDocVersion } from './App';
 import type { ViewActions } from './QuickOptions';
 
@@ -13,9 +15,25 @@ import type { ViewActions } from './QuickOptions';
  * 협업·리뷰: 코멘트 + 검사 + 버전(섹션). 모델: 도구(Toolbox) + 프로젝트 맵.
  * 허브/도면 mode rail = Slice6/10. P1.1=모델, P1 Slice5=협업 추가.
  */
-export function WorkRail({ store, actions }: { store: DocStore; actions: ViewActions }) {
+export function WorkRail({
+  store,
+  actions,
+  federation,
+}: {
+  store: DocStore;
+  actions: ViewActions;
+  federation: FederationReconciler;
+}) {
   const activeMode = useUiStore((s) => s.activeMode);
   useDocVersion(store);
+
+  if (activeMode === 'hub') {
+    return (
+      <div className="work-rail hub">
+        <HubManage store={store} federation={federation} />
+      </div>
+    );
+  }
 
   if (activeMode === 'review') {
     const noComments = store.listComments().length === 0;

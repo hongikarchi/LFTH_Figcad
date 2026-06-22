@@ -39,7 +39,7 @@ export function App({
   return (
     <>
       <TopBar store={store} federation={federation} collab={collab} />
-      <WorkRail store={store} actions={actions} />
+      <WorkRail store={store} actions={actions} federation={federation} />
       <Inspector store={store} />
       <QuickOptions store={store} />
       <AiPanel store={store} />

@@ -607,6 +607,50 @@
         color: var(--accent);
       }
 
+      /* ---- 허브 mode (P1 Slice6): 멀티모델 상세 관리 ---- */
+      .work-rail.hub {
+        width: 244px;
+      }
+      .hub-manage {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .hub-manage-hint {
+        padding: 6px 8px;
+        font-size: 11px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
+      .hub-add-row {
+        display: flex;
+        gap: 6px;
+        padding: 2px 4px 4px;
+      }
+      .hub-add-row input {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 8px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.035);
+      }
+      .hub-add-row button {
+        padding: 6px 12px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .hub-add-row button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
       /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */
       .toolbox {
         position: fixed;

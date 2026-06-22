@@ -24,6 +24,15 @@ export function Inspector({ store }: { store: DocStore }) {
       </div>
     );
   }
+  if (activeMode === 'hub') {
+    return (
+      <div className="inspector">
+        <div className="inspector-hint">
+          연동 소스 정렬·편집 머지는 추후(staging 게이트). 지금은 좌측 허브 패널에서 read-only 오버레이를 관리합니다.
+        </div>
+      </div>
+    );
+  }
   if (activeMode !== 'model') {
     return (
       <div className="inspector">
