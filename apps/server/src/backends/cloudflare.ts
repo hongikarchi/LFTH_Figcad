@@ -3,11 +3,11 @@ import { routePartykitRequest, type Connection, type ConnectionContext } from 'p
 import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
 import { DocStore } from '@figcad/core';
-import { handleAgentRequest } from './agent';
-import { createCommit, handleVersionRequest, isSafeRoom } from './version';
-import { handleConnectorRequest } from './apply';
-import { handleFederationBlob } from './federation';
-import { R2BlobStore } from './blobStore';
+import { handleAgentRequest } from '../handlers/agent';
+import { createCommit, handleVersionRequest, isSafeRoom } from '../handlers/version';
+import { handleConnectorRequest } from '../handlers/apply';
+import { handleFederationBlob } from '../handlers/federation';
+import { R2BlobStore } from '../blob/r2';
 
 interface Env {
   Doc: DurableObjectNamespace;

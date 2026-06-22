@@ -2,7 +2,7 @@ import { describe, expect, it, afterAll } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { DiskBlobStore } from '../src/blobStoreDisk';
+import { DiskBlobStore } from '../src/blob/disk';
 
 const root = path.join(os.tmpdir(), `figcad-blob-test-${process.pid}`);
 afterAll(async () => {

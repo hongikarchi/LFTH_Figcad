@@ -20,11 +20,11 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { DocStore } from '@figcad/core';
-import { handleConnectorRequest } from './apply';
-import { handleFederationBlob } from './federation';
-import { handleVersionRequest, createCommit, isSafeRoom } from './version';
-import { handleAgentRequest } from './agent';
-import { DiskBlobStore } from './blobStoreDisk';
+import { handleConnectorRequest } from '../handlers/apply';
+import { handleFederationBlob } from '../handlers/federation';
+import { handleVersionRequest, createCommit, isSafeRoom } from '../handlers/version';
+import { handleAgentRequest } from '../handlers/agent';
+import { DiskBlobStore } from '../blob/disk';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ROOM_KEY = process.env.ROOM_KEY || undefined;

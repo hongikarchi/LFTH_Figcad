@@ -1,8 +1,8 @@
 // 디스크 기반 BlobStore (Node/Railway — R2 대체). 영속 볼륨 디렉토리에 key→파일.
-// node:fs 의존 → **Node 서버에서만 import**(CF Worker 번들 금지). blobStore.ts(인터페이스/R2)와 분리.
+// node:fs 의존 → **Node 서버에서만 import**(CF Worker 번들 금지). 인터페이스=store.ts, R2 구현=r2.ts.
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import type { BlobStore, StoredBlob } from './blobStore';
+import type { BlobStore, StoredBlob } from './store';
 
 /** key 안전성: federation/<room>/... · projects/<room>/... 만, '..' 금지(경로 탈출 차단). */
 function safeKey(key: string): boolean {

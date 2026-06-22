@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "figcad",
-  "main": "src/server.ts",
+  "main": "src/backends/cloudflare.ts",
   "compatibility_date": "2026-04-01",
   // 2026 compat부터 서버측 WebSocket binary가 웹 표준(Blob)으로 바뀌는데
   // partyserver는 ArrayBuffer 가정 → new Uint8Array(Blob) = 0바이트로 조용히 깨짐.

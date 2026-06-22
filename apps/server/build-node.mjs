@@ -7,7 +7,7 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 await esbuild.build({
-  entryPoints: [path.join(here, 'src/node-server.ts')],
+  entryPoints: [path.join(here, 'src/backends/node.ts')],
   bundle: true,
   format: 'esm',
   platform: 'node',

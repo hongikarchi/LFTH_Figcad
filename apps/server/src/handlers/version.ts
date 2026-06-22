@@ -1,5 +1,5 @@
 import type { DocSnapshot } from '@figcad/core';
-import type { BlobStore } from './blobStore';
+import type { BlobStore } from '../blob/store';
 
 /**
  * M6 git식 버전 관리 — 커밋 저장/조회 (BlobStore: R2 또는 Disk).

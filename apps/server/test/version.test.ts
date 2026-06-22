@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument, SEED_IDS } from '@figcad/core';
-import { canonicalSnapshotJson, createCommit, isSafeRoom, sha256Hex } from '../src/version';
+import { canonicalSnapshotJson, createCommit, isSafeRoom, sha256Hex } from '../src/handlers/version';
 import { fakeStore } from './fakeStore';
 
 /** 저장된 blob(Uint8Array) → JSON 파싱 (테스트 검사용). */

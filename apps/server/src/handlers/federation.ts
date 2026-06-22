@@ -1,5 +1,5 @@
 import { CORS, isSafeRoom, json } from './version';
-import type { BlobStore } from './blobStore';
+import type { BlobStore } from '../blob/store';
 
 /**
  * M13-F — Federation 소스 페이로드 저장/서빙 (BlobStore, `federation/` 프리픽스).

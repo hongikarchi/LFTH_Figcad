@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { handleFederationBlob } from '../src/federation';
-import type { BlobStore } from '../src/blobStore';
+import { handleFederationBlob } from '../src/handlers/federation';
+import type { BlobStore } from '../src/blob/store';
 import { fakeStore } from './fakeStore';
 
 const ROOM = 'demo';

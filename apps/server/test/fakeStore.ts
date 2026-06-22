@@ -1,4 +1,4 @@
-import type { BlobStore, StoredBlob } from '../src/blobStore';
+import type { BlobStore, StoredBlob } from '../src/blob/store';
 
 /** 인메모리 BlobStore (테스트) — federation/version 핸들러 구동. .store로 내부 검사. */
 export function fakeStore(): BlobStore & { store: Map<string, Uint8Array> } {

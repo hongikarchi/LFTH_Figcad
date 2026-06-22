@@ -15,7 +15,7 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const built = await esbuild.build({
-  entryPoints: [path.join(here, 'src/server.ts')],
+  entryPoints: [path.join(here, 'src/backends/cloudflare.ts')],
   bundle: true,
   format: 'esm',
   write: false,
