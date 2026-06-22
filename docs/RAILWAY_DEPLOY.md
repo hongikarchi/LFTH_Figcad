@@ -10,6 +10,11 @@
 - 빌더 = NIXPACKS(자동 — 루트 `nixpacks.toml`·`railway.json` 인식).
 - **Region = US** (서부/동부 무관, **미국**이어야 Anthropic 지역차단 회피 — CF wnam DO 대체).
 
+## ⚠️ 단일 인스턴스 고정 (do-not-touch)
+**numReplicas=1** (railway.json에 핀). 룸 Y.Doc을 **인스턴스 메모리**에 보유 = 설계상 단일 인스턴스 필수.
+2개로 스케일 시 룸이 인스턴스별로 갈라지고(같은 룸 다른 사람이 다른 인스턴스→동기화 끊김) `/data` 파일을 경쟁 = 손상.
+부하 늘면 수평확장 아니라 **인스턴스 사양 업**(vertical). 진짜 멀티인스턴스 필요 시 = 별도 설계(Redis pub/sub 등, 현 범위 밖).
+
 ## 2. 영속 볼륨 (⚠️ 필수 — 없으면 재배포 시 데이터 소실)
 - 서비스 → **Volumes → New Volume**, Mount path = **`/data`**.
 - 룸 Y.Doc(`.bin`) + federation/version blob 전부 여기 저장. 미설정 = 매 배포·재시작 시 전 룸·커밋 소실.

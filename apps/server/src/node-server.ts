@@ -294,3 +294,23 @@ async function checkpointIfEmpty(room: string): Promise<void> {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`figcad node server: http://localhost:${PORT} · data: ${DATA_DIR} · dist: ${DIST}`);
 });
+
+// 종료(Railway SIGTERM=매 재배포) 시 전 룸 .bin 즉시 flush — debounce(2s) 윈도 내 편집 소실 방지.
+let shuttingDown = false;
+function flushAndExit(sig: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const [name, r] of rooms) {
+    try {
+      if (r.saveTimer) clearTimeout(r.saveTimer);
+      saveDoc(name, r.doc);
+    } catch {
+      /* 개별 룸 저장 실패가 종료를 막지 않음 */
+    }
+  }
+  console.log(`flushed ${rooms.size} rooms on ${sig}`);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref(); // 강제 탈출 안전망
+}
+process.on('SIGTERM', () => flushAndExit('SIGTERM'));
+process.on('SIGINT', () => flushAndExit('SIGINT'));
