@@ -43,11 +43,11 @@ export function App({
 }) {
   return (
     <>
-      <TopBar collab={collab} />
+      <TopBar store={store} federation={federation} collab={collab} />
       <Toolbox />
       <InfoBox store={store} />
       <EditActions store={store} />
-      <Navigator store={store} federation={federation} />
+      <Navigator store={store} />
       <QuickOptions store={store} />
       <AiPanel store={store} />
       <LintPanel store={store} actions={actions} />
