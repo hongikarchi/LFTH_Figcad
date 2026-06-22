@@ -57,7 +57,7 @@ node apps/web/scripts/ai-panel-smoke.mjs [포트|URL]
 @docs/ROADMAP.md
 
 - repo 내 lean SoT = `docs/ROADMAP.md` (현재 위치·마일스톤 상태). 현재 **M15 Railway/Node 배포 완료**, 남은 사용자 작업은 AI 키/US 리전/커넥터 BASE.
-- 전체 히스토리: `~/.claude/plans/figma-lazy-milner.md`(M0~M10) · M12~M15 상세는 `docs/ROADMAP.md`.
+- 완료 마일스톤 상세·배포 Version ID = `docs/HISTORY.md` (M0~M9·M11~M13.6 + M14/M15 빌드). 전체 히스토리 플랜: `~/.claude/plans/figma-lazy-milner.md`(M0~M10).
 - 메모리: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 
 ## Compact instructions
