@@ -1,101 +1,19 @@
 import { useEffect, useState } from 'react';
-import type {
-  DocSnapshot,
-  DocStore,
-  DrawingView,
-  ElemType,
-  FederationSource,
-} from '@figcad/core';
+import type { DocStore, DrawingView } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
 import { useUiStore } from '../state/uiStore';
-import { backendOrigin } from '../config/backend';
 import { useDocVersion } from './App';
 import { NumField, TextField } from './fields';
 import { Icon } from './icons/Icon';
-import {
-  downloadDxf,
-  downloadIfc,
-  downloadRhino,
-  parseDxf,
-  parseIfc,
-  parseRhino,
-} from '../interop/ifcClient';
-
-/** 타입 라벨 메타 (목록 우측 요약) — kind별 핵심 치수 */
-function typeMeta(t: ElemType): string {
-  if (t.kind === 'stair') return `${t.width}w·${t.riser}r`;
-  if (t.kind === 'railing') return `h${t.height}`;
-  if (t.kind === 'curtainwall')
-    return t.mullionSection.shape === 'circle'
-      ? `Ø${t.mullionSection.diameter}`
-      : `${t.mullionSection.width}×${t.mullionSection.depth}`;
-  if ('thickness' in t) return `${t.thickness}`;
-  if ('section' in t)
-    return t.section.shape === 'circle' ? `Ø${t.section.diameter}` : `${t.section.width}×${t.section.depth}`;
-  return `${t.opening.width}×${t.opening.height}`;
-}
-
-/** 타입 인라인 에디터 — kind별 필드 (이름/두께/색/단면/계단·난간 치수) */
-function TypeEditor({ store, type }: { store: DocStore; type: ElemType }) {
-  const inUse = store.listElements().some((e) => 'typeId' in e && e.typeId === type.id);
-  return (
-    <div className="nav-editor">
-      <TextField label="이름" value={type.name} maxLength={20} onCommit={(v) => store.updateType(type.id, { name: v })} />
-      {'thickness' in type && (
-        <NumField label="두께(mm)" value={type.thickness} min={10} onCommit={(v) => store.updateType(type.id, { thickness: v })} />
-      )}
-      {type.kind === 'opening' && (
-        <>
-          <NumField label="폭(mm)" value={type.opening.width} min={100} onCommit={(v) => store.updateType(type.id, { opening: { width: v } })} />
-          <NumField label="높이(mm)" value={type.opening.height} min={100} onCommit={(v) => store.updateType(type.id, { opening: { height: v } })} />
-          <NumField label="창대(mm)" value={type.opening.sillHeight} min={0} onCommit={(v) => store.updateType(type.id, { opening: { sillHeight: v } })} />
-        </>
-      )}
-      {'section' in type && type.section.shape === 'rect' && (
-        <>
-          <NumField label="폭(mm)" value={type.section.width} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'rect', width: v, depth: (type.section as { depth: number }).depth } })} />
-          <NumField label="춤(mm)" value={type.section.depth} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'rect', width: (type.section as { width: number }).width, depth: v } })} />
-        </>
-      )}
-      {'section' in type && type.section.shape === 'circle' && (
-        <NumField label="지름(mm)" value={type.section.diameter} min={50} onCommit={(v) => store.updateType(type.id, { section: { shape: 'circle', diameter: v } })} />
-      )}
-      {type.kind === 'stair' && (
-        <>
-          <NumField label="폭(mm)" value={type.width} min={400} onCommit={(v) => store.updateType(type.id, { width: v })} />
-          <NumField label="단높이(mm)" value={type.riser} min={50} onCommit={(v) => store.updateType(type.id, { riser: v })} />
-        </>
-      )}
-      {type.kind === 'railing' && (
-        <>
-          <NumField label="높이(mm)" value={type.height} min={300} onCommit={(v) => store.updateType(type.id, { height: v })} />
-          <NumField label="포스트 간격(mm)" value={type.postSpacing} min={100} onCommit={(v) => store.updateType(type.id, { postSpacing: v })} />
-        </>
-      )}
-      <span className="infobox-field">
-        <label>색</label>
-        <input
-          type="color"
-          value={type.color}
-          onChange={(e) => store.updateType(type.id, { color: e.target.value })}
-        />
-      </span>
-      <button
-        className="nav-delete"
-        disabled={inUse}
-        title={inUse ? '이 타입을 쓰는 요소가 있어 삭제 불가' : undefined}
-        onClick={() => store.deleteType(type.id)}
-      >
-        {inUse ? '사용 중 — 삭제 불가' : '타입 삭제'}
-      </button>
-    </div>
-  );
-}
+import { typeMeta, TypeEditor } from './NavigatorTypeEditor';
+import { useNavigatorIO } from './useNavigatorIO';
+import { useNavigatorFederation, SOURCE_BADGE } from './useNavigatorFederation';
 
 /**
  * ArchiCAD Navigator(Project Map)의 웹 경량판 — 우측 도킹.
  * 스토리: 클릭 = 평면 열기, ✎ = 인라인 편집(이름/레벨/층고/삭제).
  * 타입: ✎ = 두께/색/치수 편집. 문서: JSON 내보내기/가져오기(백업 탈출구).
+ * IO·federation 핸들러 = useNavigatorIO/useNavigatorFederation, 타입에디터 = NavigatorTypeEditor.
  */
 export function Navigator({
   store,
@@ -116,8 +34,9 @@ export function Navigator({
   const { setViewMode, setActiveLevel, setActiveViewId, setDrawingOpen } = useUiStore.getState();
   const [editing, setEditing] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<string | null>(null);
-  const [ifcBusy, setIfcBusy] = useState<'export' | 'import' | null>(null);
-  const [fedInput, setFedInput] = useState('');
+  const { ifcBusy, FORMATS, exportJson, importJson, exportFile, importFile } = useNavigatorIO(store);
+  const { fedInput, setFedInput, addFederationRoom, uploadFederationFile } =
+    useNavigatorFederation(store);
 
   const levels = store.listLevels();
   const types = store.listTypes();
@@ -151,191 +70,7 @@ export function Navigator({
     setEditingType(id);
   };
 
-  const exportJson = () => {
-    const snap = store.snapshot();
-    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${snap.meta.projectName || 'figcad'}.figcad.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const importJson = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,application/json';
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      void file.text().then((text) => {
-        try {
-          const snap = JSON.parse(text) as DocSnapshot;
-          const n = store.listElements().length;
-          if (
-            !window.confirm(
-              `현재 문서(요소 ${n}개)를 '${file.name}' 내용으로 교체합니다.\n협업 중인 모든 사용자에게 즉시 적용됩니다 (Ctrl+Z로 되돌리기 가능). 계속할까요?`,
-            )
-          )
-            return;
-          store.importSnapshot(snap);
-        } catch (e) {
-          window.alert(`가져오기 실패: ${e instanceof Error ? e.message : e}`);
-        }
-      });
-    };
-    input.click();
-  };
-
-  // setState 직후 busy 라벨이 페인트될 틈을 준다 — 이어지는 WASM 동기 호출이
-  // 메인 스레드를 막아 '눌렀는데 반응 없음'으로 보이는 것 방지
-  const paintYield = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-
-  type IfcFormat = { ext: '.ifc' | '.3dm' | '.dxf'; label: string; binary: boolean };
-  const FORMATS: Record<'ifc' | 'rhino' | 'dxf', IfcFormat> = {
-    ifc: { ext: '.ifc', label: 'IFC', binary: true },
-    rhino: { ext: '.3dm', label: 'Rhino .3dm', binary: true },
-    dxf: { ext: '.dxf', label: 'DXF', binary: false },
-  };
-
-  const exportFile = async (fmt: keyof typeof FORMATS) => {
-    setIfcBusy('export');
-    try {
-      await paintYield();
-      const snap = store.snapshot();
-      if (fmt === 'ifc') await downloadIfc(snap);
-      else if (fmt === 'rhino') await downloadRhino(snap);
-      else await downloadDxf(snap);
-    } catch (e) {
-      window.alert(`${FORMATS[fmt].label} 내보내기 실패: ${e instanceof Error ? e.message : e}`);
-    } finally {
-      setIfcBusy(null);
-    }
-  };
-
-  const importFile = (fmt: keyof typeof FORMATS) => {
-    const f = FORMATS[fmt];
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = f.ext;
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const readP = f.binary ? file.arrayBuffer() : file.text();
-      void readP.then(async (data) => {
-        setIfcBusy('import');
-        try {
-          await paintYield();
-          const result =
-            fmt === 'ifc'
-              ? await parseIfc(new Uint8Array(data as ArrayBuffer))
-              : fmt === 'rhino'
-                ? await parseRhino(new Uint8Array(data as ArrayBuffer))
-                : await parseDxf(data as string);
-          const { snapshot, skipped } = result;
-          const skipNote = Object.keys(skipped).length
-            ? `\n무시된 항목: ${Object.entries(skipped).map(([k, n]) => `${k} ${n}`).join(', ')}`
-            : '';
-          const lossNote =
-            fmt === 'ifc' ? '' : '\n(이 포맷은 지오메트리 레벨 — 벽 두께/타입은 기본값으로 들어옵니다)';
-          const n = store.listElements().length;
-          if (
-            !window.confirm(
-              `'${file.name}'에서 요소 ${snapshot.elements.length}개를 가져와 현재 문서(요소 ${n}개)를 교체합니다.${skipNote}${lossNote}\n협업 중인 모든 사용자에게 적용됩니다 (Ctrl+Z 가능). 계속할까요?`,
-            )
-          )
-            return;
-          store.importSnapshot(snapshot);
-        } catch (e) {
-          window.alert(`${f.label} 가져오기 실패: ${e instanceof Error ? e.message : e}`);
-        } finally {
-          setIfcBusy(null);
-        }
-      });
-    };
-    input.click();
-  };
-
-  // --- M13 연동 모델 (federation 오버레이) ---
-  // 입력 = 원시 room id 또는 붙여넣은 ?p=<id> / 전체 URL. p 파라미터를 뽑아낸다.
-  const parseRoomId = (raw: string): string => {
-    const s = raw.trim();
-    if (!s) return '';
-    try {
-      const p = new URL(s).searchParams.get('p');
-      if (p) return p;
-    } catch {
-      // URL 아님 — ?p= 패턴만 들어왔거나 원시 id
-    }
-    const m = s.match(/[?&]p=([^&]+)/);
-    return m ? decodeURIComponent(m[1]!) : s;
-  };
-
-  const fedAuthor = localStorage.getItem('figcad.userName') ?? '게스트';
-
-  const addFederationRoom = () => {
-    const roomId = parseRoomId(fedInput);
-    if (!roomId) return;
-    store.addFederationSource({
-      name: `룸 ${roomId}`,
-      sourceType: 'figcad-room',
-      ref: roomId,
-      visible: true,
-      addedBy: fedAuthor,
-    });
-    setFedInput('');
-  };
-
-  // glTF/IFC 업로드(M13-F) — 파일을 서버 R2(?op=fed-upload)에 올려 *협업자 전원이 페치 가능한*
-  // blob URL로. ref = 그 전체 URL (extractGltf/extractIfc가 fetch). object-URL은 올린 사람만 봄.
-  const fedBase = () => backendOrigin();
-  const uploadFederationFile = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.glb,.gltf,.ifc,.3dm';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const ext = (file.name.split('.').pop() ?? '').toLowerCase();
-      const sourceType: FederationSource['sourceType'] | null =
-        ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : ext === '3dm' ? '3dm' : null;
-      if (!sourceType) {
-        window.alert('glTF(.glb/.gltf)·IFC(.ifc)·Rhino(.3dm) 파일만 지원');
-        return;
-      }
-      const room = new URL(location.href).searchParams.get('p');
-      if (!room) return;
-      try {
-        const buf = await file.arrayBuffer();
-        const roomKey = new URL(location.href).searchParams.get('key');
-        const res = await fetch(
-          `${fedBase()}/parties/doc/${room}?op=fed-upload&ext=${ext}${roomKey ? `&key=${encodeURIComponent(roomKey)}` : ''}`,
-          { method: 'POST', body: buf },
-        );
-        if (!res.ok) throw new Error(`업로드 실패 (${res.status})`);
-        const { url } = (await res.json()) as { url: string };
-        store.addFederationSource({
-          name: file.name,
-          sourceType,
-          ref: `${fedBase()}/parties/doc/${room}${url}`, // 전체 blob URL — 협업자도 페치 가능
-          visible: true,
-          addedBy: fedAuthor,
-        });
-      } catch (e) {
-        window.alert(`연동 모델 업로드 실패: ${e instanceof Error ? e.message : e}`);
-      }
-    };
-    input.click();
-  };
-
   const sources = store.listFederationSources();
-  const SOURCE_BADGE: Record<FederationSource['sourceType'], string> = {
-    'figcad-room': 'Figcad',
-    '3dm': '.3dm',
-    ifc: 'IFC',
-    gltf: 'glTF',
-    '3dtiles': '3D Tiles',
-  };
   const showAll = () => {
     for (const s of sources) if (!s.visible) store.setSourceVisible(s.id, true);
   };
