@@ -1,7 +1,6 @@
 import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion } from './App';
-import { useLint } from './LintPanel';
 import { Icon } from './icons/Icon';
 
 export interface ViewActions {
@@ -12,18 +11,15 @@ export interface ViewActions {
 /**
  * ArchiCAD Quick Options Bar의 웹 경량판 — 하단 도킹.
  * 활성 탭(뷰)의 현재 설정 표시 + 빠른 변경 (줌, 활성 스토리).
- * (연결 상태·동시작업 인원은 P0서 상단 PresenceStrip으로 이전.)
+ * (연결/인원 = P0 PresenceStrip · 검사/버전 = P1 Slice5 협업 mode + presence 배지로 이전.
+ *  뷰/스토리·도면·AI는 Slice7/8/10서 정리. — QuickOptions 전체 해체 = Slice7.)
  */
 export function QuickOptions({ store }: { store: DocStore }) {
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
   const aiOpen = useUiStore((s) => s.aiOpen);
-  const lintOpen = useUiStore((s) => s.lintOpen);
-  const versionOpen = useUiStore((s) => s.versionOpen);
   const drawingOpen = useUiStore((s) => s.drawingOpen);
-  const findings = useLint(store);
-  const worst = findings[0]?.severity; // lint()는 심각도순 정렬
 
   const level = activeLevelId ? store.getLevel(activeLevelId) : undefined;
   const viewName = viewMode === '3d' ? '3D · 일반 원근' : `평면 · ${level?.name ?? '—'}`;
@@ -53,22 +49,6 @@ export function QuickOptions({ store }: { store: DocStore }) {
       >
         <Icon name="slab" size={14} />
         도면
-      </button>
-      <button
-        className={`qo-lint ${versionOpen ? 'active' : ''}`}
-        title="버전 — 커밋 타임라인, 비교, 복원"
-        onClick={() => useUiStore.getState().setVersionOpen(!versionOpen)}
-      >
-        <Icon name="version" size={14} />
-        버전
-      </button>
-      <button
-        className={`qo-lint ${lintOpen ? 'active' : ''} ${worst ?? ''}`}
-        title="데이터 위생 검사 — 겹침·미접합·중복·고아 요소"
-        onClick={() => useUiStore.getState().setLintOpen(!lintOpen)}
-      >
-        <Icon name="lint" size={14} />
-        검사{findings.length > 0 ? ` ${findings.length}` : ''}
       </button>
       <button
         className={`qo-ai ${aiOpen ? 'active' : ''}`}

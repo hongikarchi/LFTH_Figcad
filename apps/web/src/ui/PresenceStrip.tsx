@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
+import { useLint } from './LintPanel';
 import type { CollabHandle } from './App';
 
 /**
@@ -15,9 +17,11 @@ const CONN: Record<string, [string, string]> = {
 const MAX_AVATARS = 5;
 const initial = (name: string) => name.trim()[0]?.toUpperCase() ?? '?';
 
-export function PresenceStrip({ collab }: { collab: CollabHandle }) {
+export function PresenceStrip({ collab, store }: { collab: CollabHandle; store: DocStore }) {
   const peers = useUiStore((s) => s.peers);
   const connection = useUiStore((s) => s.connection);
+  const findings = useLint(store);
+  const worst = findings[0]?.severity; // lint()는 심각도순 정렬
   const [copied, setCopied] = useState(false);
 
   const [dotColor, connLabel] = CONN[connection] ?? CONN.offline!;
@@ -44,6 +48,15 @@ export function PresenceStrip({ collab }: { collab: CollabHandle }) {
 
   return (
     <div className="presence-strip">
+      {findings.length > 0 && (
+        <button
+          className={`lint-badge ${worst ?? ''}`}
+          title="데이터 위생 검사 — 눌러 협업·리뷰 모드로"
+          onClick={() => useUiStore.getState().setMode('review')}
+        >
+          검사 {findings.length}
+        </button>
+      )}
       <span className="presence-dot" style={{ background: dotColor }} title={connLabel} />
       <div className="avatar-pile" title={`${ordered.length}명 (${connLabel})`}>
         {shown.map((p) => (

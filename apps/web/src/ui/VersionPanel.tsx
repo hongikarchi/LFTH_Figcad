@@ -25,7 +25,7 @@ function relTime(ts: number): string {
   return new Date(ts).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }
 
-export function VersionPanel({ store }: { store: DocStore }) {
+export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: boolean }) {
   const versionOpen = useUiStore((s) => s.versionOpen);
   const [commits, setCommits] = useState<CommitMeta[]>([]);
   const [message, setMessage] = useState('');
@@ -47,14 +47,14 @@ export function VersionPanel({ store }: { store: DocStore }) {
   };
 
   useEffect(() => {
-    if (versionOpen) {
+    if (embedded || versionOpen) {
       setDiffs({}); // 닫혀 있는 동안의 편집으로 stale — 다시 열 때 비교 캐시 비움
       void refresh();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [versionOpen]);
+  }, [versionOpen, embedded]);
 
-  if (!versionOpen) return null;
+  if (!embedded && !versionOpen) return null;
 
   // 주의: 커밋은 서버가 보는 문서 상태 기준 — 방금 한 로컬 편집은 WS 전파(보통 ms)
   // 후 반영된다. 오프라인 직후처럼 동기화가 안 끝났으면 직전 상태가 커밋될 수 있음.
@@ -132,13 +132,15 @@ export function VersionPanel({ store }: { store: DocStore }) {
   };
 
   return (
-    <div className="version-panel">
+    <div className={embedded ? 'rail-section' : 'version-panel'}>
       <div className="ai-head">
         <span className="ai-title">버전</span>
         <span className="ai-sub">커밋 = 문서 전체 스냅샷 (내용 같으면 자동 스킵)</span>
-        <button className="ai-close" onClick={() => useUiStore.getState().setVersionOpen(false)}>
-          ✕
-        </button>
+        {!embedded && (
+          <button className="ai-close" onClick={() => useUiStore.getState().setVersionOpen(false)}>
+            ✕
+          </button>
+        )}
       </div>
       <div className="ver-commit">
         <input

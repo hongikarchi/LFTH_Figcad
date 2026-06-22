@@ -543,6 +543,70 @@
         padding: 8px 2px 2px;
       }
 
+      /* ---- 협업·리뷰 mode (P1 Slice5): 레일 섹션 + mode-gated 인스펙터 ---- */
+      .work-rail.review {
+        width: 286px;
+      }
+      .review-onboard {
+        padding: 10px;
+        margin-bottom: 4px;
+        background: rgba(10, 132, 255, 0.08);
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        font-size: 11px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
+      /* 재배치된 패널(코멘트/검사/버전)은 레일 섹션으로 — 자체 fixed chrome 제거, 컨테이너가 제공 */
+      .rail-section {
+        padding: 6px 0 10px;
+        border-bottom: 1px solid var(--hairline);
+      }
+      .rail-section:last-child {
+        border-bottom: none;
+      }
+      .rail-section .cmt-list,
+      .rail-section .lint-list {
+        max-height: none;
+      }
+      .review-inspector {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 4px 2px;
+      }
+      .inspector-hint {
+        padding: 12px 6px;
+        font-size: 11px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
+      .lint-badge {
+        padding: 4px 9px;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        background: rgba(0, 0, 0, 0.04);
+        color: var(--ink);
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .lint-badge.error {
+        background: rgba(255, 55, 95, 0.14);
+        color: #ff375f;
+        border-color: rgba(255, 55, 95, 0.3);
+      }
+      .lint-badge.warning {
+        background: rgba(255, 149, 0, 0.14);
+        color: #c77700;
+        border-color: rgba(255, 149, 0, 0.3);
+      }
+      .lint-badge.info {
+        background: rgba(10, 132, 255, 0.12);
+        color: var(--accent);
+      }
+
       /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */
       .toolbox {
         position: fixed;

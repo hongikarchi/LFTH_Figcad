@@ -8,13 +8,21 @@ import type { ViewActions } from './QuickOptions';
  * 협업 코멘트 패널 (M9-B) — 우측 도킹. 소장님↔실무자 리뷰 루프.
  * 루트 코멘트 + 답글 스레드, 해결 토글, 핀 점프. 코멘트 도구로 평면에 배치.
  */
-export function CommentPanel({ store, actions }: { store: DocStore; actions: ViewActions }) {
+export function CommentPanel({
+  store,
+  actions,
+  embedded,
+}: {
+  store: DocStore;
+  actions: ViewActions;
+  embedded?: boolean;
+}) {
   useDocVersion(store);
   const open = useUiStore((s) => s.commentsOpen);
   const [showResolved, setShowResolved] = useState(false);
   const [reply, setReply] = useState<Record<string, string>>({});
 
-  if (!open) return null;
+  if (!embedded && !open) return null;
 
   const all = store.listComments();
   const roots = all.filter((c) => !c.parentId).sort((a, b) => a.ts - b.ts);
@@ -36,16 +44,18 @@ export function CommentPanel({ store, actions }: { store: DocStore; actions: Vie
   };
 
   return (
-    <div className="cmt-panel">
+    <div className={embedded ? 'rail-section' : 'cmt-panel'}>
       <div className="cmt-head">
         <span className="cmt-title">코멘트 {roots.length ? `(${roots.length})` : ''}</span>
         <label className="cmt-filter">
           <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
           해결 포함
         </label>
-        <button className="cmt-close" onClick={() => useUiStore.getState().setCommentsOpen(false)}>
-          ✕
-        </button>
+        {!embedded && (
+          <button className="cmt-close" onClick={() => useUiStore.getState().setCommentsOpen(false)}>
+            ✕
+          </button>
+        )}
       </div>
       <div className="cmt-list">
         {visible.length === 0 && (

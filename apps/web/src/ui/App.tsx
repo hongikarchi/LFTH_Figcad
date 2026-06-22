@@ -6,9 +6,6 @@ import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
 import { QuickOptions, type ViewActions } from './QuickOptions';
 import { AiPanel } from './AiPanel';
-import { LintPanel } from './LintPanel';
-import { VersionPanel } from './VersionPanel';
-import { CommentPanel } from './CommentPanel';
 import { DrawingPanel } from './DrawingPanel';
 
 /** 협업 명령형 핸들 (presence) — React 패널에 노출되는 부분만. peers/connection은 uiStore. */
@@ -42,13 +39,10 @@ export function App({
   return (
     <>
       <TopBar store={store} federation={federation} collab={collab} />
-      <WorkRail store={store} />
+      <WorkRail store={store} actions={actions} />
       <Inspector store={store} />
       <QuickOptions store={store} />
       <AiPanel store={store} />
-      <LintPanel store={store} actions={actions} />
-      <VersionPanel store={store} />
-      <CommentPanel store={store} actions={actions} />
       <DrawingPanel store={store} />
     </>
   );

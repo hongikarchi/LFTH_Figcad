@@ -147,13 +147,21 @@ function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId
   return { x: 0, y: 0 };
 }
 
-export function LintPanel({ store, actions }: { store: DocStore; actions: ViewActions }) {
+export function LintPanel({
+  store,
+  actions,
+  embedded,
+}: {
+  store: DocStore;
+  actions: ViewActions;
+  embedded?: boolean;
+}) {
   const lintOpen = useUiStore((s) => s.lintOpen);
   const findings = useLint(store);
   const remoteFlags = useRemoteLintFlags(store);
   const [dismissed, setDismissed] = useState('');
 
-  if (!lintOpen) return null;
+  if (!embedded && !lintOpen) return null;
 
   // 협업 병합 배너 — flag-not-block(머지는 LWW로 이미 적용, 알리기만). 같은 세트는 닫으면 재표시 안 함.
   const remoteSig = remoteFlags.map((f) => `${f.code}|${f.elementIds.join()}`).join('~');
@@ -179,15 +187,17 @@ export function LintPanel({ store, actions }: { store: DocStore; actions: ViewAc
   };
 
   return (
-    <div className="lint-panel">
+    <div className={embedded ? 'rail-section' : 'lint-panel'}>
       <div className="ai-head">
         <span className="ai-title">검사</span>
         <span className="ai-sub">
           {findings.length === 0 ? '문제 없음' : `${findings.length}건 — 행을 누르면 요소로 이동`}
         </span>
-        <button className="ai-close" onClick={() => useUiStore.getState().setLintOpen(false)}>
-          ✕
-        </button>
+        {!embedded && (
+          <button className="ai-close" onClick={() => useUiStore.getState().setLintOpen(false)}>
+            ✕
+          </button>
+        )}
       </div>
       {showRemoteBanner && (
         <div

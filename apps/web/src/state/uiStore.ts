@@ -107,7 +107,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeTool: 'wall',
   selection: [],
   viewMode: '3d',
-  activeMode: 'model',
+  activeMode: 'review', // P1 Slice5: 협업·리뷰 = default 랜딩(헤드라인 해자 먼저). 모델링은 모델 탭.
   activeTypes: {
     wall: null,
     door: null,
@@ -136,13 +136,11 @@ export const useUiStore = create<UiState>((set) => ({
   activeViewId: null,
   setTool: (activeTool) =>
     set(
+      // 스케치 = AI 입력 → AI 패널 + 북향 평면(SketchTool.activate가 theta 스냅). (sketch 부작용은 Slice8 AI dock서 정리)
+      // 코멘트 도구 부작용은 P1 Slice5서 제거 — 코멘트 읽기/답글은 협업 mode 레일, 도구는 핀만.
       activeTool === 'sketch'
-        ? // 스케치 = AI 입력 → AI 패널 + 북향 평면(SketchTool.activate가 theta 스냅)
-          { activeTool, selection: [], editAction: null, aiOpen: true, viewMode: 'plan' }
-        : activeTool === 'comment'
-          ? // 코멘트 도구 = 코멘트 패널 표시
-            { activeTool, selection: [], editAction: null, commentsOpen: true }
-          : { activeTool, selection: [], editAction: null },
+        ? { activeTool, selection: [], editAction: null, aiOpen: true, viewMode: 'plan' }
+        : { activeTool, selection: [], editAction: null },
     ),
   setSelection: (selection) =>
     set((s) => ({ selection, editAction: selection.length ? s.editAction : null })),
@@ -150,9 +148,9 @@ export const useUiStore = create<UiState>((set) => ({
   setArrayCount: (arrayCount) => set({ arrayCount: Math.max(1, Math.min(50, arrayCount)) }),
   setRotateAngle: (rotateAngle) => set({ rotateAngle }),
   setAiOpen: (aiOpen) => set({ aiOpen }),
-  setLintOpen: (lintOpen) => set((s) => ({ lintOpen, versionOpen: lintOpen ? false : s.versionOpen })),
-  setVersionOpen: (versionOpen) =>
-    set((s) => ({ versionOpen, lintOpen: versionOpen ? false : s.lintOpen })),
+  // 배타 제거(P1 Slice5, Slice0 연기분) — lint/version은 협업 mode 레일 독립 섹션.
+  setLintOpen: (lintOpen) => set({ lintOpen }),
+  setVersionOpen: (versionOpen) => set({ versionOpen }),
   setCommentsOpen: (commentsOpen) => set({ commentsOpen }),
   setDrawingOpen: (drawingOpen) => set({ drawingOpen }),
   setActiveViewId: (activeViewId) => set({ activeViewId }),

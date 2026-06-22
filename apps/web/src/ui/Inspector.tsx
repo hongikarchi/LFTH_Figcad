@@ -3,6 +3,7 @@ import { useUiStore } from '../state/uiStore';
 import { InfoBox } from './InfoBox';
 import { EditActions } from './EditActions';
 import { TypesSection } from './TypesSection';
+import { ReviewInspector } from './ReviewInspector';
 
 /**
  * 우 Inspector (UI/UX 재구성 P1) — 영구 도킹 셸, 내용 = (selection × mode).
@@ -15,6 +16,14 @@ import { TypesSection } from './TypesSection';
  */
 export function Inspector({ store }: { store: DocStore }) {
   const activeMode = useUiStore((s) => s.activeMode);
+  // mode-gated(사용자 결정): 협업 = 선택 요소의 코멘트 스레드, 모델 = 속성. 한 곳서 분기.
+  if (activeMode === 'review') {
+    return (
+      <div className="inspector">
+        <ReviewInspector store={store} />
+      </div>
+    );
+  }
   if (activeMode !== 'model') {
     return (
       <div className="inspector">

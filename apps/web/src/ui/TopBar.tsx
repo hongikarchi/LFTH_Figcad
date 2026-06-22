@@ -35,7 +35,7 @@ export function TopBar({
         <HubStrip store={store} federation={federation} />
       </div>
       <div className="topbar-right">
-        <PresenceStrip collab={collab} />
+        <PresenceStrip collab={collab} store={store} />
       </div>
     </div>
   );
