@@ -45,11 +45,9 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
     ],
   },
   {
-    title: 'AI · 협업',
-    items: [
-      { label: '스케치', icon: 'ai', tool: 'sketch' },
-      { label: '코멘트', icon: 'comment', tool: 'comment' },
-    ],
+    // 스케치는 상단 presence의 ✦AI → AI dock '✏ 스케치'로 이전(P1 Slice8). 코멘트 = 핀 배치 도구.
+    title: '협업',
+    items: [{ label: '코멘트', icon: 'comment', tool: 'comment' }],
   },
 ];
 

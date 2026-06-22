@@ -134,14 +134,8 @@ export const useUiStore = create<UiState>((set) => ({
   commentsOpen: false,
   drawingOpen: false,
   activeViewId: null,
-  setTool: (activeTool) =>
-    set(
-      // 스케치 = AI 입력 → AI 패널 + 북향 평면(SketchTool.activate가 theta 스냅). (sketch 부작용은 Slice8 AI dock서 정리)
-      // 코멘트 도구 부작용은 P1 Slice5서 제거 — 코멘트 읽기/답글은 협업 mode 레일, 도구는 핀만.
-      activeTool === 'sketch'
-        ? { activeTool, selection: [], editAction: null, aiOpen: true, viewMode: 'plan' }
-        : { activeTool, selection: [], editAction: null },
-    ),
+  // 도구 부작용 전부 제거(P1): 스케치 무장(aiOpen+평면)은 AI dock 버튼, 코멘트는 핀만.
+  setTool: (activeTool) => set({ activeTool, selection: [], editAction: null }),
   setSelection: (selection) =>
     set((s) => ({ selection, editAction: selection.length ? s.editAction : null })),
   setEditAction: (editAction) => set({ editAction }),

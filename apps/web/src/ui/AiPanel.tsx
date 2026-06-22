@@ -157,6 +157,17 @@ export function AiPanel({ store }: { store: DocStore }) {
       <div className="ai-head">
         <span className="ai-title">AI 모드</span>
         <span className="ai-sub">계획 검토 후 승인해야 반영됩니다</span>
+        <button
+          className={`ai-sketch-btn ${sketchOn ? 'active' : ''}`}
+          title="스케치 그리기 — 펜으로 평면 손그림 후 보내면 그대로 모델링"
+          onClick={() => {
+            const ui = useUiStore.getState();
+            ui.setViewMode('plan');
+            ui.setTool('sketch'); // SketchTool.activate가 북향 스냅
+          }}
+        >
+          ✏ 스케치
+        </button>
         <button className="ai-close" onClick={() => useUiStore.getState().setAiOpen(false)}>
           ✕
         </button>

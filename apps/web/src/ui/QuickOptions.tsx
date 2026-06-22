@@ -18,7 +18,6 @@ export function QuickOptions({ store }: { store: DocStore }) {
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
-  const aiOpen = useUiStore((s) => s.aiOpen);
   const drawingOpen = useUiStore((s) => s.drawingOpen);
 
   const level = activeLevelId ? store.getLevel(activeLevelId) : undefined;
@@ -49,14 +48,6 @@ export function QuickOptions({ store }: { store: DocStore }) {
       >
         <Icon name="slab" size={14} />
         도면
-      </button>
-      <button
-        className={`qo-ai ${aiOpen ? 'active' : ''}`}
-        title="AI 모드 — 자연어로 모델링 (계획 승인 방식)"
-        onClick={() => useUiStore.getState().setAiOpen(!aiOpen)}
-      >
-        <Icon name="ai" size={14} />
-        AI
       </button>
     </div>
   );
