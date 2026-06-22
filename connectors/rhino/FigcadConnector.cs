@@ -37,7 +37,7 @@ namespace Figcad
 {
     public class FigcadConfig
     {
-        public string BaseUrl = "http://localhost:8787"; // 프로덕션 = https://figcad.archivibe.workers.dev
+        public string BaseUrl = "http://localhost:8787"; // 프로덕션 = https://lfthfigcad-production.up.railway.app
         public string Room = "default";                   // Figcad 프로젝트 id (?p=)
         public string Key = null;                          // ROOM_KEY (설정 시)
     }

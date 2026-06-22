@@ -6,7 +6,7 @@
 import puppeteer from 'puppeteer-core';
 
 const port = process.argv[2] ?? '5173';
-const base = process.argv[3] ?? 'https://figcad.archivibe.workers.dev';
+const base = process.argv[3] ?? 'https://lfthfigcad-production.up.railway.app';
 
 const browser = await puppeteer.launch({
   executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',

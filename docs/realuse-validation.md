@@ -1,5 +1,7 @@
 # 실사용 검증 (M14) — 배포 + 조율 세션 + 갭 학습
 
+> **Archive:** 2026-06-21 Cloudflare 배포 검증 기록. 현재 primary 운영 URL은 M15 Railway `https://lfthfigcad-production.up.railway.app`.
+
 > 목적: M13 허브를 실제 배포 + LFTH 실모델로 2명+ 실제 조율 → **해자(중립+편집+실시간 멀티플레이어 ON federation)가 진짜인지, 실제 빠진 게 뭔지** 학습. 다음 빌드 결정의 근거. (positioning: 미배포라 "aspirational" — 이걸 깨는 게 목적.)
 
 ## 배포 (✅ 2026-06-21)

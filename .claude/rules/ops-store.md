@@ -28,5 +28,5 @@ description: DocStore ops·협업 의미론·스냅샷 일관성
 - schemaVersion 올릴 때 migrate 빈맵 시드 + 테스트.
 
 ## 커밋·영속 (M6)
-- 커밋 = canonical JSON SHA-256 blob → R2. Doc DO가 커밋 권위(룸 HTTP `?op=`). 커밋 경로 = `serializeCommit`(log RMW 직렬화).
+- 커밋 = canonical JSON SHA-256 blob → BlobStore(R2 또는 Disk). 룸별 직렬화(DO 또는 Node mutex)가 커밋 권위. 커밋 경로 = `createCommit`(log RMW 직렬화).
 - canonical 비교는 키 순서 불변(라운드트립 가짜 변경 방지).

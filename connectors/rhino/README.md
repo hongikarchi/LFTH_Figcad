@@ -31,7 +31,7 @@ Figcad mm 정수 ↔ Rhino **mm 1:1** (스케일 없음). Pull/Push 모두 round
 ## 사전 조건
 
 - Rhino 8 (RhinoCommon — `System.Net.Http.HttpClient` 사용, 네트워크 허용).
-- Figcad 서버 도달 가능: 데브 `http://localhost:8787`(`node apps/server/dev.mjs`) / 프로덕션 `https://figcad.archivibe.workers.dev`.
+- Figcad 서버 도달 가능: 데브 `http://localhost:8787`(`node apps/server/dev-node.mjs` 또는 `node apps/server/node-dist/server.mjs`) / 프로덕션 `https://lfthfigcad-production.up.railway.app`.
 - 룸(=Figcad 프로젝트 `?p=`)은 **Figcad 앱이 한 번 시드**해 둔 것이어야 함(레벨·타입 존재 — `create_type` capability 없음). Rhino는 그 레벨/타입 id를 재사용.
 
 ## 실행 방법
@@ -64,4 +64,4 @@ Visual Studio + RhinoCommon NuGet으로 `FigcadConnector.cs`를 클래스 라이
 ## 보안
 
 D-1 `?op=apply`는 `?key=ROOM_KEY` 게이트(설정 시) + 작업예산 DoS 방어. 프로덕션에서 게이트하려면
-서버에 `wrangler secret put ROOM_KEY` 후 `cfg.Key` 설정. 커넥터 쓰기는 user-less·undo 불가(복구=Figcad 버전 복원).
+Railway `ROOM_KEY` 변수 설정 후 `cfg.Key` 설정. Cloudflare rollback에서는 `wrangler secret put ROOM_KEY` 사용. 커넥터 쓰기는 user-less·undo 불가(복구=Figcad 버전 복원).

@@ -34,12 +34,12 @@ v0는 채널의 **아키텍처 언블록**만 증명한다(외부 메시가 deri
 ## 4. v1.5 — 전체 federation
 
 ### 4a. Federated source 레지스트리 (동기화 채널)
-협업 허브 = 모두가 **같은** federation을 봐야 함 → 비요소 Y.Map 채널 `federation`(코멘트·views와 동일 패턴, `ops-store.md`):
+협업 허브 = 모두가 **같은** federation을 봐야 함 → 비요소 Y.Map 채널 `federation`(코멘트·views와 동일 패턴, `../.claude/rules/ops-store.md`):
 ```
 FederationSource { id, name, sourceType: '3dm'|'ifc'|'figcad-room'|'3dtiles', ref, visible, addedBy, ts }
 ```
 - `ref` = URL(업로드 .3dm/.ifc) 또는 figcad room id(다른 Figcad 프로젝트) 또는 3D-Tiles tileset URL. **지오메트리 자체는 채널에 안 담음**(불변①) — 각 클라가 ref에서 페치해 ReferenceLayer에 로드.
-- 채널 변경 = ops 경유(불변②). **snapshot 4경로 관통**(snapshot/snapshotOf/fromSnapshot/importSnapshot) + schemaVersion 증가 + migrate 빈맵(`ops-store.md` 교훈).
+- 채널 변경 = ops 경유(불변②). **snapshot 4경로 관통**(snapshot/snapshotOf/fromSnapshot/importSnapshot) + schemaVersion 증가 + migrate 빈맵(`../.claude/rules/ops-store.md` 교훈).
 - LWW 엔트리별. 가시성 토글 = per-source(per-user 로컬 override는 별도 고려).
 
 ### 4b. 데이터 추출 (소스별)
@@ -49,7 +49,7 @@ FederationSource { id, name, sourceType: '3dm'|'ifc'|'figcad-room'|'3dtiles', re
 - **3d-tiles**: 4c 참조.
 
 ### 4c. 대용량 = 3D-Tiles HLOD 스트리밍 (F9, 페어 작업)
-436MB급 federated 모델은 통짜 로드 불가(wasm32 4GB 천장, `interop.md`). 답 = **3D Tiles HLOD**(OGC, glTF 타일):
+436MB급 federated 모델은 통짜 로드 불가(wasm32 4GB 천장, `../.claude/rules/interop.md`). 답 = **3D Tiles HLOD**(OGC, glTF 타일):
 - 계층 트리 + 타일별 geometric error → screen-space-error LOD 선택. **보이는 것만 필요 해상도로** 로드.
 - geographic CRS 프레이밍은 **제외**(HLOD/SSE 메커니즘만). Speckle식 배칭(≤500k vtx/배치)으로 draw call 격감.
 - ReferenceLayer가 타일 소비자: 카메라 이동 시 SSE로 타일 add/remove(여전히 derive·store 밖, render-on-demand 유지).
@@ -71,4 +71,4 @@ FederationSource { id, name, sourceType: '3dm'|'ifc'|'figcad-room'|'3dtiles', re
 ## 6. 결정 필요(v1.5 착수 전, 사용자)
 - 가시성 토글 = 글로벌(동기화) vs per-user 로컬? (협업이라 글로벌 기본 + 로컬 override 검토)
 - 첫 소스 타입 우선순위: figcad-room(가장 쉬움, derive 재사용) → .ifc → .3dm Brep(가장 어려움) → 3D-Tiles?
-- 업로드 저장: R2(M6 blob 인프라 재사용) vs 외부 URL 참조만?
+- 업로드 저장: BlobStore(R2/Disk, M6 blob 인프라 재사용) vs 외부 URL 참조만?

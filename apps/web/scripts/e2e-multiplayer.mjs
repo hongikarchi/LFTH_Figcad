@@ -1,6 +1,6 @@
 /**
- * M2 멀티플레이어 엔드투엔드 검증 — wrangler dev(127.0.0.1:8787)에 Yjs 프로토콜
- * 수동 클라이언트 2개를 붙여 동시 편집/필드 병합/삭제 승리/awareness/DO 영속화 확인.
+ * M2 멀티플레이어 엔드투엔드 검증 — 로컬 Node/Railway/Cloudflare 호환 Yjs 프로토콜
+ * 수동 클라이언트 2개를 붙여 동시 편집/필드 병합/삭제 승리/awareness/영속화 확인.
  * (Node에서 y-websocket 기반 YProvider가 불안정해 y-protocols로 직접 구현 —
  *  와이어 포맷은 동일: varint 메시지 타입 0=sync, 1=awareness)
  * 실행: node apps/web/scripts/e2e-multiplayer.mjs
@@ -11,7 +11,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 
-// 기본 = 로컬 데브 서버. 배포 검증: FIGCAD_HOST=figcad.xxx.workers.dev FIGCAD_WSS=1
+// 기본 = 로컬 데브 서버. 배포 검증: FIGCAD_HOST=lfthfigcad-production.up.railway.app FIGCAD_WSS=1
 const HOST = process.env.FIGCAD_HOST ?? '127.0.0.1:8787';
 const PROTO = process.env.FIGCAD_WSS ? 'wss' : 'ws';
 const ROOM = `e2e-${Math.random().toString(36).slice(2, 10)}`;

@@ -3,7 +3,7 @@
 > **정체성 기준 재조사.** Figcad = 웹·실시간·AI 3축의 "멀티툴 실시간 협업·인터롭 허브". 단독 저작툴 아님 — 정밀 모델링·납품도면 제작은 Rhino/Revit/CAD/ArchiCAD가 하고, Figcad는 그 모델·도면을 실시간으로 모아 같이 보고·조율. **핵심 = 실시간 공유, 나머지(대조·sketch·QA)는 파생.**
 > 조사일: 2026-06. 딥 리서치 하니스 **2패스**, 3-vote 적대적 검증. **1차**(§2~7, dim 1·2·3): 109 에이전트 / 26 소스 / 24 confirm → 9 finding(F1~F9). **2차**(§8, dim 4·5·6 타깃): 104 에이전트 / 22 소스 / 22 confirm → 5 finding(G1~G5). 잔존 미답 = §6.
 >
-> **이 문서가 교체한 것**(둘 다 삭제됨, 쓸 부분 이관): 구 `modeling-tools-review.md`는 *틀린 질문*("데스크톱 저작툴에서 어떤 기능 베낄까")으로 저작기능 쇼핑리스트를 냈고 = Figcad를 더 무거운 단독 모델러로 미는 off-identity 방향. 이 문서는 *올바른 질문*("웹/실시간/AI 인터롭 허브를 best-in-class로")으로 **협업·인터롭 플랫폼**(Speckle·Onshape·Figma·Omniverse·3D Tiles)과 벤치마크. 구 doc의 인터롭 항목(IFC Pset/Translator)은 §8 G5로, 구 `pascal-editor-review.md`의 유일한 쓸모(per-kind 레지스트리)는 §5 내부 리팩터 트랙으로 이관.
+> **이 문서가 교체한 것**(둘 다 삭제됨, 쓸 부분 이관): 구 modeling-tools-review는 *틀린 질문*("데스크톱 저작툴에서 어떤 기능 베낄까")으로 저작기능 쇼핑리스트를 냈고 = Figcad를 더 무거운 단독 모델러로 미는 off-identity 방향. 이 문서는 *올바른 질문*("웹/실시간/AI 인터롭 허브를 best-in-class로")으로 **협업·인터롭 플랫폼**(Speckle·Onshape·Figma·Omniverse·3D Tiles)과 벤치마크. 구 doc의 인터롭 항목(IFC Pset/Translator)은 §8 G5로, 구 pascal-editor-review의 유일한 쓸모(per-kind 레지스트리)는 §5 내부 리팩터 트랙으로 이관.
 >
 > **⚙️ 실행 상태(2026-06, 이 보고서 이후):** ADOPT 판정 중 일부 착수됨 — A(doc→ROADMAP SoT)=`2514766` · **B = lint-in-loop critic(H3/H4) 실행 완료** `f5112dc`(`critiqueOpLog`가 `apps/server/src/agent.ts` + core `packages/core/src/ai.ts`에 배선, MAX_CRITIC_ROUNDS=2 — §9의 "`agent.ts`가 lint 미호출"은 *조사 시점* 기준이고 이후 닫힘) · **C = F6 레퍼런스 채널 스파이크** `120b9cf`(`apps/web/src/engine/ReferenceLayer.ts` + `docs/federation-design.md`; 전체 federation은 v1.5). **BCF(G4)는 ROADMAP에서 ADOPT→v1.5 재평가**(LFTH 전원 Figcad 내 조율, 크로스툴 이슈교환 실수요 약함). **F5 역-import는 기둥+보까지 확장** `f13b771`. 이하 본문은 조사 시점 프레이밍 유지.
 
@@ -93,7 +93,7 @@
 ## 4. KEEP / 이미 우위 — 빌드 안 함
 
 ### F1 — 실시간 코어: 동급-또는-우위 (재확인, 신규 0)
-**confidence: medium**(Figma측 단일 1차 소스=2019 엔지니어링 블로그) · `figma.com/blog/how-figmas-multiplayer-technology-works` · 대조: `store.ts`·`ops-store.md`
+**confidence: medium**(Figma측 단일 1차 소스=2019 엔지니어링 블로그) · `figma.com/blog/how-figmas-multiplayer-technology-works` · 대조: `store.ts`·`../.claude/rules/ops-store.md`
 - Figma는 OT도 true-CRDT도 의도적으로 안 씀 — 중앙집중 서버권위 LWW, 충돌해결은 property/object 단위 last-writer-wins = **Figcad가 이미 구현한 필드단위 LWW와 동일 granularity**. Figcad는 추가로 **true CRDT(Yjs: offline-first, 서버 비종속)** 보유 = Figma에 없는 것.
 - **판정**: 코어 sync 모델에 채택 불필요. 업계 선두 웹 도구와 동급, offline/탈중앙에선 초과.
 
@@ -115,7 +115,7 @@
 > pascal-editor(`pascalorg/editor`, 싱글플레이어 소비자 홈에디터)는 협업·인터롭·허브와 무관 = 정체성 조사 대상 아님. 단 거기서 건진 **1개**는 진짜 쓸모 있는 *내부 코드구조* 항목이라 여기 보존. "필요없던" 문제가 아니라 *다른 카테고리*(시장 채택이 아닌 우리 코드 정리).
 
 ### per-kind NodeDefinition 디스패치 테이블 (XL, kind별 점진)
-- **문제**: 신규 Element kind 추가 = ~10곳 손댐, 여러 곳이 컴파일러가 강제 못 하는 `el.kind === '…'` if-chain(`core-geometry.md` 체크리스트 "누락=조용한 버그"). 구체 체인: `geometry/index.ts`(13-arm derive 디스패치) · `store.ts`(move/rotate/transformCopy/validate 중복 taxonomy) · `select.ts`(elementFootprint) · `lint.ts`+`diff.ts`(중복 KIND_LABEL) · interop 4파일.
+- **문제**: 신규 Element kind 추가 = ~10곳 손댐, 여러 곳이 컴파일러가 강제 못 하는 `el.kind === '…'` if-chain(`../.claude/rules/core-geometry.md` 체크리스트 "누락=조용한 버그"). 구체 체인: `geometry/index.ts`(13-arm derive 디스패치) · `store.ts`(move/rotate/transformCopy/validate 중복 taxonomy) · `select.ts`(elementFootprint) · `lint.ts`+`diff.ts`(중복 KIND_LABEL) · interop 4파일.
 - **올바른 프레이밍("이미 있음" 함정 회피)**: Figcad `capabilities/registry.ts`는 **op id 키**(create_wall/move) 레지스트리 — 실재·양호, 체크리스트 step 6이 이미 경유. 빠진 건 **직교 축 = kind 키** 레지스트리(파생/footprint/label/relations/interop를 kind별로). Pascal `NodeDefinition`이 그 증명: 중앙 `cascadeDirty`/`collectDescendants`가 각 kind의 `def.relations`를 **데이터로** 읽음 — 정책은 중앙, 선언만 kind 폴더로.
 - **붕괴되는 step**: 2+3(derive+deriveKey → `def.derive`/`def.deriveKey`, 단 cross-element 의존성 수집은 중앙 유지) · **5(footprint+move/rotate/transformCopy 4 taxonomy → 단일 `def.positional` segment/polygon/point = 가장 깨끗한 win)** · 7+8(KIND_LABEL ×2 → `def.label`) · 9(interop arm → `def.ifc`/`def.dxf`/`def.rhino`, §3 역-import와 연결) · 10(tool/panel/icon → `def.tool`).
 - **중앙 유지(불변)**: step 4 store 정책(zod·quantize·undo-origin·transact=inv 2) · cascade *실행*+delete-wins(데이터는 `def.relations`, walk+transact는 중앙) · DeriveCache memo+cross-element 의존성 수집 · step 1 `Element` discriminated union(컴파일타임 TS, 런타임 등록 불가).

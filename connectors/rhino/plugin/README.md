@@ -3,7 +3,7 @@
 `FigcadConnector.cs`(커넥터 코어)를 **설치형 Rhino 플러그인**으로 감싼 것. 스크립트 붙여넣기 대신 명령으로 실행.
 대상: **Rhino 8 / Windows**. (Mac·Rhino 7은 TFM·RhinoCommon 버전 조정 필요.)
 
-> ⚠️ 이 스캐폴드는 Figcad 빌드 환경(JS/Cloudflare)에서 **컴파일 검증 안 됨** — 아래는 너의 Windows + Visual Studio/.NET SDK에서 빌드. RhinoCommon 버전·TFM은 설치된 Rhino에 맞게 조정 가능.
+> 2026-06-23 기준 `dotnet build -c Release` 컴파일 검증됨. RhinoCommon 버전·TFM은 설치된 Rhino에 맞게 조정 가능.
 
 ## A. .rhp 빌드 (가장 단순)
 필요: Visual Studio 2022 (또는 .NET 7 SDK) + 인터넷(NuGet RhinoCommon).

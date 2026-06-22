@@ -7,7 +7,7 @@
 ## 1. Railway 서비스 설정 (대시보드)
 - **New Project → Deploy from GitHub repo** (또는 `railway init` + `railway up` CLI).
 - **Root Directory** = 레포 루트(기본). pnpm 워크스페이스 필요 → `apps/server` 아님.
-- 빌더 = NIXPACKS(자동 — 루트 `nixpacks.toml`·`railway.json` 인식).
+- 빌더 = **DOCKERFILE**(`railway.json`이 루트 `Dockerfile` 지정). Nixpacks는 Node/pnpm/.NET 오판 이슈로 쓰지 않음.
 - **Region = US** (서부/동부 무관, **미국**이어야 Anthropic 지역차단 회피 — CF wnam DO 대체).
 
 ## ⚠️ 단일 인스턴스 고정 (do-not-touch)
@@ -30,10 +30,10 @@
 - `VITE_BACKEND_URL` = **설정 안 함**(단일서비스 = same-origin, 클라가 `location.origin` 사용).
   web/API를 다른 호스트로 나눌 때만 빌드타임에 설정.
 
-## 4. 빌드·기동 (자동 — nixpacks.toml)
+## 4. 빌드·기동 (자동 — Dockerfile)
 ```
 install: corepack enable && corepack pnpm install --frozen-lockfile
-build:   pnpm -F @figcad/web build  (dist)  +  pnpm -F @figcad/server build:node  (번들)
+build:   corepack pnpm -F @figcad/web build  (dist)  +  corepack pnpm -F @figcad/server build:node  (번들)
 start:   node apps/server/node-dist/server.mjs
 ```
 헬스체크 = `/`(index.html 200).

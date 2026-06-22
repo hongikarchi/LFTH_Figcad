@@ -11,7 +11,7 @@ using Rhino.PlugIns;
 // 플러그인 고유 id (변경 금지 — 한 번 정하면 유지). + 메타.
 [assembly: Guid("e1f2a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b")]
 [assembly: PlugInDescription(DescriptionType.Organization, "LFTH")]
-[assembly: PlugInDescription(DescriptionType.WebSite, "https://figcad.archivibe.workers.dev")]
+[assembly: PlugInDescription(DescriptionType.WebSite, "https://lfthfigcad-production.up.railway.app")]
 
 namespace Figcad
 {
@@ -24,7 +24,7 @@ namespace Figcad
     // 공통 — 룸 id 프롬프트 + BaseUrl. 로컬 테스트면 DefaultBaseUrl을 http://localhost:8787 로.
     public abstract class FigcadCommandBase : Command
     {
-        protected const string DefaultBaseUrl = "https://figcad.archivibe.workers.dev";
+        protected const string DefaultBaseUrl = "https://lfthfigcad-production.up.railway.app";
         protected FigcadConfig Prompt()
         {
             string room = "";

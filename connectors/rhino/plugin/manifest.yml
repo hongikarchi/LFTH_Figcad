@@ -6,7 +6,7 @@ authors:
 description: >
   Rhino ↔ Figcad 라이브 커넥터. 명령: FigcadPull(Figcad→Rhino) ·
   FigcadPush(Rhino 곡선→Figcad) · FigcadPushBreps(Brep 기계적 리프트 — 기둥·벽·슬라브·보 인식).
-url: "https://figcad.archivibe.workers.dev"
+url: "https://lfthfigcad-production.up.railway.app"
 keywords:
   - figcad
   - bim

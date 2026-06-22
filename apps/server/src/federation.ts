@@ -2,15 +2,15 @@ import { CORS, isSafeRoom, json } from './version';
 import type { BlobStore } from './blobStore';
 
 /**
- * M13-F — Federation 소스 페이로드 저장/서빙 (R2 COMMITS 버킷, `federation/` 프리픽스).
+ * M13-F — Federation 소스 페이로드 저장/서빙 (BlobStore, `federation/` 프리픽스).
  *
  * 업로드한 외부 모델(.glb/.ifc)이 협업자 *전원*에게 페치 가능해야 허브가 성립 — 클라 로컬
  * object-URL은 올린 사람만 봄. 콘텐츠 해시 키 = dedup + 불변(출신툴 무손실 회수 = Lane-2 보관).
  * 불변①: 페이로드는 *별도 표현*(불투명 bytes, 지오 아님) — federation 채널엔 이 blob URL(ref)만,
  * Y.Doc엔 지오 미진입. derive·store 밖.
  *
- *   POST ?op=fed-upload&ext=glb   body=bytes  → R2 put(federation/<room>/<hash>.<ext>) → { key, url }
- *   GET  ?op=fed-blob&key=<key>               → R2 get → bytes (content-type by ext)
+ *   POST ?op=fed-upload&ext=glb   body=bytes  → put(federation/<room>/<hash>.<ext>) → { key, url }
+ *   GET  ?op=fed-blob&key=<key>               → get → bytes (content-type by ext)
  */
 
 const MAX_FED_BYTES = 100 * 1024 * 1024; // 100MB — 모델 업로드 상한
@@ -57,7 +57,7 @@ export async function handleFederationBlob(
 
   if (op === 'fed-blob' && request.method === 'GET') {
     const key = url.searchParams.get('key') ?? '';
-    // 보안: 이 룸의 federation 프리픽스만 — 커밋 blob 등 임의 R2 키 읽기 차단.
+    // 보안: 이 룸의 federation 프리픽스만 — 커밋 blob 등 임의 BlobStore 키 읽기 차단.
     if (!key.startsWith(prefix) || key.includes('..')) return json(400, { error: '허용되지 않는 key' });
     const obj = await store.get(key);
     if (!obj) return json(404, { error: 'not found' });

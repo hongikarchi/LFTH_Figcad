@@ -5,10 +5,11 @@
   "packageManager": "pnpm@11.6.0",
   "engines": { "node": ">=20" },
   "scripts": {
-    "dev": "pnpm --filter @figcad/web dev",
-    "build": "pnpm --filter @figcad/web build",
-    "test": "pnpm --filter @figcad/core test",
-    "typecheck": "pnpm -r exec tsc --noEmit",
-    "deploy": "pnpm --filter @figcad/web build && pnpm --filter @figcad/server deploy"
+    "dev": "corepack pnpm --filter @figcad/web dev",
+    "build": "corepack pnpm --filter @figcad/web build && corepack pnpm --filter @figcad/server build:node",
+    "test": "corepack pnpm --filter @figcad/core test && corepack pnpm --filter @figcad/server test && corepack pnpm --filter @figcad/interop test",
+    "typecheck": "corepack pnpm --filter @figcad/core exec tsc --noEmit && corepack pnpm --filter @figcad/server exec tsc --noEmit && corepack pnpm --filter @figcad/interop exec tsc --noEmit && corepack pnpm --filter @figcad/web exec tsc --noEmit",
+    "deploy": "node -e \"console.log('Railway deploys from Dockerfile via Railway. Cloudflare rollback: corepack pnpm deploy:cf')\"",
+    "deploy:cf": "corepack pnpm --filter @figcad/web build && corepack pnpm --filter @figcad/server deploy"
   }
 }

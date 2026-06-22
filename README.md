@@ -8,14 +8,17 @@
 
 - `packages/core` — 문서 스키마, 편집 ops, 지오메트리 파생(순수 TS, vitest)
 - `apps/web` — Vite + React + Three.js 클라이언트
-- `apps/server` — Cloudflare Worker (정적 에셋 + y-partyserver Durable Object 동기화 룸)
+- `apps/server` — Railway/Node 백엔드(정적 에셋 + Yjs WS 룸 + API). Cloudflare Worker 경로는 롤백용으로 유지
 
 ## 개발
 
 ```sh
 corepack pnpm install
-corepack pnpm dev        # vite dev server
-corepack pnpm deploy     # wrangler deploy
+corepack pnpm dev        # Vite dev server (API/WS는 apps/server dev-node 8787)
+corepack pnpm build      # web dist + Railway node-server bundle
+corepack pnpm test       # core + server + interop
+corepack pnpm deploy     # Railway 안내만 출력
+corepack pnpm deploy:cf  # Cloudflare rollback 배포
 ```
 
 ## 설계 불변 규칙

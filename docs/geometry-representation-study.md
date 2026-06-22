@@ -67,7 +67,7 @@
 
 ## §0. Figcad 현재 표현 (코드 그라운딩) ✅
 
-> 코드 직접 확인: `schema.ts`(v3)·`geometry/index.ts`(DeriveCache)·규칙 `core-geometry.md`·`ops-store.md`. 제안의 baseline = 이걸 정확히 핀.
+> 코드 직접 확인: `schema.ts`(v3)·`geometry/index.ts`(DeriveCache)·규칙 `../.claude/rules/core-geometry.md`·`../.claude/rules/ops-store.md`. 제안의 baseline = 이걸 정확히 핀.
 
 **데이터 모델 = 14 kind discriminated union, 전부 *파라미터*만 (지오 0)**
 - 각 Element = 평면 zod 객체 `{id, kind, levelId, typeId?, ...params}`, **mm 정수**(ops 경계 `quantize`). 지오메트리 필드 없음.

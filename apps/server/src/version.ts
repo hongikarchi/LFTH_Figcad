@@ -2,12 +2,12 @@ import type { DocSnapshot } from '@figcad/core';
 import type { BlobStore } from './blobStore';
 
 /**
- * M6 git식 버전 관리 — 커밋 저장/조회 (R2).
+ * M6 git식 버전 관리 — 커밋 저장/조회 (BlobStore: R2 또는 Disk).
  *
  * 커밋 = 문서 스냅샷(canonical JSON)의 SHA-256 콘텐츠 해시 blob.
  *   projects/<room>/commits/<hash>.json  스냅샷 본문 (해시 dedup — 같은 내용 = 같은 키)
  *   projects/<room>/log.json             { head, commits: [메타…] } — 타임라인
- * Doc DO가 커밋 권위(자기 룸 요청을 직렬화)라 log.json read-modify-write가 안전하다.
+ * 룸별 요청 직렬화(DO 또는 Node room mutex)라 log.json read-modify-write가 안전하다.
  * 복원은 클라이언트가 스냅샷을 받아 importSnapshot — 서버는 읽기만 제공.
  */
 
@@ -32,8 +32,8 @@ const MAX_AUTHOR = 40;
 const MAX_LOG_COMMITS = 500;
 
 /**
- * R2 키가 `projects/<room>/...` 템플릿이므로 room에 '/' 등이 들어오면
- * 다른 프로젝트 네임스페이스로 경로 주입이 가능하다 — 안전 문자만 허용.
+ * BlobStore 키가 `projects/<room>/...` 템플릿이므로 room에 '/' 등이 들어오면
+ * 다른 프로젝트 네임스페이스/디스크 경로로 주입이 가능하다 — 안전 문자만 허용.
  * (프로바이더가 만드는 룸 id는 nanoid URL-safe 알파벳이라 전부 통과)
  */
 export const isSafeRoom = (room: string): boolean => /^[A-Za-z0-9_-]{1,64}$/.test(room);
@@ -134,7 +134,7 @@ export const json = (status: number, body: unknown): Response =>
   });
 
 /**
- * 룸 HTTP 라우트 (Doc DO onRequest):
+ * 룸 HTTP 라우트 (Cloudflare DO 또는 Node server):
  *   POST ?op=commit  {message, author} → {skipped, meta?}
  *   GET  ?op=log               → CommitLog
  *   GET  ?op=show&hash=<hash>  → 스냅샷 JSON

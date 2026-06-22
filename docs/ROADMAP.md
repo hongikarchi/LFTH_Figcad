@@ -8,9 +8,9 @@
 - **빌더 = Dockerfile**(node:22): nixpacks 4연속 실패(Node/pnpm 버전지옥·.NET 오판) → Dockerfile 결정적. 배포 검증 전부 green(빌드·서빙·라우트·**WSS 실시간**·**볼륨 /data 영속**·numReplicas=1).
 - **사용자 남은 일**: AI 키 `railway variables --set ANTHROPIC_API_KEY=`(시크릿) + **리전 US 확인**(Anthropic 403 회피) · 커넥터 BASE=이 URL · CF 롤백용 유지.
 - **핵심**: 이주가 "전송층 재작성" 아님 — `dev-node.mjs`가 이미 Node WS Yjs 동기화(클라 provider 호환). 순수 핸들러(apply/federation/version/agent=Web-standard)는 R2→BlobStore 추상화만 하면 Node 재사용.
-- **P1 BlobStore**(R2BlobStore+DiskBlobStore, federation/version 파라미터화, 비-fork=CF 유지) · **P2 node-server.ts**(dev-node 승격+?op= 배선+룸 mutex+DiskBlobStore+esbuild 번들) · **P3 config/backend.ts**(클라 5곳 단일소스, 단일서비스 same-origin) · **P4 로컬검증**(멀티플레이어 e2e·Railway-mode 부팅·fed/version/origin/AI배선/영속) · **P5 nixpacks+railway.json+배포가이드**.
+- **P1 BlobStore**(R2BlobStore+DiskBlobStore, federation/version 파라미터화, 비-fork=CF 유지) · **P2 node-server.ts**(dev-node 승격+?op= 배선+룸 mutex+DiskBlobStore+esbuild 번들) · **P3 config/backend.ts**(클라 5곳 단일소스, 단일서비스 same-origin) · **P4 로컬검증**(멀티플레이어 e2e·Railway-mode 부팅·fed/version/origin/AI배선/영속) · **P5 Dockerfile+railway.json+배포가이드**.
 - 검증: core 353·interop 41(+3)·server 13(+3)·tsc 0·web build·node 번들. Windows 경로버그 수정(DIST 절대화).
-- **다음(사용자)**: Railway 배포(Root=레포루트·볼륨 /data·env·US 리전·`railway up`=사용자 계정). 미배포분 M12~M14.1 전부 포함. CF는 롤백용 유지.
+- **다음(사용자)**: AI 키/US 리전 확인 + 커넥터 BASE를 Railway URL로 변경. 미배포분 M12~M14.1은 M15 Railway 빌드에 포함 완료. CF는 롤백용 유지.
 
 ## M14 — 실사용 검증 (배포 + 조율 세션 + 갭 해결) 🔄 진행
 > 전략문서 재정독 결론: 해자(중립+편집+실시간 멀티플레이어 ON federation)가 **미배포라 aspirational** · Qonic GA·Motif 압박. 사용자 결정 = **실사용 검증 우선**(빌드 최소·학습 최대). 플랜 `~/.claude/plans/docs-fuzzy-micali.md` ▶M14/M14.1 · 갭 캡처 `docs/realuse-validation.md`.
@@ -21,14 +21,14 @@
   3. **glTF 오버레이 north ~140m 어긋남 = FIXED** — 박스 실험 측정→Z 부호반전(`@figcad/interop/coords`), 4중 검증(측정·단위·통합 bbox 게이트·시각).
   4. 인식 커버리지 = 정상(구조 S-Slab 정확, 비구조 parking/ceiling/외피=Lane-2+오버레이).
 - **세션**: 사용자 — `figcad-push.cs`/새 .rhp로 push + glTF 오버레이 정합 + 2기기 조율.
-- **미룸(재계획)**: E 3D-Tiles · ingest=PR · 조율 워크플로 성숙. **오버레이 fix는 미배포**(로컬 검증 — 배포 시 적용).
+- **미룸(재계획)**: E 3D-Tiles · ingest=PR · 조율 워크플로 성숙. **오버레이 fix는 M15 Railway 배포에 포함**.
 
 ## 4대 불변 규칙
 1. 지오메트리는 문서에 저장·동기화 안 함 — 파라미터에서 순수 함수 파생.
 2. 모든 문서 변경은 DocStore ops 경유 (yjs import는 core·collab 밖 금지).
 3. React/DOM은 렌더 루프 금지 — HUD는 명령형 DOM, React는 패널만.
 4. 펜=도구, 터치=카메라 (팜 리젝션, InputManager 격리).
-상세: `CLAUDE.md` + `.claude/rules/` (path-scoped).
+상세: `../CLAUDE.md` + `../.claude/rules/` (path-scoped).
 
 ## 문서 위치 (투명성)
 - **이 파일** = repo 내 lean SoT (현재 위치 + 마일스톤 상태).
@@ -37,7 +37,7 @@
 - 메모리 인덱스: `~/.claude/projects/C--Users-user-Documents-LFTH-Figcad/memory/MEMORY.md`.
 - 영역별 규칙: `.claude/rules/*.md` (해당 경로 작업 시 로드).
 - 포지셔닝 결정: **`docs/positioning-vs-mcp.md`** (2026-06-18 — MCP 시대 가치·모델링 범위·인제스트/동기화. 결론: viewer 아님·모델러 아님 = **편집가능 중립 조율 허브**. 해자=실시간·웹·중립[AI는 table-stakes]. 모델링=*입력 UI 가볍게+파라메트릭 어휘 풍부+멀티모델 라이브 허브가 진짜 일감*. 가치갭=ReferenceLayer dev-flag UI 미배선. §8 인제스트=**PR primitive**[import→staging AI clean-up→merge, 커넥터는 메타데이터 통과], 동기화=**툴↔허브 git + 사람↔허브 실시간**, Speckle backbone=검증·파이프위 editable로 이김·stream API ingest 옵션).
-- 외부 벤치마크: **`docs/hub-benchmark-review.md`** (유일·현행 — 협업·인터롭 플랫폼 Speckle·Onshape·Figma·Omniverse·3D Tiles 대비, 정체성=웹·실시간·AI 허브 기준 deep research 3패스). 구 조사 `modeling-tools-review.md`(저작기능 렌즈, off-identity)·`pascal-editor-review.md`는 **삭제됨** — 쓸 만한 부분(IFC Pset/Translator 인터롭 = §8 G5, pascal per-kind 레지스트리 = §5)은 hub-benchmark로 이관.
+- 외부 벤치마크: **`docs/hub-benchmark-review.md`** (유일·현행 — 협업·인터롭 플랫폼 Speckle·Onshape·Figma·Omniverse·3D Tiles 대비, 정체성=웹·실시간·AI 허브 기준 deep research 3패스). 구 조사 modeling-tools-review(저작기능 렌즈, off-identity)·pascal-editor-review는 **삭제됨** — 쓸 만한 부분(IFC Pset/Translator 인터롭 = §8 G5, pascal per-kind 레지스트리 = §5)은 hub-benchmark로 이관.
 - 데이터구조 근본연구: **`docs/geometry-representation-study.md`** (3D 표현 통합 — 3패스 딥리서치 + F-rep fetch. 결론 = Figcad는 recipe-tree-CRDT의 degenerate, 제안 = 3층 머지[movable-tree CRDT + field-LWW + post-merge lint critic]. **§8 = 라운드트립 정밀화**[parametric 2종·손실은 약한커널-편집-되올리기·"최고수준 recipe 저장" 규칙]. **§9 = 운영 결론**[**F-rep 강등**=이기는 축 없음(인터롭서 B-rep에 짐 — 지배 엔드포인트가 B-rep 커널)·**AI-freeform=파라미터 편집**(곡선 어휘)·**import=lift-what-maps+Lane-2 잔여+AI clean-up**]. **빌드 4개**: 머지 lint(=hub-benchmark §9, 첫 빌드)·Lane-2 원본 보관·파라메트릭 곡선 어휘·AI clean-up 패스. F6 federation·`federation-design.md`와 페어).
 
 ## 완료 (M0~M9)
@@ -56,7 +56,7 @@
 | M9-B | 협업 코멘트(요소앵커 스레드, LWW) | ✅ |
 | M9-C | MCP 프로그래머블 API | ↩️ 구현 후 YAGNI 제거 (소비자 0; 메커니즘은 M10 ?op=apply로) |
 
-배포: https://figcad.archivibe.workers.dev
+과거 Cloudflare 배포: https://figcad.archivibe.workers.dev (현 primary는 M15 Railway)
 
 ## M11.5 — UX 폴리시 (사용성 7건) ✅ 배포 `73eef3be`
 실사용 피드백 수정. 상세 = `~/.claude/plans/wondrous-hugging-pebble.md`.
@@ -81,7 +81,7 @@
 - Phase 2 ✅: 존(IfcSpace, 면적/부피) + 커튼월(UV 멀리언 그리드) + **라벨**(Revit 태그 — targetId 바인딩+template[name/area/custom]+leader, 타깃 추종/고아 fallback). 신규 kind 완전 배선(커밋 7c649e7 존 = **템플릿**). interop=주석류 의도적 스킵(텍스트는 drawing DXF 경유).
 - Phase 3 ✅: fork(클라 주도 — 한 버전 스냅샷→새 룸. 서버 DO storage 격리라 클라 importSnapshot).
 - 라벨 ✅(`bc45a73`, 배포 `d5daa8c2`): Revit 태그 — targetId 바인딩+template(name/area/custom)+leader, 타깃 추종/고아 fallback. 멀티에이전트 리뷰 4건 수정(major 1=평면 솔리드박스 고스팅 가드).
-- 남은 = **goal prompt**(`docs/GOAL_PROMPT.md`): M10 connector(Task D, .NET) · 검증(Task E, 416MB·네이티브 툴). 둘 다 이 환경 밖.
+- 남은 당시 목표는 M10 connector(Task D, .NET) · 검증(Task E, 416MB·네이티브 툴)이었고, 이후 M13~M15에서 별도 진행/검증됨.
 
 ### Phase 요지 (상세는 wondrous-hugging-pebble.md)
 - **1 도면생성**: 3사 공식 합의 = 단면=절단면∩지오메트리(굵은선+poché) + 투영(가는선) / 입면=정사영+은선제거. 우리는 edges/footprint 소유 → 절단면∩메시·정사영 직접 계산, 은선제거=depth-sort. `views` 맵(파생, 미저장) + `deriveDrawing` + `hatch`(라인패턴). 1a 평면+해치→1b 단면→1c 입면.
@@ -103,7 +103,7 @@
 | def.positional S1 | `POSITIONAL` 레지스트리 선언 + golden/enumerated 안전망 (순수 additive, 동작변경 0) | ✅ `4071276` |
 | def.positional S2+S3 | move/rotate/transformCopy/footprint를 `POSITIONAL` 단일소스 dispatch로 (4 손-중복 제거, 특수훅 명시 유지). audit+멀티리뷰=FULLY EQUIVALENT, core 320 0변동 | ✅ `67b1430` |
 
-신규 의존성 0 · 스키마 0 · **미배포**(다음 배포는 사용자 승인 시 — B 서버변경 포함). 검증: core 245(+6)·tsc·build·reference-layer-smoke 4/4·멀티에이전트 리뷰(B 3건·C 2건 수정).
+신규 의존성 0 · 스키마 0 · 당시 **미배포**(이후 M15 Railway 빌드에 포함). 검증: core 245(+6)·tsc·build·reference-layer-smoke 4/4·멀티에이전트 리뷰(B 3건·C 2건 수정).
 
 ## M13 — 멀티모델 라이브 허브 (정체성 피벗) 🔄 진행
 > `positioning-vs-mcp.md` 피벗 실행: 모델링 깊이 그만, **멀티모델 라이브 federation 허브**를 켠다(정체성 핵심 미빌드분). 플랜 = `~/.claude/plans/docs-fuzzy-micali.md`. 자율 풀푸시(빌드 A→E + 연구 R1~R4 병렬) · **미배포**(승인 게이트).
@@ -135,7 +135,7 @@
 | Codex #5 Low | reload sig에 sourceType(stale loader 방지) | ✅ `f3a3767` |
 | 리뷰 후속 | KindFromLayer 토큰매칭(부분문자열 오탐)·visibleBounds root 가드·updateElement 곡선화 가드 | ✅ `2323a56` |
 
-검증: core **353**·tsc·web build·C# 컴파일 clean. 멀티에이전트 리뷰 1패스(3건 수정). 미배포.
+검증: core **353**·tsc·web build·C# 컴파일 clean. 멀티에이전트 리뷰 1패스(3건 수정). 당시 미배포, 이후 M15 Railway 빌드에 포함.
 
 ## M13.6 — 마무리 (Pull+origin·.rhp·계단난간·.3dm네이티브) ✅ (2026-06-21)
 | 항목 | 내용 | 상태 |
@@ -146,12 +146,12 @@
 | D .3dm 네이티브 | import3dmMeshes(Mesh객체 Z-up→Y-up)+extract3dm+'3dm'등록+Navigator. 게이트 rhino-meshes 3 | ✅ (interop 38) |
 | 리뷰 후속 | wasm 누수(.delete)·.3dm 빈오버레이 throw/warn | ✅ |
 
-검증: core 353·interop **38**·server 10·tsc·web build·dotnet build clean. 멀티리뷰 1패스(3건). **미배포.**
+검증: core 353·interop **38**·server 10·tsc·web build·dotnet build clean. 멀티리뷰 1패스(3건). 당시 **미배포**, 이후 M15 Railway 빌드에 포함.
 **D 한계(정직)**: Mesh 객체 .3dm만(SketchUp·메시모델). pure-Brep/블록 Rhino(260617=Instance687·Mesh0)=빈오버레이→glTF 경로.
 
 ### M13 남은 일 (재계획 대상 — eyes-open)
 - **E 3D-Tiles HLOD**: 대형 신규 뷰어 서브시스템(436MB 스트리밍). 재계획서 결정.
-- **배포**: M12+M13 전체 미배포(F=서버변경 포함, 로컬 우선 — Cloudflare 용량). 재계획 후 `pnpm -F @figcad/web build` → `wrangler deploy`.
+- **배포**: M12+M13은 이후 M15 Railway 빌드에 포함 완료. Cloudflare `wrangler deploy`는 rollback 경로.
 - **G 잔여**: L-PARKING(78=매칭kind 없음)·logo/glass=Lane-2 유지. stair/railing 곡선=bbox 근사(v1.5 파라).
 - **소품**: ROOM_KEY per-room=단일키 가정(문서화) · 곡선벽 re-import sagitta=v1.5(우리 export=폴리라인 자기왕복 무관).
 - **로컬 데브 함정**: dist 재빌드 후 miniflare(dev.mjs) **반드시 재시작**(에셋 staleness → 흰화면) + 좀비 프로세스 kill.
@@ -170,8 +170,7 @@
 **KEEP (빌드 안 함):** F1 실시간코어(Yjs CRDT, Figma보다 앞섬) · F5 손실 비대칭=업계표준 · F8 wasm32 4GB→커넥터 경로 검증 · F4 Speckle 컨버터=우리 설계 옳음 검증 · F3 버전 diff=M11.5로 충족(3D 고스트만 v1.5).
 
 ## 함정 (반복비용 큰 것)
-- wrangler.jsonc compat 2개: `no_websocket_standard_binary_type`·`nodejs_compat`.
-- AI 라우트 = AgentRunner DO(locationHint wnam) — 직접 fetch는 HK egress→Anthropic 403.
-- Cloudflare secret = bash `printf '%s' "$(tr -d '\r\n' < 파일)" | wrangler secret put`.
+- Railway primary: `DATA_DIR=/data`, `numReplicas=1`, Dockerfile 빌드. AI는 `ANTHROPIC_API_KEY` + US 리전.
+- Cloudflare rollback: `wrangler.jsonc` compat 2개(`no_websocket_standard_binary_type`·`nodejs_compat`) + bash `wrangler secret put`.
 - Anthropic strict tool use 금지(grammar 400) — executeOp 런타임 검증으로 충분.
-- 호스팅: DO 무료 일일한도 — 개발 E2E/AI 버스트로 소진, 매일 00:00 UTC 리셋. 헤드룸 필요시 Workers Paid $5(코드 0) 1순위.
+- Cloudflare rollback 사용 시: DO 무료 일일한도는 지속 WS에 부적합. Primary는 Railway라 이 비용 함정 회피.

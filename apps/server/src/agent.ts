@@ -20,7 +20,7 @@ import {
  * 자기 스토어에 opLog를 재생하고 Yjs가 전파한다.
  *
  * 응답: SSE 스트림 — {type:'text'|'op'|'done'|'error'} 이벤트.
- * API 키는 Cloudflare secret(ANTHROPIC_API_KEY) — 브라우저 노출 금지.
+ * API 키는 서버 환경변수/secret(ANTHROPIC_API_KEY) — 브라우저 노출 금지.
  */
 
 interface AgentEnv {

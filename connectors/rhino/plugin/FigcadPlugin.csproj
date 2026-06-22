@@ -5,7 +5,7 @@
     빌드: VS 2022로 열거나  `dotnet build -c Release`  → bin/Release/net7.0-windows/Figcad.rhp
     설치(테스트): 그 .rhp를 Rhino 창에 드래그&드롭 (또는 PluginManager > Install).
     배포(애드온): 아래 manifest.yml로  `yak build`  →  Figcad-0.1.0-*.yak  → `yak install` 또는 Package Manager.
-    ⚠️ 이 .csproj는 이 환경(JS)서 검증 못 함 — VS/dotnet에서 빌드. RhinoCommon 버전/TFM는 설치된 Rhino에 맞게 조정 가능.
+    2026-06-23: dotnet build -c Release 검증됨. RhinoCommon 버전/TFM는 설치된 Rhino에 맞게 조정 가능.
     Mac/Rhino 7 대상이면 TFM·RhinoCommon 버전 조정 필요(여기선 Rhino 8 Win 기준).
   -->
 

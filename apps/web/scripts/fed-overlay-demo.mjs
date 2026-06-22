@@ -1,6 +1,6 @@
-// federation 오버레이 로컬 실증 — puppeteer로 룸 열고 glTF 오버레이(R2 blob) 추가 + 스크린샷.
+// federation 오버레이 로컬 실증 — puppeteer로 룸 열고 glTF 오버레이(BlobStore blob) 추가 + 스크린샷.
 // 사용: BLOB_KEY=federation/<room>/<hash>.glb PORT=8788 ROOM=<room> node apps/web/scripts/fed-overlay-demo.mjs
-// 전제: miniflare(dev.mjs)에 dist 서빙 + 룸에 프레임 + R2에 blob 업로드(?op=fed-upload). __figcad 노출 빌드 필요(vite DEV 또는 임시 노출).
+// 전제: node-server/dev.mjs에 dist 서빙 + 룸에 프레임 + blob 업로드(?op=fed-upload). __figcad 노출 빌드 필요(vite DEV 또는 임시 노출).
 import puppeteer from 'puppeteer-core';
 
 const PORT = process.env.PORT ?? '8788';

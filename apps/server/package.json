@@ -8,6 +8,7 @@
     "dev:workerd": "node dev.mjs",
     "dev:wrangler": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:cf": "wrangler deploy",
     "build:node": "node build-node.mjs",
     "start": "node node-dist/server.mjs",
     "test": "vitest run"

@@ -1,8 +1,8 @@
 /**
  * AI 패널 스모크 — AI 토글 → 메시지 전송 → 응답 표면화 → (키 있으면) 계획 승인까지.
  * 사용: node scripts/ai-panel-smoke.mjs [포트 | 전체 origin URL]
- *   로컬: node scripts/ai-panel-smoke.mjs 8787   (사전: apps/server에서 node dev.mjs)
- *   프로덕션: node scripts/ai-panel-smoke.mjs https://figcad.archivibe.workers.dev
+ *   로컬: node scripts/ai-panel-smoke.mjs 8787   (사전: apps/server에서 node dev-node.mjs 또는 node-dist/server.mjs)
+ *   프로덕션: node scripts/ai-panel-smoke.mjs https://lfthfigcad-production.up.railway.app
  */
 import puppeteer from 'puppeteer-core';
 

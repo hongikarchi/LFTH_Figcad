@@ -4,7 +4,7 @@
 //
 // 설정: ROOM(룸 id) + BASE(서버) 두 줄만 바꿔서 실행.
 //   로컬 테스트:  BASE = "http://localhost:8788"
-//   배포(확정분): BASE = "https://figcad.archivibe.workers.dev"
+//   배포(확정분): BASE = "https://lfthfigcad-production.up.railway.app"
 // 전제: 룸이 브라우저서 한 번 열려 시드됨(levelId L-001 · 타입 T-w200/T-s150/T-c400/T-b300/T-st1/T-rl1).
 //
 // 동작: 블록 재귀 수집 + leaf 레이어 full-path → kind(S-Column=기둥·S-Connection=보·A-Wall=벽·

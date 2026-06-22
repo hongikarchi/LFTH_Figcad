@@ -1,6 +1,6 @@
 /**
  * M10 connector E2E — ?op=apply 라이브쓰기 broadcast + ?op=pull + 부분실패 + 무인 영속.
- * 사전: vite dev + miniflare dev.mjs(8787, 실 Doc DO). dev-node는 broadcast 미보장 → dev.mjs 필수.
+ * 사전: vite dev + 서버 8787(dev-node 또는 node-server; Cloudflare dev.mjs도 가능).
  * 사용: node connector-e2e.mjs [vite포트=5173] [서버포트=8787]
  */
 import puppeteer from 'puppeteer-core';

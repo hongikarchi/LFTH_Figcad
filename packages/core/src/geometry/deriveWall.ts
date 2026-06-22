@@ -337,8 +337,8 @@ function vertexNormals(poly: Pt[]): [number, number][] {
  * 개구부(opening)는 MSU에서 **보류** — 곡선 피처 벽은 LOD 100–250에서 문/창을 거의 호스트하지 않음.
  * (직선 벽은 변경 없는 경로로 개구부 완전 지원.) C5에서 곡선 개구부 추가 시 이 분기에 구멍 로직.
  *
- * ⚠ 인터롭(C5 보류): 현재 IFC/.3dm/DXF export는 곡선 벽을 **직선 현(chord)** 으로 내보냄 = 곡률 무손실 아님(조용한 손실).
- *   IfcArcIndex / ArcCurve / DXF bulge 라운드트립은 C5에서. 그 전까지는 알려진 갭(interop.md에 기록 예정).
+ * 인터롭(C5): IFC/.3dm/DXF export는 dense 폴리라인/곡선 풋프린트로 곡률을 보존한다.
+ * 진짜 파라메트릭 arc 엔티티(IfcArcIndex/ArcCurve/DXF bulge)와 sagitta re-import는 후속.
  */
 function deriveArcWall(input: WallDeriveInput): DerivedGeometry {
   const { wall, type, level } = input;
