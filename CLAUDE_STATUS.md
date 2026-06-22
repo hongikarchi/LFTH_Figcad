@@ -4,7 +4,13 @@ Claude owns this file.
 
 ## Current Task
 
-**M15 — Cloudflare → Railway 이주 완료(로컬 검증).** 5 Phase 전부 커밋. **미배포**(실제 railway up = 사용자 계정).
+**M15 — Cloudflare → Railway 이주 ✅ 배포완료·전부 검증.** 라이브 = **https://lfthfigcad-production.up.railway.app** (Railway 프로젝트 LFTH_Figcad, bluems99@gmail.com).
+
+## Railway 배포 (2026-06-22) — 검증 전부 green
+- **빌더 = Dockerfile**(node:22-slim + corepack pnpm@11.6.0). nixpacks 4연속 실패(nodejs_22 undefined·corepack not found·.NET 오판·pnpm↔Node ERR_VM_DYNAMIC_IMPORT) → Dockerfile로 결정적 빌드.
+- 검증: 빌드 SUCCESS · root 200 · asset text/javascript · ?op=origin/fed-upload 라우트 · **WSS 실시간(syncStep1)** · **영속(origin이 redeploy 후 생존 = /data 볼륨+SIGTERM flush)** · numReplicas=1.
+- 볼륨 `lfth_figcad-volume` @ `/data` + env `DATA_DIR=/data`.
+- **남은 사용자 작업**: (1) **AI 키** — `railway variables --set ANTHROPIC_API_KEY=...`(시크릿, 내가 키 없음). (2) **리전 US 확인**(AI 지역차단 — 키 넣기 전 대시보드서 region=US 확인, 아니면 Anthropic 403). (3) 커넥터 BASE=이 URL. (4) CF 워커 롤백용 유지.
 
 ## M15 완료 (2026-06-22)
 CF DO duration 무료한도 초과(지속 WS=룸 24h 과금) → Railway 정액 이주. **core/geometry/interop/UI 0변경**(전송+저장+배포만).
