@@ -30,9 +30,10 @@ const PORT = Number(process.env.PORT ?? 8787);
 const ROOM_KEY = process.env.ROOM_KEY || undefined;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || undefined;
 const here = path.dirname(fileURLToPath(import.meta.url));
-// 빌드 후 node-dist/에서 실행 → ../../web/dist. 소스 실행(tsx) → ../../web/dist. DATA_DIR로 덮어쓰기.
-const DIST = process.env.WEB_DIST || path.resolve(here, '../../web/dist');
-const DATA_DIR = process.env.DATA_DIR || path.resolve(here, '../.data');
+// 빌드 후 node-dist/에서 실행 → ../../web/dist. WEB_DIST(상대/절대) 덮어쓰기. **절대경로로 정규화**
+// (Windows path.join은 '\' 생성 → startsWith 비교가 상대 '/' 경로와 어긋나 정적서빙이 SPA폴백으로 샘).
+const DIST = path.resolve(process.env.WEB_DIST || path.resolve(here, '../../web/dist'));
+const DATA_DIR = path.resolve(process.env.DATA_DIR || path.resolve(here, '../.data'));
 const DOCS_DIR = path.join(DATA_DIR, 'docs');
 const BLOB_DIR = path.join(DATA_DIR, 'blobs');
 fs.mkdirSync(DOCS_DIR, { recursive: true });
