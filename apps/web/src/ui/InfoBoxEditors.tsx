@@ -505,5 +505,7 @@ export function renderElementEditor(store: DocStore, el: Element, setSelection: 
     );
   }
 
-  return null;
+  // undefined = "어떤 kind에도 매칭 안 됨" → 셸이 도구 컨텍스트로 fallthrough.
+  // (opening 분기의 return null = "매칭됐으나 렌더 없음" → 셸이 빈 InfoBox 유지)
+  return undefined;
 }

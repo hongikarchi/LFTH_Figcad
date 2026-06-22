@@ -40,9 +40,10 @@ export function InfoBox({ store }: { store: DocStore }) {
   }
 
   // ---- 선택 요소 컨텍스트 ----
+  // editor===undefined만 fallthrough(무매칭). null=매칭됐으나 빈 렌더 → 그대로 반환(빈 InfoBox, 원본 패리티).
   if (el) {
     const editor = renderElementEditor(store, el, setSelection);
-    if (editor) return editor;
+    if (editor !== undefined) return editor;
   }
 
   // ---- 활성 도구 컨텍스트 ----
