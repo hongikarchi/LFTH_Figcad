@@ -3,6 +3,13 @@
 > 버전관리되는 lean 상태판. 폴더에 보이고 git에 남고 compact 생존.
 > **정체성 — 3축: 웹 · 실시간 · AI.** **웹**(브라우저, 설치 없음 / iPad Pencil + 데스크톱) · **실시간**(여러 툴 모델·도면 + 여러 사람을 한 화면에서 동시에) · **AI**(손그림→모델, 에이전트 편집). Rhino·CAD·Revit의 모델·도면을 **실시간으로 모아 같이 보고 빚는** 멀티툴 협업 허브 — IFC/DXF/.3dm 양방향 인터롭. 대조·sketch·조율은 거기서 파생. (정밀 모델링·납품도면 *제작*은 전문툴 몫, Figcad는 모으고·조율 — LOD 100~250 수준. "상류"·"핸드오프"=단방향 함의라 안 씀.)
 
+## M15 — Cloudflare → Railway 이주 (Node 백엔드) ✅ 로컬완료·미배포 (2026-06-22)
+> CF DO 무료 duration 한도 초과(지속 WS=룸 24h 과금, 실시간 허브엔 구조적) → 내부툴은 Railway 정액이 적합. 플랜 `~/.claude/plans/docs-fuzzy-micali.md` ▶M15 · 메모리 `figcad-railway-migration` · 배포가이드 `docs/RAILWAY_DEPLOY.md`. **core/geometry/interop/UI 0변경**(전송+저장+배포만).
+- **핵심**: 이주가 "전송층 재작성" 아님 — `dev-node.mjs`가 이미 Node WS Yjs 동기화(클라 provider 호환). 순수 핸들러(apply/federation/version/agent=Web-standard)는 R2→BlobStore 추상화만 하면 Node 재사용.
+- **P1 BlobStore**(R2BlobStore+DiskBlobStore, federation/version 파라미터화, 비-fork=CF 유지) · **P2 node-server.ts**(dev-node 승격+?op= 배선+룸 mutex+DiskBlobStore+esbuild 번들) · **P3 config/backend.ts**(클라 5곳 단일소스, 단일서비스 same-origin) · **P4 로컬검증**(멀티플레이어 e2e·Railway-mode 부팅·fed/version/origin/AI배선/영속) · **P5 nixpacks+railway.json+배포가이드**.
+- 검증: core 353·interop 41(+3)·server 13(+3)·tsc 0·web build·node 번들. Windows 경로버그 수정(DIST 절대화).
+- **다음(사용자)**: Railway 배포(Root=레포루트·볼륨 /data·env·US 리전·`railway up`=사용자 계정). 미배포분 M12~M14.1 전부 포함. CF는 롤백용 유지.
+
 ## M14 — 실사용 검증 (배포 + 조율 세션 + 갭 해결) 🔄 진행
 > 전략문서 재정독 결론: 해자(중립+편집+실시간 멀티플레이어 ON federation)가 **미배포라 aspirational** · Qonic GA·Motif 압박. 사용자 결정 = **실사용 검증 우선**(빌드 최소·학습 최대). 플랜 `~/.claude/plans/docs-fuzzy-micali.md` ▶M14/M14.1 · 갭 캡처 `docs/realuse-validation.md`.
 - **배포 ✅ (2026-06-21)**: `https://figcad.archivibe.workers.dev` Version `ed8fcb97`. M12+M13 전체. 스모크 green(root/asset·origin·pull·fed왕복 R2·ANTHROPIC secret·**AI end-to-end 403없음**). 멀티플레이어 동시작업 실확인.
