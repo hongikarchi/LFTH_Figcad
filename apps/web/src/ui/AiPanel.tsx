@@ -158,7 +158,7 @@ export function AiPanel({ store }: { store: DocStore }) {
     } finally {
       setRunning(false);
       setLiveOps([]);
-      setThinking(''); // 답/플랜 도착 → 생각 블록 정리
+      setThinkOpen(false); // 답 도착 → 생각 블록 접기(텍스트 유지 — 다음 전송 시 비움. transcript엔 안 들어감)
       scrollDown();
     }
   };
@@ -228,10 +228,10 @@ export function AiPanel({ store }: { store: DocStore }) {
             {m.text || (running && i === msgs.length - 1 ? '…' : '')}
           </div>
         ))}
-        {running && thinking && (
+        {thinking && (
           <div className="ai-thinking">
             <button className="ai-thinking-toggle" onClick={() => setThinkOpen((o) => !o)}>
-              💭 생각 중… {thinkOpen ? '▾' : '▸'}
+              💭 {running ? '생각 중…' : '생각 과정'} {thinkOpen ? '▾' : '▸'}
             </button>
             {thinkOpen && <div className="ai-thinking-body">{thinking}</div>}
           </div>
