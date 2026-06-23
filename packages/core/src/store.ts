@@ -1569,11 +1569,13 @@ export class DocStore {
 
   /**
    * 스냅샷의 레벨·타입·요소를 현재 문서에 ADD(병합) — importSnapshot의 additive twin (교체 아님).
-   * 멀티모델 허브 머지 게이트(Slice9 스파이크) 코어: 전 집합 새 id 선할당 + 내부참조 재맵 + 단일 transact.
+   * 멀티모델 허브 머지 게이트(Slice9) 코어: 전 집합 새 id 선할당 + 내부참조 재맵 + 단일 transact.
    * = undo 1스텝(불변 ②, undo-추적 채널 yElements/yLevels/yTypes만). 검증은 transact 밖(중간실패 무변경).
    *
    * 재맵: levelId·typeId·opening.hostId·label.targetId·dimension.bindA/bindB.id(중첩)·grid.label(재발급).
-   * 스파이크 범위: 코멘트/뷰/federation 직교채널·타입 dedup·좌표 reconcile(projectOrigin) = 후속.
+   * **타입·레벨 dedup**: 내용 동일(id 제외)이면 타겟 기존 것 재사용(중복 안 만듦). 요소는 항상 새 인스턴스.
+   * **projectOrigin reconcile(correctness)**: 소스/타겟 원점 차(delta)만큼 좌표 평행이동 = 같은 site 위치 정합.
+   *   안 하면 부지좌표 모델이 조용히 엉뚱한 위치 착지. POSITIONAL 단일소스로 처리(opening=호스트 상대 skip).
    * lift(메시→파라메트릭)는 별개 축 — 입력 snap엔 이미 native 요소가 있다고 가정(figcad-room pull·importIfc).
    */
   mergeSnapshot(snap: DocSnapshot): { created: Id[]; idMap: Map<Id, Id> } {
@@ -1588,12 +1590,53 @@ export class DocStore {
     const types = snap.types.map((t) => ElemTypeSchema.parse(t));
     const elements = snap.elements.map((e) => ElementSchema.parse(e) as Element);
 
-    // Phase A: 전 집합에 새 id 선할당 — 교차참조가 전 집합에 걸쳐 있어 write 전에 idMap 완성 필요
+    // projectOrigin reconcile — delta = 소스원점 − 타겟원점 (둘 다 stored=true−origin이라 이 차만큼 이동)
+    const so = snap.meta.projectOrigin ?? [0, 0];
+    const to = this.getProjectOrigin() ?? [0, 0];
+    const dx = so[0] - to[0];
+    const dy = so[1] - to[1];
+    const shiftPt = (p: Pt): Pt => [p[0] + dx, p[1] + dy];
+
+    // 내용키(id 제외, 키정렬) — 타입·레벨 by-content dedup용
+    const contentKey = (o: unknown): string => {
+      if (o === null || typeof o !== 'object') return JSON.stringify(o);
+      if (Array.isArray(o)) return `[${o.map(contentKey).join(',')}]`;
+      const ks = Object.keys(o as object).filter((k) => k !== 'id').sort();
+      return `{${ks.map((k) => `${k}:${contentKey((o as Record<string, unknown>)[k])}`).join(',')}}`;
+    };
+
+    // Phase A: id 선할당 + 타입/레벨 dedup (교차참조가 전 집합에 걸쳐 idMap 먼저 완성)
     const idMap = new Map<Id, Id>();
-    for (const l of levels) idMap.set(l.id, nanoid(12));
-    for (const t of types) idMap.set(t.id, nanoid(12));
-    for (const e of elements) idMap.set(e.id, nanoid(12));
     const remap = (id: Id): Id => idMap.get(id) ?? id;
+    const newLevels = [] as typeof levels;
+    const newTypes = [] as typeof types;
+    const levelByContent = new Map<string, Id>();
+    for (const l of this.listLevels()) levelByContent.set(contentKey(l), l.id);
+    const typeByContent = new Map<string, Id>();
+    for (const t of this.listTypes()) typeByContent.set(contentKey(t), t.id);
+    for (const l of levels) {
+      const k = contentKey(l);
+      const ex = levelByContent.get(k);
+      if (ex) idMap.set(l.id, ex); // dedup — 기존 재사용
+      else {
+        const nid = nanoid(12);
+        idMap.set(l.id, nid);
+        levelByContent.set(k, nid);
+        newLevels.push({ ...l, id: nid });
+      }
+    }
+    for (const t of types) {
+      const k = contentKey(t);
+      const ex = typeByContent.get(k);
+      if (ex) idMap.set(t.id, ex);
+      else {
+        const nid = nanoid(12);
+        idMap.set(t.id, nid);
+        typeByContent.set(k, nid);
+        newTypes.push({ ...t, id: nid });
+      }
+    }
+    for (const e of elements) idMap.set(e.id, nanoid(12)); // 요소는 항상 새 인스턴스
 
     // 그리드 라벨 충돌 회피 — 현 문서 grid 라벨 + 머지서 발급분 추적(transact 밖 시드, 파생 staleness 무관)
     const usedGridLabels = new Set<string>();
@@ -1615,12 +1658,25 @@ export class DocStore {
 
     const created: Id[] = [];
     this.transact(() => {
-      // 레벨·타입 = 새 id로 직접 기록 (addLevel/addType는 자체 transact라 single-undo 깨짐 — importSnapshot 선례)
-      for (const l of levels) this.yLevels.set(remap(l.id), LevelSchema.parse({ ...l, id: remap(l.id) }));
-      for (const t of types) this.yTypes.set(remap(t.id), ElemTypeSchema.parse({ ...t, id: remap(t.id) }));
-      // 요소 = 내부참조 재맵 후 새 id로 기록
+      // 레벨·타입 = dedup 후 신규만 새 id로 직접 기록 (addLevel/addType는 자체 transact라 single-undo 깨짐)
+      for (const l of newLevels) this.yLevels.set(l.id, l);
+      for (const t of newTypes) this.yTypes.set(t.id, t);
+      // 요소 = 좌표 reconcile + 내부참조 재맵 후 새 id로 기록
       for (const e of elements) {
         const ne: Record<string, unknown> = { ...e, id: remap(e.id) };
+        // 좌표 평행이동(POSITIONAL 단일소스) — opening은 호스트 상대라 스킵
+        if (dx || dy) {
+          const cat = POSITIONAL[e.kind];
+          if (cat === 'segment') {
+            const s = e as { a: Pt; b: Pt };
+            ne['a'] = shiftPt(s.a);
+            ne['b'] = shiftPt(s.b);
+          } else if (cat === 'polygon') {
+            ne['boundary'] = (e as { boundary: Pt[] }).boundary.map(shiftPt);
+          } else if (cat === 'point') {
+            ne['at'] = shiftPt((e as { at: Pt }).at);
+          }
+        }
         if ('levelId' in e && e.levelId) ne['levelId'] = remap(e.levelId);
         if ('typeId' in e && (e as { typeId?: Id }).typeId) {
           ne['typeId'] = remap((e as { typeId: Id }).typeId);
@@ -1633,7 +1689,7 @@ export class DocStore {
           if (e.bindA) ne['bindA'] = { ...e.bindA, id: remap(e.bindA.id) };
           if (e.bindB) ne['bindB'] = { ...e.bindB, id: remap(e.bindB.id) };
         }
-        if (e.kind === 'grid') ne['label'] = freshGridLabel(e.a, e.b);
+        if (e.kind === 'grid') ne['label'] = freshGridLabel(ne['a'] as Pt, ne['b'] as Pt);
         const parsed = ElementSchema.parse(ne) as Element;
         const ymap = new Y.Map<unknown>();
         for (const [k, v] of Object.entries(parsed)) ymap.set(k, v);
