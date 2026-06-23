@@ -43,13 +43,22 @@ interface AgentRequestBody {
   snapshot: DocSnapshot;
   transcript: TranscriptTurn[];
   sketch?: SketchAttachment;
+  model?: string; // allowlist 검증, 미지정/불허 시 DEFAULT_MODEL
+  maxTokens?: number; // [1024, per-model 상한] clamp
 }
 
 const MAX_SKETCH_B64 = 8_000_000; // ~6MB 디코드 — 클라는 ≤1024px PNG라 훨씬 작음
 
-const MODEL = 'claude-opus-4-8';
 const MAX_ITERATIONS = 12;
-const MAX_TOKENS = 16000;
+const DEFAULT_MODEL = 'claude-opus-4-8';
+const DEFAULT_MAX_TOKENS = 16000;
+// 모델 allowlist (보안 — 임의 model 문자열 거부, fallback opus). 속도 = 모델 선택.
+// 빠름(Haiku 4.5)은 adaptive thinking 미지원 → disabled (4.6+만 adaptive).
+const MODEL_ALLOWLIST = {
+  'claude-opus-4-8': { thinking: { type: 'adaptive', display: 'summarized' }, maxOut: 128000 },
+  'claude-sonnet-4-6': { thinking: { type: 'adaptive', display: 'summarized' }, maxOut: 64000 },
+  'claude-haiku-4-5-20251001': { thinking: { type: 'disabled' }, maxOut: 64000 },
+} as const;
 // lint-in-loop critic — 모델이 끝났다고 선언하면 결정적 lint로 자기 변경을 검사하고
 // error가 있으면 재프롬프트한다. 이 상한이 무한 critic 루프를 막는다 (H3/H4: 외부
 // 결정적 검증자만 사용, LLM 판사 없음 — CRITIC/Kamoi 근거).
@@ -140,6 +149,17 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
     return json(400, { error: 'body must be { snapshot, transcript: [...] } (마지막 턴 user)' });
   }
 
+  // 모델 resolve — allowlist 검증(임의 문자열 거부) + maxTokens clamp
+  const model =
+    typeof body.model === 'string' && body.model in MODEL_ALLOWLIST
+      ? (body.model as keyof typeof MODEL_ALLOWLIST)
+      : DEFAULT_MODEL;
+  const modelCfg = MODEL_ALLOWLIST[model];
+  const maxTokens = Math.max(
+    1024,
+    Math.min(modelCfg.maxOut, Number.isFinite(body.maxTokens) ? Number(body.maxTokens) : DEFAULT_MAX_TOKENS),
+  );
+
   // 드라이런 스토어 — 요청마다 독립, 문서 원본은 무변경
   let dryStore: DocStore;
   try {
@@ -208,9 +228,9 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
     try {
       for (let i = 0; i < MAX_ITERATIONS; i++) {
         const stream = anthropic.messages.stream({
-          model: MODEL,
-          max_tokens: MAX_TOKENS,
-          thinking: { type: 'adaptive' },
+          model,
+          max_tokens: maxTokens,
+          thinking: modelCfg.thinking,
           system: [
             {
               type: 'text',
@@ -224,6 +244,10 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
         });
         stream.on('text', (delta) => {
           void send({ type: 'text', text: delta });
+        });
+        // 생각 과정(요약) 스트림 — 클라가 임시 표시(transcript 미저장). adaptive(opus/sonnet)만 발화.
+        stream.on('thinking', (delta) => {
+          void send({ type: 'thinking', text: delta });
         });
         const msg = await stream.finalMessage();
 

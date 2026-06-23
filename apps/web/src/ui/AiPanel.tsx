@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { applyOpLog, opSummary, KIND_LABEL, type DocStore, type OpLogEntry } from '@figcad/core';
-import { useUiStore } from '../state/uiStore';
+import { useUiStore, type AiModelId } from '../state/uiStore';
 import { runAgent, type AiLintFinding, type TranscriptTurn } from '../ai/agentClient';
 import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
 
@@ -27,12 +27,17 @@ export function AiPanel({ store }: { store: DocStore }) {
   // AI = peer 모드(피드백). aiOpen 게이트 대신 activeMode==='ai'서 보임 — 단 항상 mount(챗 history 보존).
   const activeMode = useUiStore((s) => s.activeMode);
   const selection = useUiStore((s) => s.selection);
+  const aiModel = useUiStore((s) => s.aiModel);
+  const aiAutoApply = useUiStore((s) => s.aiAutoApply);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
   const [liveOps, setLiveOps] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [sketchOn, setSketchOn] = useState(hasSketch());
+  // 생각 과정 — 임시(transcript/msgs 미저장 → context 무증가). running 중에만 표시.
+  const [thinking, setThinking] = useState('');
+  const [thinkOpen, setThinkOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => onSketchChange(() => setSketchOn(hasSketch())), []);
@@ -52,6 +57,8 @@ export function AiPanel({ store }: { store: DocStore }) {
     setInput('');
     setPlan(null);
     setLiveOps([]);
+    setThinking('');
+    setThinkOpen(false);
     setRunning(true);
 
     // 선택 grounding(피드백) — 현재 선택 요소를 프롬프트에 명시해 "이거/이 벽"이 해소되게.
@@ -87,6 +94,12 @@ export function AiPanel({ store }: { store: DocStore }) {
         snapshot: store.snapshot(),
         transcript,
         sketch,
+        model: useUiStore.getState().aiModel,
+        onThinking: (delta) => {
+          setThinking((p) => p + delta);
+          setThinkOpen(true);
+          scrollDown();
+        },
         onText: (delta) => {
           setMsgs((prev) => {
             const next = [...prev];
@@ -121,12 +134,17 @@ export function AiPanel({ store }: { store: DocStore }) {
         },
       });
       if (result.opLog.length > 0) {
-        setPlan({
+        const built: Plan = {
           opLog: result.opLog,
           summaries: result.opLog.map(opSummary),
           ...(result.note ? { note: result.note } : {}),
           ...(result.lintFindings?.length ? { lintFindings: result.lintFindings } : {}),
-        });
+        };
+        // auto mode = 카드 없이 즉시 적용(undo 가능). 단 에러 잔존(critic 2라운드 후)이면 게이트로 fallback
+        // (BIM은 기하 틀리면 사람 검토가 안전). 안전 근거: ops=zod+서버 lint critic → 임의코드와 다름.
+        const hasErr = !!result.lintFindings?.some((f) => f.severity === 'error');
+        if (useUiStore.getState().aiAutoApply && !hasErr) applyPlan(built);
+        else setPlan(built);
       }
     } catch (e) {
       setMsgs((prev) => {
@@ -140,14 +158,15 @@ export function AiPanel({ store }: { store: DocStore }) {
     } finally {
       setRunning(false);
       setLiveOps([]);
+      setThinking(''); // 답/플랜 도착 → 생각 블록 정리
       scrollDown();
     }
   };
 
-  const approve = () => {
-    if (!plan) return;
-    clearSketch(); // 계획 승인 = 스케치 소비 (프리뷰 정리)
-    const result = applyOpLog(store, plan.opLog);
+  // 순수 적용 — auto mode가 setPlan 직후 호출해도 stale closure 안 타게 plan 객체를 인자로 받음.
+  const applyPlan = (p: Plan) => {
+    clearSketch(); // 적용 = 스케치 소비 (프리뷰 정리)
+    const result = applyOpLog(store, p.opLog);
     const failNote = result.failed.length
       ? ` (${result.failed.length}건 실패: ${result.failed[0]!.error})`
       : '';
@@ -155,8 +174,13 @@ export function AiPanel({ store }: { store: DocStore }) {
       ...prev,
       { role: 'notice', text: `✓ ${result.applied}개 작업 적용됨${failNote}` },
     ]);
-    setPlan(null);
     scrollDown();
+  };
+
+  const approve = () => {
+    if (!plan) return;
+    applyPlan(plan);
+    setPlan(null);
   };
 
   const reject = () => {
@@ -169,7 +193,27 @@ export function AiPanel({ store }: { store: DocStore }) {
     <div className={`ai-panel ${activeMode === 'ai' ? '' : 'ai-hidden'}`}>
       <div className="ai-head">
         <span className="ai-title">AI 모드</span>
-        <span className="ai-sub">선택·스케치로 지시 · 계획 승인해야 반영</span>
+        <div className="ai-controls">
+          <select
+            className="ai-model"
+            value={aiModel}
+            disabled={running}
+            title="모델 — 정확(Opus)·균형(Sonnet)·빠름(Haiku)"
+            onChange={(e) => useUiStore.getState().setAiModel(e.target.value as AiModelId)}
+          >
+            <option value="claude-opus-4-8">정확</option>
+            <option value="claude-sonnet-4-6">균형</option>
+            <option value="claude-haiku-4-5-20251001">빠름</option>
+          </select>
+          <label className="ai-auto" title="자동적용 — 계획 승인 없이 바로 반영(Ctrl+Z로 되돌리기)">
+            <input
+              type="checkbox"
+              checked={aiAutoApply}
+              onChange={(e) => useUiStore.getState().setAiAutoApply(e.target.checked)}
+            />
+            자동
+          </label>
+        </div>
       </div>
       <div className="ai-msgs" ref={listRef}>
         {msgs.length === 0 && (
@@ -184,10 +228,18 @@ export function AiPanel({ store }: { store: DocStore }) {
             {m.text || (running && i === msgs.length - 1 ? '…' : '')}
           </div>
         ))}
+        {running && thinking && (
+          <div className="ai-thinking">
+            <button className="ai-thinking-toggle" onClick={() => setThinkOpen((o) => !o)}>
+              💭 생각 중… {thinkOpen ? '▾' : '▸'}
+            </button>
+            {thinkOpen && <div className="ai-thinking-body">{thinking}</div>}
+          </div>
+        )}
         {running && liveOps.length > 0 && (
-          <div className="ai-msg notice">
+          <div className="ai-msg notice ai-progress">
             {liveOps.map((s, i) => (
-              <div key={i}>· {s}</div>
+              <div key={i}>⚙ {s}</div>
             ))}
           </div>
         )}

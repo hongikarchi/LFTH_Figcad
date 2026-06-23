@@ -45,8 +45,10 @@ export async function runAgent(opts: {
   transcript: TranscriptTurn[];
   onText: (delta: string) => void;
   onOp: (summary: string) => void;
+  onThinking?: (delta: string) => void; // 생각 과정(요약) — 임시 표시용, transcript 미저장
   onLint?: (round: number, findings: AiLintFinding[]) => void;
   sketch?: SketchAttachment | null;
+  model?: string;
   signal?: AbortSignal;
 }): Promise<AgentResult> {
   const res = await fetch(agentUrl(), {
@@ -56,6 +58,7 @@ export async function runAgent(opts: {
       snapshot: opts.snapshot,
       transcript: opts.transcript,
       ...(opts.sketch ? { sketch: opts.sketch } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
     }),
     signal: opts.signal,
   });
@@ -84,6 +87,9 @@ export async function runAgent(opts: {
         break;
       case 'op':
         opts.onOp(String(ev['summary'] ?? ev['op'] ?? ''));
+        break;
+      case 'thinking':
+        opts.onThinking?.(String(ev['text'] ?? ''));
         break;
       case 'lint':
         opts.onLint?.(

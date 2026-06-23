@@ -53,6 +53,9 @@ export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
   ai: ['select', 'sketch', 'comment'],
   hub: ['select'],
 };
+
+/** AI 모델 선택 (서버 allowlist와 동기) — 정확(opus)/균형(sonnet)/빠름(haiku). */
+export type AiModelId = 'claude-opus-4-8' | 'claude-sonnet-4-6' | 'claude-haiku-4-5-20251001';
 /** presence 아바타 파일용 협업자 정체성 (커서 위치 아님 — join/leave/rename/color만 변경) */
 export interface PeerIdentity {
   clientId: number;
@@ -95,6 +98,10 @@ interface UiState {
   drawingOpen: boolean;
   /** 활성 도면 뷰 id */
   activeViewId: Id | null;
+  /** AI 모델 선택(정확/균형/빠름) */
+  aiModel: AiModelId;
+  /** AI auto mode — 계획 승인 게이트 건너뛰고 자동 적용(에러 잔존 시 게이트 fallback) */
+  aiAutoApply: boolean;
   setTool: (t: ToolName) => void;
   setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
@@ -105,6 +112,8 @@ interface UiState {
   setCommentsOpen: (open: boolean) => void;
   setDrawingOpen: (open: boolean) => void;
   setActiveViewId: (id: Id | null) => void;
+  setAiModel: (m: AiModelId) => void;
+  setAiAutoApply: (v: boolean) => void;
   setViewMode: (m: ViewModeUi) => void;
   setMode: (m: WorkspaceMode) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
@@ -145,6 +154,8 @@ export const useUiStore = create<UiState>((set) => ({
   commentsOpen: false,
   drawingOpen: false,
   activeViewId: null,
+  aiModel: (localStorage.getItem('figcad.aiModel') as AiModelId | null) ?? 'claude-opus-4-8',
+  aiAutoApply: false,
   // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
   setTool: (activeTool) =>
     set(
@@ -163,6 +174,11 @@ export const useUiStore = create<UiState>((set) => ({
   setCommentsOpen: (commentsOpen) => set({ commentsOpen }),
   setDrawingOpen: (drawingOpen) => set({ drawingOpen }),
   setActiveViewId: (activeViewId) => set({ activeViewId }),
+  setAiModel: (aiModel) => {
+    localStorage.setItem('figcad.aiModel', aiModel);
+    set({ aiModel });
+  },
+  setAiAutoApply: (aiAutoApply) => set({ aiAutoApply }),
   setViewMode: (viewMode) => set({ viewMode }),
   // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor)
   setMode: (activeMode) =>

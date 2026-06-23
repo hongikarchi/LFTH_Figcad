@@ -1625,10 +1625,61 @@
       }
       .ai-head {
         display: flex;
-        align-items: baseline;
+        align-items: center;
         gap: 8px;
         padding: 10px 12px 8px;
         border-bottom: 1px solid var(--hairline);
+      }
+      /* AI 모델/auto 컨트롤 (피드백) */
+      .ai-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
+      .ai-model {
+        font-size: 11px;
+        padding: 3px 6px;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        background: var(--glass, #fff);
+        color: var(--ink);
+      }
+      .ai-auto {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 11px;
+        color: var(--ink-soft);
+        cursor: pointer;
+      }
+      /* 생각 과정 임시 표시 (피드백 — transcript 미저장 → context 무증가) */
+      .ai-thinking {
+        margin: 4px 10px 8px;
+      }
+      .ai-thinking-toggle {
+        border: none;
+        background: transparent;
+        color: var(--ink-soft);
+        font-size: 11px;
+        cursor: pointer;
+        padding: 2px 0;
+      }
+      .ai-thinking-body {
+        margin-top: 4px;
+        padding: 8px 10px;
+        background: rgba(130, 125, 189, 0.08);
+        border-left: 2px solid rgba(130, 125, 189, 0.4);
+        border-radius: 0 6px 6px 0;
+        font-size: 11px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+        white-space: pre-wrap;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+      .ai-progress {
+        opacity: 0.85;
       }
       .ai-title {
         font-size: 13px;
