@@ -12,6 +12,8 @@ import type { Element } from '../src/schema';
 type Opening = Extract<Element, { kind: 'opening' }>;
 type Dimension = Extract<Element, { kind: 'dimension' }>;
 type Grid = Extract<Element, { kind: 'grid' }>;
+type Column = Extract<Element, { kind: 'column' }>;
+type Label = Extract<Element, { kind: 'label' }>;
 const isKind =
   <K extends Element['kind']>(k: K) =>
   (e: Element): e is Extract<Element, { kind: K }> =>
@@ -26,6 +28,9 @@ function buildSource() {
   store.createOpening({ hostId: w1, typeId: SEED_IDS.door900, offset: 1000 });
   store.createDimension({ levelId: seed.levelId, a: [0, 0], b: [4000, 3000] });
   store.createGridLine({ a: [0, 0], b: [6000, 0] }); // 수평 → 라벨 'A'
+  // 타입보유 비-벽 kind(typeId 재맵) + 라벨(targetId 재맵 — silent if-chain 가드, core-geometry.md 교훈)
+  store.createColumn({ levelId: seed.levelId, typeId: SEED_IDS.column400, at: [0, 0] });
+  store.createLabel({ levelId: seed.levelId, at: [500, 500], targetId: w1, template: 'name' });
   return { store, w1, w2 };
 }
 function seededTarget() {
@@ -65,6 +70,16 @@ describe('mergeSnapshot — additive 머지(Slice9 스파이크)', () => {
 
     // grid 라벨 재발급 (타겟 'A'와 충돌 회피)
     expect((merged.find(isKind('grid')) as Grid).label).not.toBe('A');
+
+    // 타입보유 비-벽 kind: column.typeId 재맵 (silent if-chain — 벽만 통과 방지)
+    const mCol = merged.find(isKind('column')) as Column;
+    expect(mCol.typeId).toBe(idMap.get(SEED_IDS.column400));
+    expect(mCol.typeId).not.toBe(SEED_IDS.column400);
+
+    // label.targetId 재맵 (셋 안 타깃 → 머지된 새 요소)
+    const mLabel = merged.find(isKind('label')) as Label;
+    expect(mLabel.targetId).toBe(idMap.get(src.w1));
+    expect(srcIds.has(mLabel.targetId!)).toBe(false);
 
     // level/type 재맵 + 어떤 머지 요소 참조에도 소스 id 잔존 0 (load-bearing)
     for (const e of merged) {

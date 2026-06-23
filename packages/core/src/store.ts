@@ -1626,6 +1626,8 @@ export class DocStore {
           ne['typeId'] = remap((e as { typeId: Id }).typeId);
         }
         if (e.kind === 'opening') ne['hostId'] = remap(e.hostId);
+        // label.targetId: full-snapshot이라 타깃이 항상 셋 안 → 무조건 remap. (transformCopy는
+        // 셋 밖 타깃이면 원본 유지 — partial 머지 도입 시 그 가드 필요. 지금은 remap(fallback=원본)로 충분.)
         if (e.kind === 'label' && e.targetId) ne['targetId'] = remap(e.targetId);
         if (e.kind === 'dimension') {
           if (e.bindA) ne['bindA'] = { ...e.bindA, id: remap(e.bindA.id) };
