@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot } from '@figcad/core';
+import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot, type FederationSource } from '@figcad/core';
 import { gltfPositionsToFigcad } from '@figcad/interop/coords';
 import type { ReferenceMesh } from '../engine/ReferenceLayer';
-import { getIfcApi } from './ifcClient';
+import { getIfcApi, parseIfc } from './ifcClient';
 import { backendOrigin } from '../config/backend';
 
 /**
@@ -36,6 +36,28 @@ export async function fetchFigcadRoomSnapshot(ref: string): Promise<DocSnapshot>
     throw new Error(`룸 "${roomId}" 페치 실패 (${res.status}${res.status === 401 ? ' — ROOM_KEY 필요' : ''})`);
   }
   return (await res.json()) as DocSnapshot;
+}
+
+/** 머지 가능한 소스 타입 — native 파라메트릭 요소를 얻을 수 있는 것만(메시전용 gltf/.3dm/3dtiles 제외). */
+export const MERGEABLE_SOURCES: ReadonlySet<FederationSource['sourceType']> = new Set([
+  'figcad-room',
+  'ifc',
+]);
+
+/**
+ * 머지 게이트(Slice9) — 소스에서 native DocSnapshot 획득(소스 무관 mergeSnapshot 입력).
+ * figcad-room = pull 스냅샷(무손실) · ifc = blob bytes → importIfc(파라메트릭, 자유곡면·일부 kind 손실).
+ * 메시전용(gltf/.3dm/3dtiles) = null(lift 축, 머지 불가 — 로드맵 G).
+ */
+export async function acquireMergeSnapshot(source: FederationSource): Promise<DocSnapshot | null> {
+  if (source.sourceType === 'figcad-room') return fetchFigcadRoomSnapshot(source.ref);
+  if (source.sourceType === 'ifc') {
+    const res = await fetch(source.ref);
+    if (!res.ok) throw new Error(`IFC 페치 실패 (${res.status})`);
+    const { snapshot } = await parseIfc(new Uint8Array(await res.arrayBuffer()));
+    return snapshot;
+  }
+  return null;
 }
 
 /** A4 — 다른 Figcad 룸을 읽기전용 오버레이로. 라이브 스냅샷 → derive → 메시. */

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KIND_LABEL, lint, type DocSnapshot, type DocStore, type FederationSource } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
-import { fetchFigcadRoomSnapshot } from '../interop/federationExtract';
+import { acquireMergeSnapshot, MERGEABLE_SOURCES } from '../interop/federationExtract';
 import { useDocVersion } from './App';
 import { useNavigatorFederation, SOURCE_BADGE } from './useNavigatorFederation';
 
@@ -37,7 +37,11 @@ export function HubManage({
     setBusy(source.id);
     setResult(null);
     try {
-      const snap = await fetchFigcadRoomSnapshot(source.ref);
+      const snap = await acquireMergeSnapshot(source);
+      if (!snap) {
+        window.alert('이 소스 타입은 머지 미지원 (메시 전용 — 파라메트릭 요소 없음)');
+        return;
+      }
       setStaging({ source, snap, preview: store.previewMergeSnapshot(snap) });
     } catch (e) {
       window.alert(`머지 준비 실패: ${e instanceof Error ? e.message : e}`);
@@ -132,7 +136,7 @@ export function HubManage({
                   <span title={err ?? statusLabel}>{dot}</span> {SOURCE_BADGE[s.sourceType]}
                 </span>
               </button>
-              {s.sourceType === 'figcad-room' && (
+              {MERGEABLE_SOURCES.has(s.sourceType) && (
                 <button
                   className="nav-edit"
                   title="이 모델을 편집가능 요소로 문서에 머지"
