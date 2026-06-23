@@ -5,6 +5,7 @@ import { TopBar } from './TopBar';
 import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
 import { ViewportCluster } from './ViewportCluster';
+import { CommandPalette } from './CommandPalette';
 import { AiPanel } from './AiPanel';
 import { DrawingPanel } from './DrawingPanel';
 
@@ -54,6 +55,7 @@ export function App({
       <ViewportCluster store={store} actions={actions} />
       <AiPanel store={store} />
       <DrawingPanel store={store} />
+      <CommandPalette store={store} actions={actions} />
     </>
   );
 }
