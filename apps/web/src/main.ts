@@ -286,7 +286,8 @@ window.addEventListener('keydown', (e) => {
   }
   switch (e.key) {
     case 'Escape':
-      tools.cancel();
+      tools.cancel(); // 진행 중 드로우 체인 종료(기존 동작)
+      useUiStore.getState().setTool('select'); // 그 다음 선택 도구로 (사용자 요청)
       engine.requestRender();
       break;
     case 'Delete':

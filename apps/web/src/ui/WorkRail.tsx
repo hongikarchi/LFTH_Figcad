@@ -1,7 +1,8 @@
 import type { DocStore } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
-import { useUiStore } from '../state/uiStore';
+import { useUiStore, MODE_TOOLS } from '../state/uiStore';
 import { Toolbox } from './Toolbox';
+import { ToolPalette } from './ToolPalette';
 import { ProjectMap } from './ProjectMap';
 import { CommentPanel } from './CommentPanel';
 import { LintPanel } from './LintPanel';
@@ -34,10 +35,22 @@ export function WorkRail({
     );
   }
 
+  if (activeMode === 'ai') {
+    return (
+      <div className="work-rail">
+        <ToolPalette tools={MODE_TOOLS.ai} title="AI 명령 도구" />
+        <div className="rail-hint">
+          선택·스케치·코멘트로 AI에게 정확히 지시 — 선택한 요소는 우측 챗에서 "이거"로 참조됩니다.
+        </div>
+      </div>
+    );
+  }
+
   if (activeMode === 'review') {
     const noComments = store.listComments().length === 0;
     return (
       <div className="work-rail review">
+        <ToolPalette tools={MODE_TOOLS.review} title="리뷰 도구" />
         {noComments && (
           <div className="review-onboard">
             협업·리뷰 — 코멘트·검사·버전이 여기 모입니다. 상단 <b>공유</b>로 팀을 초대하세요.

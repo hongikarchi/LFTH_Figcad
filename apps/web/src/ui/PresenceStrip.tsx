@@ -20,7 +20,6 @@ const initial = (name: string) => name.trim()[0]?.toUpperCase() ?? '?';
 export function PresenceStrip({ collab, store }: { collab: CollabHandle; store: DocStore }) {
   const peers = useUiStore((s) => s.peers);
   const connection = useUiStore((s) => s.connection);
-  const aiOpen = useUiStore((s) => s.aiOpen);
   const findings = useLint(store);
   const worst = findings[0]?.severity; // lint()는 심각도순 정렬
   const [copied, setCopied] = useState(false);
@@ -75,13 +74,6 @@ export function PresenceStrip({ collab, store }: { collab: CollabHandle; store: 
       </div>
       <button className="presence-share" onClick={share} title="이 룸 URL을 복사해 공유">
         {copied ? '✓ 복사됨' : '공유'}
-      </button>
-      <button
-        className={`presence-ai ${aiOpen ? 'active' : ''}`}
-        title="AI 모드 — 자연어·스케치로 모델링 (계획 승인 방식)"
-        onClick={() => useUiStore.getState().setAiOpen(!aiOpen)}
-      >
-        ✦ AI
       </button>
     </div>
   );

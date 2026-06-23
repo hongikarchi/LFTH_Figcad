@@ -36,8 +36,23 @@ export type TypeKind =
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
-/** 정체성 순 작업 모드 (UI/UX 재구성 Part4) — P0=상태만 추가, mode 뼈대는 P1 Slice3. */
-export type WorkspaceMode = 'review' | 'model' | 'hub' | 'drawing';
+/** 정체성 순 작업 모드 (UI/UX 재구성 Part4). AI = peer 모드(피드백 — dock 토글 아님). */
+export type WorkspaceMode = 'review' | 'model' | 'hub' | 'drawing' | 'ai';
+
+/**
+ * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기, 협업=코멘트,
+ * AI=명령 grounding(선택·스케치·코멘트). mode 전환 시 도구가 팔레트에 없으면 select로 리셋.
+ */
+export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
+  review: ['select', 'comment'],
+  model: [
+    'select', 'wall', 'door', 'window', 'slab', 'grid', 'column', 'beam',
+    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'text', 'label',
+  ],
+  ai: ['select', 'sketch', 'comment'],
+  hub: ['select'],
+  drawing: ['select'],
+};
 /** presence 아바타 파일용 협업자 정체성 (커서 위치 아님 — join/leave/rename/color만 변경) */
 export interface PeerIdentity {
   clientId: number;
@@ -70,8 +85,6 @@ interface UiState {
   editAction: EditAction | null;
   arrayCount: number;
   rotateAngle: number; // 도(°), CCW+
-  /** AI 모드 패널 표시 (M4) */
-  aiOpen: boolean;
   /** 검사(lint) 패널 표시 (M5) */
   lintOpen: boolean;
   /** 버전 타임라인 패널 표시 (M6) — 검사 패널과 같은 슬롯(상호 배타) */
@@ -87,7 +100,6 @@ interface UiState {
   setEditAction: (a: EditAction | null) => void;
   setArrayCount: (n: number) => void;
   setRotateAngle: (deg: number) => void;
-  setAiOpen: (open: boolean) => void;
   setLintOpen: (open: boolean) => void;
   setVersionOpen: (open: boolean) => void;
   setCommentsOpen: (open: boolean) => void;
@@ -104,7 +116,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  activeTool: 'wall',
+  activeTool: 'select', // 만능 baseline(피드백) — 협업 default서 클릭이 그리기 아닌 선택이 되도록
   selection: [],
   viewMode: '3d',
   activeMode: 'review', // P1 Slice5: 협업·리뷰 = default 랜딩(헤드라인 해자 먼저). 모델링은 모델 탭.
@@ -128,20 +140,23 @@ export const useUiStore = create<UiState>((set) => ({
   editAction: null,
   arrayCount: 3,
   rotateAngle: 90,
-  aiOpen: false,
   lintOpen: false,
   versionOpen: false,
   commentsOpen: false,
   drawingOpen: false,
   activeViewId: null,
-  // 도구 부작용 전부 제거(P1): 스케치 무장(aiOpen+평면)은 AI dock 버튼, 코멘트는 핀만.
-  setTool: (activeTool) => set({ activeTool, selection: [], editAction: null }),
+  // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
+  setTool: (activeTool) =>
+    set(
+      activeTool === 'sketch'
+        ? { activeTool, selection: [], editAction: null, viewMode: 'plan' }
+        : { activeTool, selection: [], editAction: null },
+    ),
   setSelection: (selection) =>
     set((s) => ({ selection, editAction: selection.length ? s.editAction : null })),
   setEditAction: (editAction) => set({ editAction }),
   setArrayCount: (arrayCount) => set({ arrayCount: Math.max(1, Math.min(50, arrayCount)) }),
   setRotateAngle: (rotateAngle) => set({ rotateAngle }),
-  setAiOpen: (aiOpen) => set({ aiOpen }),
   // 배타 제거(P1 Slice5, Slice0 연기분) — lint/version은 협업 mode 레일 독립 섹션.
   setLintOpen: (lintOpen) => set({ lintOpen }),
   setVersionOpen: (versionOpen) => set({ versionOpen }),
@@ -149,7 +164,12 @@ export const useUiStore = create<UiState>((set) => ({
   setDrawingOpen: (drawingOpen) => set({ drawingOpen }),
   setActiveViewId: (activeViewId) => set({ activeViewId }),
   setViewMode: (viewMode) => set({ viewMode }),
-  setMode: (activeMode) => set({ activeMode }),
+  // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor)
+  setMode: (activeMode) =>
+    set((s) => ({
+      activeMode,
+      activeTool: MODE_TOOLS[activeMode].includes(s.activeTool) ? s.activeTool : 'select',
+    })),
   setUserName: (userName) => set({ userName }),
   setPeers: (peers) => set({ peers }),
   setActiveType: (kind, id) =>

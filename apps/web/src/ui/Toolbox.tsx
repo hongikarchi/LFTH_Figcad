@@ -44,11 +44,7 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
       { label: '해치', icon: 'hatch', planned: '2D 도면 단계' },
     ],
   },
-  {
-    // 스케치는 상단 presence의 ✦AI → AI dock '✏ 스케치'로 이전(P1 Slice8). 코멘트 = 핀 배치 도구.
-    title: '협업',
-    items: [{ label: '코멘트', icon: 'comment', tool: 'comment' }],
-  },
+  // 코멘트=협업 mode 팔레트 · 스케치=AI mode 팔레트 (피드백 — mode별 도구).
 ];
 
 export function Toolbox() {

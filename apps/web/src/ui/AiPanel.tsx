@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { applyOpLog, opSummary, type DocStore, type OpLogEntry } from '@figcad/core';
+import { applyOpLog, opSummary, KIND_LABEL, type DocStore, type OpLogEntry } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { runAgent, type AiLintFinding, type TranscriptTurn } from '../ai/agentClient';
 import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
@@ -24,7 +24,9 @@ interface Plan {
 }
 
 export function AiPanel({ store }: { store: DocStore }) {
-  const aiOpen = useUiStore((s) => s.aiOpen);
+  // AI = peer 모드(피드백). aiOpen 게이트 대신 activeMode==='ai'서 보임 — 단 항상 mount(챗 history 보존).
+  const activeMode = useUiStore((s) => s.activeMode);
+  const selection = useUiStore((s) => s.selection);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
@@ -34,8 +36,6 @@ export function AiPanel({ store }: { store: DocStore }) {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => onSketchChange(() => setSketchOn(hasSketch())), []);
-
-  if (!aiOpen) return null;
 
   const scrollDown = () =>
     requestAnimationFrame(() => {
@@ -54,12 +54,25 @@ export function AiPanel({ store }: { store: DocStore }) {
     setLiveOps([]);
     setRunning(true);
 
+    // 선택 grounding(피드백) — 현재 선택 요소를 프롬프트에 명시해 "이거/이 벽"이 해소되게.
+    // 서버 변경 없이 클라가 ref를 덧붙임(에이전트는 이미 문서 스냅샷 보유 → id로 해소).
+    const selRefs = useUiStore
+      .getState()
+      .selection.map((id) => {
+        const el = store.getElement(id);
+        return el ? `${KIND_LABEL[el.kind] ?? el.kind} #${id}` : null;
+      })
+      .filter(Boolean);
+    const groundedText = selRefs.length
+      ? `${text}\n(참조: 사용자가 캔버스에서 선택한 요소 = ${selRefs.join(', ')}. "이거/이 ~" 등은 이 요소를 가리킴.)`
+      : text;
+
     // 대화 transcript = user/assistant 턴만 (notice 제외)
     const transcript: TranscriptTurn[] = [
       ...msgs
         .filter((m): m is ChatMsg & { role: 'user' | 'assistant' } => m.role !== 'notice')
         .map((m): TranscriptTurn => ({ role: m.role, text: m.text })),
-      { role: 'user', text },
+      { role: 'user', text: groundedText },
     ];
 
     // 스트리밍 어시스턴트 메시지를 자리에 추가하고 델타로 갱신.
@@ -153,24 +166,10 @@ export function AiPanel({ store }: { store: DocStore }) {
   };
 
   return (
-    <div className="ai-panel">
+    <div className={`ai-panel ${activeMode === 'ai' ? '' : 'ai-hidden'}`}>
       <div className="ai-head">
         <span className="ai-title">AI 모드</span>
-        <span className="ai-sub">계획 검토 후 승인해야 반영됩니다</span>
-        <button
-          className={`ai-sketch-btn ${sketchOn ? 'active' : ''}`}
-          title="스케치 그리기 — 펜으로 평면 손그림 후 보내면 그대로 모델링"
-          onClick={() => {
-            const ui = useUiStore.getState();
-            ui.setViewMode('plan');
-            ui.setTool('sketch'); // SketchTool.activate가 북향 스냅
-          }}
-        >
-          ✏ 스케치
-        </button>
-        <button className="ai-close" onClick={() => useUiStore.getState().setAiOpen(false)}>
-          ✕
-        </button>
+        <span className="ai-sub">선택·스케치로 지시 · 계획 승인해야 반영</span>
       </div>
       <div className="ai-msgs" ref={listRef}>
         {msgs.length === 0 && (
@@ -221,6 +220,11 @@ export function AiPanel({ store }: { store: DocStore }) {
           </div>
         )}
       </div>
+      {selection.length > 0 && (
+        <div className="ai-ref-chip">
+          📌 참조 {selection.length}개 선택됨 — "이거/이 ~"로 지시 가능
+        </div>
+      )}
       {sketchOn && (
         <div className="ai-sketch-chip">
           <span>✏ 스케치 첨부됨 — 보내면 손그림대로 생성</span>

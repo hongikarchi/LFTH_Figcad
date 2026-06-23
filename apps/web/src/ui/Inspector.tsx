@@ -24,6 +24,7 @@ export function Inspector({ store }: { store: DocStore }) {
       </div>
     );
   }
+  if (activeMode === 'ai') return null; // 우측은 AiPanel(챗)이 차지 — Inspector 비움
   if (activeMode === 'hub') {
     return (
       <div className="inspector">

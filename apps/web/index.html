@@ -746,6 +746,27 @@
         min-width: 40px;
       }
 
+      /* ---- AI peer 모드 보강(피드백) ---- */
+      .ai-hidden {
+        display: none !important;
+      }
+      .ai-ref-chip {
+        margin: 0 10px 6px;
+        padding: 6px 10px;
+        background: rgba(10, 132, 255, 0.1);
+        border: 1px solid rgba(10, 132, 255, 0.25);
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--accent);
+      }
+      .rail-hint {
+        padding: 8px 10px;
+        font-size: 11px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
+
       /* ---- Toolbox: 좌측 세로 (ArchiCAD 4그룹) ---- */
       .toolbox {
         position: fixed;
@@ -1464,12 +1485,13 @@
       }
 
       /* ---- AI 모드 패널 (우하단) ---- */
+      /* AI = peer 모드 우측 챗 레일(피드백) — activeMode==='ai'서만 보임(.ai-hidden) */
       .ai-panel {
         position: fixed;
-        bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+        top: calc(env(safe-area-inset-top, 0px) + 58px);
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
         right: calc(env(safe-area-inset-right, 0px) + 14px);
-        width: 340px;
-        max-height: min(560px, calc(100vh - 200px));
+        width: 320px;
         display: flex;
         flex-direction: column;
         background: var(--glass);
