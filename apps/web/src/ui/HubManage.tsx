@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { DocStore } from '@figcad/core';
+import { KIND_LABEL, lint, type DocSnapshot, type DocStore, type FederationSource } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
+import { fetchFigcadRoomSnapshot } from '../interop/federationExtract';
 import { useDocVersion } from './App';
 import { useNavigatorFederation, SOURCE_BADGE } from './useNavigatorFederation';
+
+type Preview = ReturnType<DocStore['previewMergeSnapshot']>;
+type Staging = { source: FederationSource; snap: DocSnapshot; preview: Preview };
 
 /**
  * 허브 mode 좌 WorkRail (UI/UX 재구성 P1 Slice6) — 멀티모델 상세 관리.
@@ -21,16 +25,71 @@ export function HubManage({
   useEffect(() => federation.onChange(() => bumpFed((x) => x + 1)), [federation]);
   const { fedInput, setFedInput, addFederationRoom, uploadFederationFile } =
     useNavigatorFederation(store);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [staging, setStaging] = useState<Staging | null>(null);
+  const [result, setResult] = useState<string | null>(null);
 
   const sources = store.listFederationSources();
   const room = new URL(location.href).searchParams.get('p') ?? '—';
+
+  // 머지 게이트(Slice9): figcad-room만 — pull 스냅샷 캡처 → 미리보기 → 승인 시 additive ops 머지.
+  const startMerge = async (source: FederationSource) => {
+    setBusy(source.id);
+    setResult(null);
+    try {
+      const snap = await fetchFigcadRoomSnapshot(source.ref);
+      setStaging({ source, snap, preview: store.previewMergeSnapshot(snap) });
+    } catch (e) {
+      window.alert(`머지 준비 실패: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const confirmMerge = () => {
+    if (!staging) return;
+    const { created } = store.mergeSnapshot(staging.snap); // DocStore ops = undo 1스텝·협업 전파
+    const ids = new Set(created);
+    const findings = lint(store).filter((f) => f.elementIds.some((id) => ids.has(id)));
+    setStaging(null);
+    setResult(
+      `✓ ${created.length}개 요소 머지됨 (Ctrl+Z 되돌리기)` +
+        (findings.length ? ` · ⚠ 검사 ${findings.length}건` : ''),
+    );
+  };
 
   return (
     <div className="navigator embedded hub-manage">
       <div className="nav-section">멀티모델 허브</div>
       <div className="hub-manage-hint">
-        다른 툴 모델을 read-only 오버레이로 — 비파괴. (편집 머지는 추후 staging 게이트)
+        다른 툴 모델을 read-only 오버레이로 — 비파괴. ⤵ = 편집가능 요소로 문서에 머지.
       </div>
+      {result && <div className="hub-merge-result">{result}</div>}
+      {staging && (
+        <div className="hub-staging">
+          <div className="hub-staging-title">문서에 머지 — {staging.source.name}</div>
+          <div className="hub-staging-body">
+            추가:{' '}
+            {Object.entries(staging.preview.byKind)
+              .map(([k, n]) => `${KIND_LABEL[k as keyof typeof KIND_LABEL] ?? k} ${n}`)
+              .join(' · ') || '없음'}{' '}
+            (총 {staging.preview.total})
+            <br />
+            타입: 신규 {staging.preview.newTypes} · 재사용 {staging.preview.reusedTypes}
+            {staging.preview.newLevels > 0 && ` · 레벨 신규 ${staging.preview.newLevels}`}
+            {staging.preview.originShift && (
+              <div className="hub-staging-warn">⚠ 좌표계 차이 — 소스 원점 기준으로 정렬됩니다</div>
+            )}
+          </div>
+          <div className="hub-staging-actions">
+            <button className="hub-staging-go" onClick={confirmMerge}>
+              승인 — 문서에 추가
+            </button>
+            <button className="hub-staging-cancel" onClick={() => setStaging(null)}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="nav-subsection">모델 추가</div>
       <div className="hub-add-row">
@@ -73,6 +132,16 @@ export function HubManage({
                   <span title={err ?? statusLabel}>{dot}</span> {SOURCE_BADGE[s.sourceType]}
                 </span>
               </button>
+              {s.sourceType === 'figcad-room' && (
+                <button
+                  className="nav-edit"
+                  title="이 모델을 편집가능 요소로 문서에 머지"
+                  disabled={busy === s.id || status !== 'ready'}
+                  onClick={() => void startMerge(s)}
+                >
+                  {busy === s.id ? '…' : '⤵'}
+                </button>
+              )}
               <button
                 className="nav-delete"
                 title="연동 모델 제거"

@@ -107,6 +107,19 @@ describe('mergeSnapshot — additive 머지(Slice9)', () => {
     expect(onMerged.some((f) => f.code === 'orphan-dimension' || f.code === 'orphan-opening')).toBe(false);
   });
 
+  it('(e0) previewMergeSnapshot — diff 카운트(무변경)', () => {
+    const snap = buildSource().store.snapshot();
+    const target = seededTarget();
+    const before = target.listElements().length;
+    const p = target.previewMergeSnapshot(snap);
+    expect(target.listElements().length).toBe(before); // 순수 — 무변경
+    expect(p.total).toBe(snap.elements.length);
+    expect(p.byKind['wall']).toBe(3); // w1·w2·커스텀
+    expect(p.newTypes).toBe(1); // 커스텀만 신규
+    expect(p.reusedTypes).toBeGreaterThan(0); // seed 재사용
+    expect(p.originShift).toBe(false);
+  });
+
   it('(e) projectOrigin reconcile — 소스 원점 차만큼 좌표 평행이동', () => {
     const snap = buildSource().store.snapshot();
     // 소스가 원점 [10000,20000] 기준이라 명시 → 타겟(원점 0) 프레임으로 +[10000,20000] 이동돼야

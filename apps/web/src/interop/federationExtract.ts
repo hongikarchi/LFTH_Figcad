@@ -22,20 +22,25 @@ function pullBase(): string {
   return backendOrigin();
 }
 
-/** A4 — 다른 Figcad 룸을 읽기전용 오버레이로. 라이브 스냅샷 → derive → 메시. */
-export async function extractFigcadRoom(ref: string): Promise<ReferenceMesh[]> {
+/**
+ * 다른 Figcad 룸의 라이브 DocSnapshot을 `?op=pull`로 가져온다 — 오버레이 derive(extractFigcadRoom)와
+ * 머지 캡처(Slice9 머지 게이트)가 공유. ROOM_KEY는 fetch 시점 URL서만(ref 미저장 — 키 유출 방지).
+ */
+export async function fetchFigcadRoomSnapshot(ref: string): Promise<DocSnapshot> {
   const roomId = ref.trim();
   if (!roomId) throw new Error('빈 룸 id');
-  // ROOM_KEY 보호 룸: 키를 *fetch 시점에 로컬 URL/auth 컨텍스트*에서 붙인다(collab/provider.ts 패턴).
-  // ⚠️ ref(federation 채널)엔 절대 저장 안 함 — Yjs로 전원 동기화 = 키 유출(Codex #1).
   const key = new URL(location.href).searchParams.get('key');
   const keyQ = key ? `&key=${encodeURIComponent(key)}` : '';
   const res = await fetch(`${pullBase()}/parties/doc/${encodeURIComponent(roomId)}?op=pull${keyQ}`);
   if (!res.ok) {
-    // 타겟 룸이 ROOM_KEY 설정 시 401 — 메시지로 surface
     throw new Error(`룸 "${roomId}" 페치 실패 (${res.status}${res.status === 401 ? ' — ROOM_KEY 필요' : ''})`);
   }
-  const snap = (await res.json()) as DocSnapshot;
+  return (await res.json()) as DocSnapshot;
+}
+
+/** A4 — 다른 Figcad 룸을 읽기전용 오버레이로. 라이브 스냅샷 → derive → 메시. */
+export async function extractFigcadRoom(ref: string): Promise<ReferenceMesh[]> {
+  const snap = await fetchFigcadRoomSnapshot(ref);
   // throwaway 스토어: derive 후 참조 버림 → GC (provider 미부착, observer 누수 무관).
   const store = DocStore.fromSnapshot(snap);
   const index = buildDeriveIndex(store);

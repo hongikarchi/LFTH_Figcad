@@ -1568,6 +1568,56 @@ export class DocStore {
   }
 
   /**
+   * 머지 미리보기(순수, 무변경) — staging 게이트 diff용. 추가될 요소(kind별)·신규/재사용 타입·레벨·좌표이동 여부.
+   * dedup 판정은 mergeSnapshot과 동일 mergeContentKey 공유 → 미리보기와 실제 결과 일치.
+   */
+  previewMergeSnapshot(snap: DocSnapshot): {
+    byKind: Record<string, number>;
+    total: number;
+    newTypes: number;
+    reusedTypes: number;
+    newLevels: number;
+    reusedLevels: number;
+    originShift: boolean;
+  } {
+    const byKind: Record<string, number> = {};
+    for (const e of snap.elements) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
+    const seenT = new Set(this.listTypes().map((t) => mergeContentKey(t)));
+    let newTypes = 0;
+    let reusedTypes = 0;
+    for (const t of snap.types) {
+      const k = mergeContentKey(t);
+      if (seenT.has(k)) reusedTypes++;
+      else {
+        newTypes++;
+        seenT.add(k);
+      }
+    }
+    const seenL = new Set(this.listLevels().map((l) => mergeContentKey(l)));
+    let newLevels = 0;
+    let reusedLevels = 0;
+    for (const l of snap.levels) {
+      const k = mergeContentKey(l);
+      if (seenL.has(k)) reusedLevels++;
+      else {
+        newLevels++;
+        seenL.add(k);
+      }
+    }
+    const so = snap.meta.projectOrigin ?? [0, 0];
+    const to = this.getProjectOrigin() ?? [0, 0];
+    return {
+      byKind,
+      total: snap.elements.length,
+      newTypes,
+      reusedTypes,
+      newLevels,
+      reusedLevels,
+      originShift: so[0] !== to[0] || so[1] !== to[1],
+    };
+  }
+
+  /**
    * 스냅샷의 레벨·타입·요소를 현재 문서에 ADD(병합) — importSnapshot의 additive twin (교체 아님).
    * 멀티모델 허브 머지 게이트(Slice9) 코어: 전 집합 새 id 선할당 + 내부참조 재맵 + 단일 transact.
    * = undo 1스텝(불변 ②, undo-추적 채널 yElements/yLevels/yTypes만). 검증은 transact 밖(중간실패 무변경).
@@ -1597,25 +1647,17 @@ export class DocStore {
     const dy = so[1] - to[1];
     const shiftPt = (p: Pt): Pt => [p[0] + dx, p[1] + dy];
 
-    // 내용키(id 제외, 키정렬) — 타입·레벨 by-content dedup용
-    const contentKey = (o: unknown): string => {
-      if (o === null || typeof o !== 'object') return JSON.stringify(o);
-      if (Array.isArray(o)) return `[${o.map(contentKey).join(',')}]`;
-      const ks = Object.keys(o as object).filter((k) => k !== 'id').sort();
-      return `{${ks.map((k) => `${k}:${contentKey((o as Record<string, unknown>)[k])}`).join(',')}}`;
-    };
-
     // Phase A: id 선할당 + 타입/레벨 dedup (교차참조가 전 집합에 걸쳐 idMap 먼저 완성)
     const idMap = new Map<Id, Id>();
     const remap = (id: Id): Id => idMap.get(id) ?? id;
     const newLevels = [] as typeof levels;
     const newTypes = [] as typeof types;
     const levelByContent = new Map<string, Id>();
-    for (const l of this.listLevels()) levelByContent.set(contentKey(l), l.id);
+    for (const l of this.listLevels()) levelByContent.set(mergeContentKey(l), l.id);
     const typeByContent = new Map<string, Id>();
-    for (const t of this.listTypes()) typeByContent.set(contentKey(t), t.id);
+    for (const t of this.listTypes()) typeByContent.set(mergeContentKey(t), t.id);
     for (const l of levels) {
-      const k = contentKey(l);
+      const k = mergeContentKey(l);
       const ex = levelByContent.get(k);
       if (ex) idMap.set(l.id, ex); // dedup — 기존 재사용
       else {
@@ -1626,7 +1668,7 @@ export class DocStore {
       }
     }
     for (const t of types) {
-      const k = contentKey(t);
+      const k = mergeContentKey(t);
       const ex = typeByContent.get(k);
       if (ex) idMap.set(t.id, ex);
       else {
@@ -1940,6 +1982,16 @@ export function seedDocument(store: DocStore): SeedRefs {
  * POSITIONAL 단일소스로 모든 좌표필드(segment a/b·polygon boundary·point at) 처리, hosted(opening)는
  * 호스트 상대라 스킵. origin 없거나 [0,0]이면 그대로 반환. 모든 exporter가 이 한 함수만 거치게 = 무누락.
  */
+/** by-content dedup 키 (id 제외, 키 정렬 재귀) — mergeSnapshot/previewMergeSnapshot 공유(로직 분기 방지) */
+function mergeContentKey(o: unknown): string {
+  if (o === null || typeof o !== 'object') return JSON.stringify(o);
+  if (Array.isArray(o)) return `[${o.map(mergeContentKey).join(',')}]`;
+  const ks = Object.keys(o as object)
+    .filter((k) => k !== 'id')
+    .sort();
+  return `{${ks.map((k) => `${k}:${mergeContentKey((o as Record<string, unknown>)[k])}`).join(',')}}`;
+}
+
 export function rebaseSnapshot(snap: DocSnapshot, sign: 1 | -1): DocSnapshot {
   const o = snap.meta.projectOrigin;
   if (!o || (o[0] === 0 && o[1] === 0)) return snap;
