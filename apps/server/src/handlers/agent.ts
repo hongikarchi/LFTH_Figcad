@@ -53,12 +53,12 @@ const MAX_ITERATIONS = 12;
 const DEFAULT_MODEL = 'claude-opus-4-8';
 const DEFAULT_MAX_TOKENS = 16000;
 // 모델 allowlist (보안 — 임의 model 문자열 거부, fallback opus). 속도 = 모델 선택.
-// 정확/균형 = enabled thinking(budget) → 생각 과정 라이브 스트림(피드백 — adaptive는 delta 미발화).
-// 빠름(Haiku) = thinking off → 빠르고 저렴(속도 레버). budget_tokens < max_tokens 필수.
+// Opus 4.8은 enabled 미지원 → adaptive + output_config.effort로 사고 깊이 제어(API 강제).
+// 정확=high·균형=medium·빠름(Haiku)=thinking off(빠르고 저렴, 속도 레버). 생각요약 = msg.content서 추출.
 const MODEL_ALLOWLIST = {
-  'claude-opus-4-8': { thinking: { type: 'enabled', budget_tokens: 6000 }, maxOut: 128000 },
-  'claude-sonnet-4-6': { thinking: { type: 'enabled', budget_tokens: 4000 }, maxOut: 64000 },
-  'claude-haiku-4-5-20251001': { thinking: { type: 'disabled' }, maxOut: 64000 },
+  'claude-opus-4-8': { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'high', maxOut: 128000 },
+  'claude-sonnet-4-6': { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'medium', maxOut: 64000 },
+  'claude-haiku-4-5-20251001': { thinking: { type: 'disabled' }, effort: null, maxOut: 64000 },
 } as const;
 // lint-in-loop critic — 모델이 끝났다고 선언하면 결정적 lint로 자기 변경을 검사하고
 // error가 있으면 재프롬프트한다. 이 상한이 무한 critic 루프를 막는다 (H3/H4: 외부
@@ -232,6 +232,7 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
           model,
           max_tokens: maxTokens,
           thinking: modelCfg.thinking,
+          ...(modelCfg.effort ? { output_config: { effort: modelCfg.effort } } : {}),
           system: [
             {
               type: 'text',
@@ -246,11 +247,22 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
         stream.on('text', (delta) => {
           void send({ type: 'text', text: delta });
         });
-        // 생각 과정(요약) 스트림 — 클라가 임시 표시(transcript 미저장). adaptive(opus/sonnet)만 발화.
+        // 생각 과정 — 라이브 delta(있으면) 스트림. 클라가 임시 표시(transcript 미저장).
+        let thoughtStreamed = false;
         stream.on('thinking', (delta) => {
-          void send({ type: 'thinking', text: delta });
+          if (delta) {
+            thoughtStreamed = true;
+            void send({ type: 'thinking', text: delta });
+          }
         });
         const msg = await stream.finalMessage();
+        // adaptive+summarized는 delta 미발화 가능 → 스트림 0이면 최종 thinking 블록(요약) 1회 전송(가시성 보장)
+        if (!thoughtStreamed) {
+          for (const block of msg.content) {
+            if (block.type === 'thinking' && block.thinking)
+              void send({ type: 'thinking', text: block.thinking });
+          }
+        }
 
         if (msg.stop_reason === 'pause_turn') {
           messages.push({ role: 'assistant', content: msg.content });
