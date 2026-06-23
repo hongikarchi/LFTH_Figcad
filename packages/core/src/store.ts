@@ -1567,6 +1567,81 @@ export class DocStore {
     });
   }
 
+  /**
+   * 스냅샷의 레벨·타입·요소를 현재 문서에 ADD(병합) — importSnapshot의 additive twin (교체 아님).
+   * 멀티모델 허브 머지 게이트(Slice9 스파이크) 코어: 전 집합 새 id 선할당 + 내부참조 재맵 + 단일 transact.
+   * = undo 1스텝(불변 ②, undo-추적 채널 yElements/yLevels/yTypes만). 검증은 transact 밖(중간실패 무변경).
+   *
+   * 재맵: levelId·typeId·opening.hostId·label.targetId·dimension.bindA/bindB.id(중첩)·grid.label(재발급).
+   * 스파이크 범위: 코멘트/뷰/federation 직교채널·타입 dedup·좌표 reconcile(projectOrigin) = 후속.
+   * lift(메시→파라메트릭)는 별개 축 — 입력 snap엔 이미 native 요소가 있다고 가정(figcad-room pull·importIfc).
+   */
+  mergeSnapshot(snap: DocSnapshot): { created: Id[]; idMap: Map<Id, Id> } {
+    if (
+      typeof snap?.meta?.schemaVersion !== 'number' ||
+      snap.meta.schemaVersion > CORE_SCHEMA_VERSION
+    ) {
+      throw new Error(`지원하지 않는 schemaVersion: ${snap?.meta?.schemaVersion}`);
+    }
+    // 검증 transact 밖 — 중간 실패 시 문서 무변경
+    const levels = snap.levels.map((l) => LevelSchema.parse(l));
+    const types = snap.types.map((t) => ElemTypeSchema.parse(t));
+    const elements = snap.elements.map((e) => ElementSchema.parse(e) as Element);
+
+    // Phase A: 전 집합에 새 id 선할당 — 교차참조가 전 집합에 걸쳐 있어 write 전에 idMap 완성 필요
+    const idMap = new Map<Id, Id>();
+    for (const l of levels) idMap.set(l.id, nanoid(12));
+    for (const t of types) idMap.set(t.id, nanoid(12));
+    for (const e of elements) idMap.set(e.id, nanoid(12));
+    const remap = (id: Id): Id => idMap.get(id) ?? id;
+
+    // 그리드 라벨 충돌 회피 — 현 문서 grid 라벨 + 머지서 발급분 추적(transact 밖 시드, 파생 staleness 무관)
+    const usedGridLabels = new Set<string>();
+    for (const el of this.elements.values()) if (el.kind === 'grid') usedGridLabels.add(el.label);
+    const freshGridLabel = (a: Pt, b: Pt): string => {
+      const vertical = Math.abs(b[1] - a[1]) >= Math.abs(b[0] - a[0]);
+      const take = (s: string): string => {
+        usedGridLabels.add(s);
+        return s;
+      };
+      if (vertical) {
+        for (let i = 1; ; i++) if (!usedGridLabels.has(String(i))) return take(String(i));
+      }
+      for (let i = 0; ; i++) {
+        const label = String.fromCharCode(65 + (i % 26)) + (i >= 26 ? String(Math.floor(i / 26)) : '');
+        if (!usedGridLabels.has(label)) return take(label);
+      }
+    };
+
+    const created: Id[] = [];
+    this.transact(() => {
+      // 레벨·타입 = 새 id로 직접 기록 (addLevel/addType는 자체 transact라 single-undo 깨짐 — importSnapshot 선례)
+      for (const l of levels) this.yLevels.set(remap(l.id), LevelSchema.parse({ ...l, id: remap(l.id) }));
+      for (const t of types) this.yTypes.set(remap(t.id), ElemTypeSchema.parse({ ...t, id: remap(t.id) }));
+      // 요소 = 내부참조 재맵 후 새 id로 기록
+      for (const e of elements) {
+        const ne: Record<string, unknown> = { ...e, id: remap(e.id) };
+        if ('levelId' in e && e.levelId) ne['levelId'] = remap(e.levelId);
+        if ('typeId' in e && (e as { typeId?: Id }).typeId) {
+          ne['typeId'] = remap((e as { typeId: Id }).typeId);
+        }
+        if (e.kind === 'opening') ne['hostId'] = remap(e.hostId);
+        if (e.kind === 'label' && e.targetId) ne['targetId'] = remap(e.targetId);
+        if (e.kind === 'dimension') {
+          if (e.bindA) ne['bindA'] = { ...e.bindA, id: remap(e.bindA.id) };
+          if (e.bindB) ne['bindB'] = { ...e.bindB, id: remap(e.bindB.id) };
+        }
+        if (e.kind === 'grid') ne['label'] = freshGridLabel(e.a, e.b);
+        const parsed = ElementSchema.parse(ne) as Element;
+        const ymap = new Y.Map<unknown>();
+        for (const [k, v] of Object.entries(parsed)) ymap.set(k, v);
+        this.yElements.set(parsed.id, ymap);
+        created.push(parsed.id);
+      }
+    });
+    return { created, idMap };
+  }
+
   /** 사용자별 undo — 이 클라이언트(LOCAL_ORIGIN)의 변경만 되돌린다 (Figma 의미론) */
   createUndoManager(): Y.UndoManager {
     return new Y.UndoManager([this.yElements, this.yLevels, this.yTypes], {
