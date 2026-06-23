@@ -51,7 +51,7 @@ export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
   ],
   ai: ['select', 'sketch', 'comment'],
   hub: ['select'],
-  drawing: ['select'],
+  drawing: ['select', 'section', 'elevation', 'dimension', 'text', 'label'],
 };
 /** presence 아바타 파일용 협업자 정체성 (커서 위치 아님 — join/leave/rename/color만 변경) */
 export interface PeerIdentity {

@@ -8,6 +8,7 @@ import { CommentPanel } from './CommentPanel';
 import { LintPanel } from './LintPanel';
 import { VersionPanel } from './VersionPanel';
 import { HubManage } from './HubManage';
+import { DrawingRail } from './DrawingRail';
 import { useDocVersion, type ViewActions } from './App';
 
 /**
@@ -34,6 +35,8 @@ export function WorkRail({
       </div>
     );
   }
+
+  if (activeMode === 'drawing') return <DrawingRail store={store} />;
 
   if (activeMode === 'ai') {
     return (
