@@ -43,6 +43,7 @@ interface AgentRequestBody {
   snapshot: DocSnapshot;
   transcript: TranscriptTurn[];
   sketch?: SketchAttachment;
+  image?: { dataB64: string; mediaType: string }; // 참고 사진(vision) — sketch와 달리 트레이스 아님
   model?: string; // allowlist 검증, 미지정/불허 시 DEFAULT_MODEL
   maxTokens?: number; // [1024, per-model 상한] clamp
 }
@@ -181,7 +182,10 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
   const last = turns[turns.length - 1]!;
   const docBlock = `<현재_문서_상태>\n${JSON.stringify(body.snapshot)}\n</현재_문서_상태>`;
 
-  // 스케치 첨부 검증 — 유효하면 이미지 블록을 먼저(권장 순서), 텍스트에 좌표 프레임 동봉
+  // 이미지 첨부 — 스케치(트레이스, 좌표 프레임) + 사진(참고). 둘 다/하나/없음 지원.
+  const imgBlocks: Anthropic.ContentBlockParam[] = [];
+  const notes: string[] = [];
+
   const sk = body.sketch;
   const sketchOk =
     sk &&
@@ -191,16 +195,37 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
     sk.dataB64.length < MAX_SKETCH_B64 &&
     sk.frame &&
     [sk.frame.x0, sk.frame.y0, sk.frame.x1, sk.frame.y1].every((n) => Number.isFinite(n));
-
   if (sketchOk) {
     const f = sk!.frame;
-    const frameNote = `<스케치_좌표_프레임>\n이미지 범위: x∈[${f.x0}, ${f.x1}]mm (왼→오른=동), y∈[${f.y0}, ${f.y1}]mm (아래→위=북). 이미지는 북쪽이 위. 선을 벽 중심선으로 해석해 이 mm 좌표로 생성하라.\n</스케치_좌표_프레임>`;
+    imgBlocks.push({ type: 'image', source: { type: 'base64', media_type: sk!.mediaType, data: sk!.dataB64 } });
+    notes.push(
+      `<스케치_좌표_프레임>\n이미지 범위: x∈[${f.x0}, ${f.x1}]mm (왼→오른=동), y∈[${f.y0}, ${f.y1}]mm (아래→위=북). 이미지는 북쪽이 위. 선을 벽 중심선으로 해석해 이 mm 좌표로 생성하라.\n</스케치_좌표_프레임>`,
+    );
+  }
+
+  const ph = body.image;
+  const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const photoOk =
+    ph &&
+    IMG_TYPES.includes(ph.mediaType) &&
+    typeof ph.dataB64 === 'string' &&
+    ph.dataB64.length > 0 &&
+    ph.dataB64.length < MAX_SKETCH_B64;
+  if (photoOk) {
+    imgBlocks.push({
+      type: 'image',
+      source: { type: 'base64', media_type: ph!.mediaType as 'image/jpeg', data: ph!.dataB64 },
+    });
+    notes.push(
+      `<참고_사진>\n첨부한 사진은 참고 이미지다(정확한 트레이스 아님). 형태·구성·비례를 참고해 모델을 구성하고, 좌표·치수는 문서 단위(mm)로 합리적으로 정하라.\n</참고_사진>`,
+    );
+  }
+
+  if (imgBlocks.length) {
+    const note = notes.length ? `${notes.join('\n\n')}\n\n` : '';
     messages.push({
       role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: sk!.mediaType, data: sk!.dataB64 } },
-        { type: 'text', text: `${docBlock}\n\n${frameNote}\n\n${last.text}` },
-      ],
+      content: [...imgBlocks, { type: 'text', text: `${docBlock}\n\n${note}${last.text}` }],
     });
   } else {
     messages.push({ role: 'user', content: `${docBlock}\n\n${last.text}` });

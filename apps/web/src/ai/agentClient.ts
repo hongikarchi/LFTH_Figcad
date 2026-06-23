@@ -48,6 +48,7 @@ export async function runAgent(opts: {
   onThinking?: (delta: string) => void; // 생각 과정(요약) — 임시 표시용, transcript 미저장
   onLint?: (round: number, findings: AiLintFinding[]) => void;
   sketch?: SketchAttachment | null;
+  image?: { dataB64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null;
   model?: string;
   signal?: AbortSignal;
 }): Promise<AgentResult> {
@@ -58,6 +59,7 @@ export async function runAgent(opts: {
       snapshot: opts.snapshot,
       transcript: opts.transcript,
       ...(opts.sketch ? { sketch: opts.sketch } : {}),
+      ...(opts.image ? { image: opts.image } : {}),
       ...(opts.model ? { model: opts.model } : {}),
     }),
     signal: opts.signal,

@@ -3,6 +3,8 @@ import { applyOpLog, opSummary, KIND_LABEL, type DocStore, type OpLogEntry } fro
 import { useUiStore, type AiModelId } from '../state/uiStore';
 import { runAgent, type AiLintFinding, type TranscriptTurn } from '../ai/agentClient';
 import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
+import { fileToAttachment, type ImageAttachment } from '../ai/imageAttach';
+import { startVoice, voiceSupported } from '../ai/voiceInput';
 
 /**
  * AI 모드 채팅 패널 — 우하단 도킹.
@@ -38,9 +40,40 @@ export function AiPanel({ store }: { store: DocStore }) {
   // 생각 과정 — 임시(transcript/msgs 미저장 → context 무증가). running 중에만 표시.
   const [thinking, setThinking] = useState('');
   const [thinkOpen, setThinkOpen] = useState(false);
+  const [imageAtt, setImageAtt] = useState<ImageAttachment | null>(null);
+  const [listening, setListening] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const voiceRef = useRef<{ stop: () => void } | null>(null);
+  const voiceOk = voiceSupported();
 
   useEffect(() => onSketchChange(() => setSketchOn(hasSketch())), []);
+
+  const pickImage = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      setImageAtt(await fileToAttachment(file));
+    } catch {
+      window.alert('이미지 처리 실패');
+    }
+  };
+  const toggleVoice = () => {
+    if (listening) {
+      voiceRef.current?.stop();
+      return;
+    }
+    const h = startVoice(
+      (t) => setInput(t),
+      () => {
+        setListening(false);
+        voiceRef.current = null;
+      },
+    );
+    if (h) {
+      voiceRef.current = h;
+      setListening(true);
+    }
+  };
 
   const scrollDown = () =>
     requestAnimationFrame(() => {
@@ -52,9 +85,13 @@ export function AiPanel({ store }: { store: DocStore }) {
     if (running) return;
     // 스케치가 있으면 래스터화해 첨부(소비 후 지움 — 재전송 방지·프리뷰 정리)
     const sketch = hasSketch() ? rasterizeSketch() : null;
-    const text = input.trim() || (sketch ? '첨부한 스케치대로 평면을 만들어줘.' : '');
-    if (!text) return; // 텍스트도 스케치도 없음
+    const img = imageAtt;
+    const text =
+      input.trim() ||
+      (sketch ? '첨부한 스케치대로 평면을 만들어줘.' : img ? '첨부한 사진을 참고해 만들어줘.' : '');
+    if (!text) return; // 텍스트·스케치·사진 전부 없음
     setInput('');
+    setImageAtt(null);
     setPlan(null);
     setLiveOps([]);
     setThinking('');
@@ -94,6 +131,7 @@ export function AiPanel({ store }: { store: DocStore }) {
         snapshot: store.snapshot(),
         transcript,
         sketch,
+        image: img,
         model: useUiStore.getState().aiModel,
         onThinking: (delta) => {
           setThinking((p) => p + delta);
@@ -283,10 +321,46 @@ export function AiPanel({ store }: { store: DocStore }) {
           <button onClick={() => clearSketch()}>지우기</button>
         </div>
       )}
+      {imageAtt && (
+        <div className="ai-sketch-chip">
+          <span>📷 사진 첨부됨 — 보내면 참고해 생성</span>
+          <button onClick={() => setImageAtt(null)}>지우기</button>
+        </div>
+      )}
       <div className="ai-input">
         <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            void pickImage(e.target.files?.[0]);
+            e.target.value = ''; // 같은 파일 재선택 허용
+          }}
+        />
+        <button
+          className="ai-icon-btn"
+          title="사진 첨부 — 참고 이미지(카메라/앨범)"
+          disabled={running}
+          onClick={() => fileRef.current?.click()}
+        >
+          📷
+        </button>
+        {voiceOk && (
+          <button
+            className={`ai-icon-btn ${listening ? 'active' : ''}`}
+            title="음성 입력 (한국어)"
+            disabled={running}
+            onClick={toggleVoice}
+          >
+            🎤
+          </button>
+        )}
+        <input
           value={input}
-          placeholder={running ? '계획 작성 중…' : sketchOn ? '스케치 설명(선택) 후 보내기' : '무엇을 모델링할까요?'}
+          placeholder={
+            running ? '계획 작성 중…' : listening ? '듣는 중…' : sketchOn ? '스케치 설명(선택)' : imageAtt ? '사진 설명(선택)' : '무엇을 모델링할까요?'
+          }
           disabled={running}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -294,7 +368,7 @@ export function AiPanel({ store }: { store: DocStore }) {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) void send();
           }}
         />
-        <button disabled={running || (!input.trim() && !sketchOn)} onClick={() => void send()}>
+        <button disabled={running || (!input.trim() && !sketchOn && !imageAtt)} onClick={() => void send()}>
           보내기
         </button>
       </div>

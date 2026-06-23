@@ -1681,6 +1681,40 @@
       .ai-progress {
         opacity: 0.85;
       }
+      /* 사진 첨부 / 음성 입력 버튼 (피드백) */
+      .ai-icon-btn {
+        flex-shrink: 0;
+        border: none;
+        background: transparent;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 4px 6px;
+        border-radius: 6px;
+        opacity: 0.7;
+      }
+      .ai-icon-btn:hover {
+        opacity: 1;
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .ai-icon-btn:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+      .ai-icon-btn.active {
+        background: rgba(255, 59, 48, 0.15);
+        opacity: 1;
+        animation: ai-pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes ai-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.45;
+        }
+      }
       .ai-title {
         font-size: 13px;
         font-weight: 700;
