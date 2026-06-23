@@ -10,7 +10,7 @@ import type { ViewActions } from './App';
  */
 type Cmd = { label: string; run: () => void };
 
-const MODE_BY_DIGIT: WorkspaceMode[] = ['review', 'model', 'ai', 'hub', 'drawing'];
+const MODE_BY_DIGIT: WorkspaceMode[] = ['review', 'model', 'ai', 'hub'];
 
 export function CommandPalette({ store, actions }: { store: DocStore; actions: ViewActions }) {
   const [open, setOpen] = useState(false);
@@ -28,7 +28,7 @@ export function CommandPalette({ store, actions }: { store: DocStore; actions: V
         setSel(0);
         return;
       }
-      if (!open && !inField && /^[1-5]$/.test(e.key)) {
+      if (!open && !inField && /^[1-4]$/.test(e.key)) {
         useUiStore.getState().setMode(MODE_BY_DIGIT[Number(e.key) - 1]!);
       }
     };
@@ -52,7 +52,6 @@ export function CommandPalette({ store, actions }: { store: DocStore; actions: V
     { label: '모드: 모델', run: () => ui.setMode('model') },
     { label: '모드: AI', run: () => ui.setMode('ai') },
     { label: '모드: 허브', run: () => ui.setMode('hub') },
-    { label: '모드: 도면', run: () => ui.setMode('drawing') },
     { label: '도구: 선택', run: () => ui.setTool('select') },
     { label: '도구: 벽', run: mode('model', 'wall') },
     { label: '도구: 문', run: mode('model', 'door') },
@@ -64,8 +63,8 @@ export function CommandPalette({ store, actions }: { store: DocStore; actions: V
     { label: '도구: 치수', run: mode('model', 'dimension') },
     { label: '도구: 코멘트', run: mode('review', 'comment') },
     { label: '도구: 스케치 (AI)', run: () => { ui.setMode('ai'); ui.setViewMode('plan'); ui.setTool('sketch'); } },
-    { label: '도구: 단면', run: mode('drawing', 'section') },
-    { label: '도구: 입면', run: mode('drawing', 'elevation') },
+    { label: '도구: 단면', run: () => { ui.setViewMode('plan'); ui.setDrawingOpen(false); ui.setTool('section'); } },
+    { label: '도구: 입면', run: () => { ui.setViewMode('plan'); ui.setDrawingOpen(false); ui.setTool('elevation'); } },
     { label: '전체 맞춤 (F)', run: actions.fit },
     { label: '실행 취소', run: actions.undo },
     { label: '다시 실행', run: actions.redo },

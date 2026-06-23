@@ -36,12 +36,13 @@ export type TypeKind =
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
-/** 정체성 순 작업 모드 (UI/UX 재구성 Part4). AI = peer 모드(피드백 — dock 토글 아님). */
-export type WorkspaceMode = 'review' | 'model' | 'hub' | 'drawing' | 'ai';
+/** 정체성 순 작업 모드 (UI/UX 재구성 Part4). AI = peer 모드. 도면=mode 아닌 view(피드백 — ProjectMap서 navigate). */
+export type WorkspaceMode = 'review' | 'model' | 'hub' | 'ai';
 
 /**
  * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기, 협업=코멘트,
  * AI=명령 grounding(선택·스케치·코멘트). mode 전환 시 도구가 팔레트에 없으면 select로 리셋.
+ * 도면(단면·입면·치수)은 mode 아님 — 모델 Toolbox + DrawingPanel서 진입.
  */
 export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
   review: ['select', 'comment'],
@@ -51,7 +52,6 @@ export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
   ],
   ai: ['select', 'sketch', 'comment'],
   hub: ['select'],
-  drawing: ['select', 'section', 'elevation', 'dimension', 'text', 'label'],
 };
 /** presence 아바타 파일용 협업자 정체성 (커서 위치 아님 — join/leave/rename/color만 변경) */
 export interface PeerIdentity {

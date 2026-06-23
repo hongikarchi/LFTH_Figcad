@@ -34,15 +34,6 @@ export function Inspector({ store }: { store: DocStore }) {
       </div>
     );
   }
-  if (activeMode === 'drawing') {
-    return (
-      <div className="inspector">
-        <div className="inspector-hint">
-          도면 뷰는 가운데 패널에서 봅니다. 좌측 도구로 단면·입면·치수·주석을 추가, 뷰 목록서 평면 생성/열기.
-        </div>
-      </div>
-    );
-  }
   if (activeMode !== 'model') {
     return (
       <div className="inspector">

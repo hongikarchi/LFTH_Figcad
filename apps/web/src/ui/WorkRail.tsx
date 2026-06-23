@@ -8,13 +8,12 @@ import { CommentPanel } from './CommentPanel';
 import { LintPanel } from './LintPanel';
 import { VersionPanel } from './VersionPanel';
 import { HubManage } from './HubManage';
-import { DrawingRail } from './DrawingRail';
 import { useDocVersion, type ViewActions } from './App';
 
 /**
  * 좌 WorkRail (UI/UX 재구성 P1) — mode별 working surface.
- * 협업·리뷰: 코멘트 + 검사 + 버전(섹션). 모델: 도구(Toolbox) + 프로젝트 맵.
- * 허브/도면 mode rail = Slice6/10. P1.1=모델, P1 Slice5=협업 추가.
+ * 협업·리뷰: 코멘트 + 검사 + 버전(섹션). 모델: 도구(Toolbox) + 프로젝트 맵(도면 뷰 포함).
+ * 허브: HubManage. AI: 명령 도구 팔레트. (도면=mode 아님 — ProjectMap 뷰 네비.)
  */
 export function WorkRail({
   store,
@@ -35,8 +34,6 @@ export function WorkRail({
       </div>
     );
   }
-
-  if (activeMode === 'drawing') return <DrawingRail store={store} />;
 
   if (activeMode === 'ai') {
     return (

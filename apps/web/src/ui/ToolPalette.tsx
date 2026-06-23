@@ -9,11 +9,6 @@ const TOOL_META: Partial<Record<ToolName, { label: string; icon: string }>> = {
   select: { label: '선택', icon: 'select' },
   comment: { label: '코멘트', icon: 'comment' },
   sketch: { label: '스케치', icon: 'ai' },
-  section: { label: '단면', icon: 'scissors' },
-  elevation: { label: '입면', icon: 'dimension' },
-  dimension: { label: '치수', icon: 'dimension' },
-  text: { label: '텍스트', icon: 'text' },
-  label: { label: '레이블', icon: 'pencil' },
 };
 
 export function ToolPalette({ tools, title }: { tools: ToolName[]; title?: string }) {
