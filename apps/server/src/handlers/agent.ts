@@ -53,10 +53,11 @@ const MAX_ITERATIONS = 12;
 const DEFAULT_MODEL = 'claude-opus-4-8';
 const DEFAULT_MAX_TOKENS = 16000;
 // 모델 allowlist (보안 — 임의 model 문자열 거부, fallback opus). 속도 = 모델 선택.
-// 빠름(Haiku 4.5)은 adaptive thinking 미지원 → disabled (4.6+만 adaptive).
+// 정확/균형 = enabled thinking(budget) → 생각 과정 라이브 스트림(피드백 — adaptive는 delta 미발화).
+// 빠름(Haiku) = thinking off → 빠르고 저렴(속도 레버). budget_tokens < max_tokens 필수.
 const MODEL_ALLOWLIST = {
-  'claude-opus-4-8': { thinking: { type: 'adaptive', display: 'summarized' }, maxOut: 128000 },
-  'claude-sonnet-4-6': { thinking: { type: 'adaptive', display: 'summarized' }, maxOut: 64000 },
+  'claude-opus-4-8': { thinking: { type: 'enabled', budget_tokens: 6000 }, maxOut: 128000 },
+  'claude-sonnet-4-6': { thinking: { type: 'enabled', budget_tokens: 4000 }, maxOut: 64000 },
   'claude-haiku-4-5-20251001': { thinking: { type: 'disabled' }, maxOut: 64000 },
 } as const;
 // lint-in-loop critic — 모델이 끝났다고 선언하면 결정적 lint로 자기 변경을 검사하고
