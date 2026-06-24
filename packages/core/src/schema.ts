@@ -459,11 +459,28 @@ export type DrawingView = z.infer<typeof DrawingViewSchema>;
 export const FederationSourceSchema = z.object({
   id: z.string(),
   name: z.string(),
-  sourceType: z.enum(['3dm', 'ifc', 'figcad-room', 'gltf', '3dtiles']),
+  sourceType: z.enum(['3dm', 'ifc', 'figcad-room', 'gltf', '3dtiles', 'dxf', 'dwg']),
   ref: z.string(), // room id / 업로드 URL / tileset URL — 절대 지오메트리 아님(불변①)
   visible: z.boolean(),
   addedBy: z.string(),
   ts: z.number().int(), // 추가 시각 epoch ms
+  /**
+   * 2D 언더레이 배치 (sourceType 'dxf' 전용 — CAD 빽도면). DXF 라인워크를 한 레벨 평면에
+   * 평평히 깔 때의 배치 파라미터. **불변① 무위반**: 지오 아님 — 라인워크는 ref(blob)에서
+   * 클라가 파싱(ReferenceLayer flat-2D), 여긴 배치 파라미터만. 메시 소스(.3dm/ifc/gltf…)엔 부재.
+   * origin = DXF 좌표에 더하는 평면 이동 [mm] (bbox 원점근처 센터링 + 그리드 정합).
+   * rotation = 평면 회전(rad). scale = DXF 단위→mm 환산(대개 1; 도면이 m 단위면 1000).
+   * levelId = 깔 레벨(그 elevation 높이의 수평면에 배치). 구버전 클라는 enum 'dxf' 미보유 →
+   * safeParse 실패로 소스 조용히 드롭(크래시 없음, 렌더만 스킵). schemaVersion 미bump(하위호환).
+   */
+  underlay: z
+    .object({
+      levelId: z.string(),
+      origin: z.tuple([z.number(), z.number()]),
+      rotation: z.number(),
+      scale: z.number(),
+    })
+    .optional(),
 });
 export type FederationSource = z.infer<typeof FederationSourceSchema>;
 

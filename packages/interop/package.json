@@ -8,6 +8,7 @@
     "./ifc": "./src/ifc.ts",
     "./rhino": "./src/rhino3dm.ts",
     "./dxf": "./src/dxf.ts",
+    "./dwg-underlay": "./src/dwgUnderlay.ts",
     "./coords": "./src/federationCoords.ts"
   },
   "scripts": {

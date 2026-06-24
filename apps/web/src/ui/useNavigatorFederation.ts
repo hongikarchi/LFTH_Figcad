@@ -8,6 +8,8 @@ export const SOURCE_BADGE: Record<FederationSource['sourceType'], string> = {
   ifc: 'IFC',
   gltf: 'glTF',
   '3dtiles': '3D Tiles',
+  dxf: 'DXF',
+  dwg: 'DWG',
 };
 
 /**

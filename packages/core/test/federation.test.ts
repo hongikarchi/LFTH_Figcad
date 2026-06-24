@@ -72,6 +72,38 @@ describe('federation 채널 — 스냅샷 4경로 라운드트립 + 구버전 �
     expect(snap.federation).toHaveLength(1);
   });
 
+  it("dxf 언더레이 — sourceType 'dxf' + underlay 배치가 4경로 보존(optional 필드 미탈락)", () => {
+    const { store, seed } = setup();
+    const id = store.addFederationSource(
+      src({
+        name: '평면도.dxf',
+        sourceType: 'dxf',
+        ref: 'https://r2/p.dxf',
+        underlay: { levelId: seed.levelId, origin: [-12000, -8000], rotation: 0, scale: 1 },
+      }),
+    );
+    const expectUnderlay = (s: import('../src/schema').FederationSource | undefined) => {
+      expect(s?.sourceType).toBe('dxf');
+      expect(s?.underlay).toEqual({
+        levelId: seed.levelId,
+        origin: [-12000, -8000],
+        rotation: 0,
+        scale: 1,
+      });
+    };
+    expectUnderlay(store.getFederationSource(id)); // 라이브
+    const snap = store.snapshot();
+    expectUnderlay(DocStore.fromSnapshot(snap).getFederationSource(id)); // snapshot→fromSnapshot
+    const s2 = new DocStore();
+    seedDocument(s2);
+    s2.importSnapshot(snap);
+    expectUnderlay(s2.getFederationSource(id)); // importSnapshot
+    // 메시 소스(underlay 부재)는 키셋 불변 — 불변① 가드 회귀 없음
+    const meshId = store.addFederationSource(src({ sourceType: 'ifc', ref: 'r.ifc' }));
+    const mesh = store.getFederationSource(meshId)! as Record<string, unknown>;
+    expect(mesh.underlay).toBeUndefined();
+  });
+
   it('커밋 복원(federation 부재) = 라이브 소스 보존 / JSON([])=교체 (코멘트와 동일 critical 가드)', () => {
     const { store } = setup();
     store.addFederationSource(src());
