@@ -148,6 +148,30 @@ function insertMatrix(ins: DwgVec | undefined, base: DwgVec | undefined, sx: num
   return [rsa, rsb, rsc, rsd, rsa * -bx + rsc * -by + (ins?.x ?? 0), rsb * -bx + rsd * -by + (ins?.y ?? 0)];
 }
 
+/**
+ * 세그먼트(x0,y0)-(x1,y1)를 AABB [xmin,ymin,xmax,ymax]로 클립 (Liang-Barsky) — XCLIP 렌더용.
+ * 경계서 **트림**(cull 아님 — 가로지르는 선은 경계까지 잘림). 완전 바깥이면 null. 결과 [x0,y0,x1,y1].
+ */
+export function clipSegmentAabb(
+  x0: number, y0: number, x1: number, y1: number,
+  xmin: number, ymin: number, xmax: number, ymax: number,
+): [number, number, number, number] | null {
+  const dx = x1 - x0, dy = y1 - y0;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0];
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i]! < 0) return null; // 경계에 평행 + 바깥
+    } else {
+      const r = q[i]! / p[i]!;
+      if (p[i]! < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+      else { if (r < t0) return null; if (r < t1) t1 = r; }
+    }
+  }
+  return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy];
+}
+
 /** 세 점의 외접원 중심. 동일선상이면 null. */
 function circumcenter(
   ax: number, ay: number, bx: number, by: number, cx: number, cy: number,

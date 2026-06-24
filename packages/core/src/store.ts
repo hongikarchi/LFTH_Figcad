@@ -1118,6 +1118,21 @@ export class DocStore {
     this.transact(() => this.yFederation.set(id, { ...cur, visible }));
   }
 
+  /**
+   * 언더레이 XCLIP 설정/해제 (clip=null 해제). 클립 사각형은 DWG 도면 로컬 mm AABB(배치 전).
+   * underlay 없는 소스(메시 오버레이)면 no-op. 좌표는 mm 정수로 quantize(ops 경계 관례).
+   */
+  setUnderlayClip(id: Id, clip: [number, number, number, number] | null): void {
+    const cur = this.federationSources.get(id);
+    if (!cur?.underlay) return;
+    const { clip: _prev, ...rest } = cur.underlay;
+    const underlay = clip
+      ? { ...rest, clip: clip.map((v) => Math.round(v)) as [number, number, number, number] }
+      : rest;
+    const next = FederationSourceSchema.parse({ ...cur, underlay });
+    this.transact(() => this.yFederation.set(id, next));
+  }
+
   listFederationSources(): FederationSource[] {
     return [...this.federationSources.values()];
   }

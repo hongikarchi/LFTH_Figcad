@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractDwgUnderlay, underlayDenseCenter, type DwgDatabaseLike } from '../src/dwgUnderlay';
+import { clipSegmentAabb, extractDwgUnderlay, underlayDenseCenter, type DwgDatabaseLike } from '../src/dwgUnderlay';
 
 const db = (entities: unknown[], blockRecords: unknown[] = []): DwgDatabaseLike =>
   ({ entities, tables: { BLOCK_RECORD: blockRecords } }) as DwgDatabaseLike;
@@ -221,6 +221,29 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
 
   it('빈 언더레이 denseCenter = [0,0]', () => {
     expect(underlayDenseCenter(extractDwgUnderlay(db([{ type: 'HATCH' }])))).toEqual([0, 0]);
+  });
+
+  describe('clipSegmentAabb (XCLIP, Liang-Barsky)', () => {
+    const box = [0, 0, 10, 10] as const;
+    it('완전 안쪽 → 그대로', () => {
+      expect(clipSegmentAabb(2, 2, 8, 8, ...box)).toEqual([2, 2, 8, 8]);
+    });
+    it('완전 바깥 → null', () => {
+      expect(clipSegmentAabb(20, 20, 30, 30, ...box)).toBeNull();
+      expect(clipSegmentAabb(-5, 5, -1, 5, ...box)).toBeNull();
+    });
+    it('가로지름 → 경계서 트림', () => {
+      // (-5,5)→(15,5) 수평선 → [0,5]~[10,5]
+      expect(clipSegmentAabb(-5, 5, 15, 5, ...box)).toEqual([0, 5, 10, 5]);
+    });
+    it('한 끝만 바깥 → 그쪽만 트림', () => {
+      // (5,5)→(15,5) → [5,5]~[10,5]
+      expect(clipSegmentAabb(5, 5, 15, 5, ...box)).toEqual([5, 5, 10, 5]);
+    });
+    it('대각선 모서리 트림', () => {
+      const r = clipSegmentAabb(-5, -5, 15, 15, ...box);
+      expect(r).toEqual([0, 0, 10, 10]);
+    });
   });
 
   it('BLOCK_RECORD가 {entries} 래퍼여도 흡수', () => {

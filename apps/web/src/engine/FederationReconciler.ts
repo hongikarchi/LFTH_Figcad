@@ -1,5 +1,6 @@
 import type { DocStore, FederationSource, Id } from '@figcad/core';
-import type { ReferenceLayer } from './ReferenceLayer';
+import type { DwgUnderlay } from '@figcad/interop/dwg-underlay';
+import type { ReferenceLayer, UnderlayPlacement } from './ReferenceLayer';
 import type { Extractor, UnderlayExtractor } from '../interop/federationExtract';
 
 /** 2D 언더레이(빽도면) sourceType — 메시 아닌 라인워크 렌더 경로. */
@@ -23,6 +24,15 @@ interface LocalState {
   sourceType: FederationSource['sourceType']; // ref 같고 type만 바뀌어도 재로드(Codex #5)
   error?: string;
   gen: number;
+  /** 언더레이: 파싱 결과 캐시 — 배치/클립만 바뀌면 재페치·재파싱 없이 재렌더(addUnderlay만). */
+  underlay?: DwgUnderlay;
+  /** 마지막 적용한 배치(origin/rotation/scale/clip) 시그 — 변경 감지용. */
+  placementSig?: string;
+}
+
+/** 언더레이 배치 시그(JSON) — clip/origin/rotation/scale/levelId 변경 감지. */
+function placementSigOf(s: FederationSource): string {
+  return JSON.stringify(s.underlay ?? null);
 }
 
 export class FederationReconciler {
@@ -64,7 +74,8 @@ export class FederationReconciler {
     // 시그니처 early-out: federation 채널의 id·ref·visible만 의미. 요소 편집(드래그 20-30Hz)엔
     // 불변 → 매 틱 재할당·notify 낭비를 차단. 가시성 토글/추가/제거는 sig를 바꿔 통과시킨다.
     const sig = sources
-      .map((s) => `${s.id}:${s.sourceType}:${s.ref}:${s.visible ? 1 : 0}`)
+      // 언더레이 배치(placementSig)도 포함 — 클립/이동/회전/스케일 변경 시 reconcile 통과(재렌더).
+      .map((s) => `${s.id}:${s.sourceType}:${s.ref}:${s.visible ? 1 : 0}:${placementSigOf(s)}`)
       .sort()
       .join('|');
     if (sig === this.lastSig) return;
@@ -83,7 +94,10 @@ export class FederationReconciler {
         // 신규 또는 ref/sourceType 변경 → (재)로드 (Codex #5)
         this.load(s);
       } else if (st.status === 'ready') {
-        // 가시성은 동기화 상태 따라감
+        // 언더레이 배치/클립만 변경 → 캐시에서 재렌더(재페치·재파싱 없이). 그 외엔 가시성만 동기화.
+        if (st.underlay && st.placementSig !== placementSigOf(s)) {
+          this.reapplyUnderlay(s, st);
+        }
         this.ref.setVisible(s.id, s.visible);
       }
     }
@@ -141,7 +155,24 @@ export class FederationReconciler {
       });
   }
 
-  /** 언더레이(DWG/DXF) 로드 — blob 페치+파싱 → live.underlay 배치 적용 → ref.addUnderlay. */
+  /** live.underlay → addUnderlay 배치(placement) + 레벨 elevation 해석. */
+  private placeUnderlay(s: FederationSource, underlay: DwgUnderlay): void {
+    const pl = s.underlay;
+    const placement: UnderlayPlacement = pl
+      ? { origin: pl.origin, rotation: pl.rotation, scale: pl.scale, clip: pl.clip }
+      : { origin: [0, 0], rotation: 0, scale: 1 };
+    const elev = pl ? this.store.getLevel(pl.levelId)?.elevation ?? 0 : 0;
+    this.ref.addUnderlay(s.id, underlay, placement, elev);
+  }
+
+  /** 배치/클립만 변경 — 캐시된 파싱으로 재렌더(재페치·재파싱 없음). */
+  private reapplyUnderlay(s: FederationSource, st: LocalState): void {
+    if (!st.underlay) return;
+    this.placeUnderlay(s, st.underlay);
+    st.placementSig = placementSigOf(s);
+  }
+
+  /** 언더레이(DWG/DXF) 로드 — blob 페치+파싱 → 캐시 + live.underlay 배치 적용 → ref.addUnderlay. */
   private loadUnderlay(s: FederationSource, myGen: number): void {
     const kind = s.sourceType === 'dxf' ? 'dxf' : 'dwg';
     this.underlayExtractor!(s.ref, kind)
@@ -150,17 +181,12 @@ export class FederationReconciler {
         if (!cur || cur.gen !== myGen) return; // stale
         const live = this.store.getFederationSource(s.id);
         if (!live) return;
-        // 배치: live.underlay(levelId·origin·rotation·scale). 레벨 elevation = 깔 높이. 없으면 기본(원점·레벨0).
-        const pl = live.underlay;
-        const elev = pl ? this.store.getLevel(pl.levelId)?.elevation ?? 0 : 0;
-        this.ref.addUnderlay(
-          s.id,
-          underlay,
-          pl ? { origin: pl.origin, rotation: pl.rotation, scale: pl.scale } : { origin: [0, 0], rotation: 0, scale: 1 },
-          elev,
-        );
+        this.placeUnderlay(live, underlay);
         this.ref.setVisible(s.id, live.visible);
-        this.local.set(s.id, { status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen });
+        this.local.set(s.id, {
+          status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen,
+          underlay, placementSig: placementSigOf(live),
+        });
         this.notify();
       })
       .catch((err: unknown) => {

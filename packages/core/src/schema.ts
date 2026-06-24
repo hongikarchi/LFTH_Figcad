@@ -479,6 +479,13 @@ export const FederationSourceSchema = z.object({
       origin: z.tuple([z.number(), z.number()]),
       rotation: z.number(),
       scale: z.number(),
+      /**
+       * XCLIP — 클립 사각형 [minX, minY, maxX, maxY], **DWG 도면 로컬 mm**(배치 적용 전). 이 박스 안만
+       * 렌더(경계서 트림). 도면 로컬이라 placement(이동·회전·스케일) 바뀌어도 도면에 붙어 따라간다
+       * (CAD XCLIP=블록 공간 패턴). 없음 = 클립 없음(전체). 파일의 SPATIAL_FILTER는 libredwg 미노출 →
+       * 사용자가 Figcad에서 직접 그림(클립 툴 → 월드 사각형 inverse-placement → 이 mm AABB).
+       */
+      clip: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
     })
     .optional(),
 });

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { DwgUnderlay } from '@figcad/interop/dwg-underlay';
+import { clipSegmentAabb, type DwgUnderlay } from '@figcad/interop/dwg-underlay';
 import type { Engine } from './Engine';
 
 /**
@@ -28,11 +28,13 @@ const REF_OPACITY = 0.5;
 const UNDERLAY_COLOR = 0x8aa0b4; // 빽도면 라인 — 흐릿한 청회색(네이티브 요소와 구분)
 const UNDERLAY_OPACITY = 0.65;
 
-/** 2D 언더레이 배치 (FederationSource.underlay) — origin[mm] 평면이동·rotation[rad]·scale. */
+/** 2D 언더레이 배치 (FederationSource.underlay) — origin[mm] 평면이동·rotation[rad]·scale + XCLIP. */
 export interface UnderlayPlacement {
   origin: [number, number];
   rotation: number;
   scale: number;
+  /** XCLIP 사각형 [minX,minY,maxX,maxY] DWG 도면 로컬 mm — 이 안만 렌더(경계 트림). 없음=전체. */
+  clip?: [number, number, number, number];
 }
 
 export class ReferenceLayer {
@@ -96,11 +98,19 @@ export class ReferenceLayer {
 
     // frozen/off 레이어는 기본 제외 = CAD 작성자가 숨긴 그대로(임의 hide 아님 — 정보는 underlay에 보존,
     // 레이어 픽커가 toggle). 메가시트 xref 베이스맵(이 파일=교통 75%)이 자동으로 빠져 CAD 화면과 일치.
+    // XCLIP(placement.clip): DWG 로컬 mm AABB로 세그 트림(경계서 자름). 배치 적용 전 좌표 = seg 그대로.
     const seg = underlay.segments;
+    const clip = placement.clip;
     const buf: number[] = [];
     for (let i = 0; i < seg.length; i += 4) {
       if (underlay.layerHidden[underlay.segLayer[i / 4]!]) continue;
-      buf.push(seg[i]! * 0.001, 0, seg[i + 1]! * 0.001, seg[i + 2]! * 0.001, 0, seg[i + 3]! * 0.001);
+      let x0 = seg[i]!, y0 = seg[i + 1]!, x1 = seg[i + 2]!, y1 = seg[i + 3]!;
+      if (clip) {
+        const c = clipSegmentAabb(x0, y0, x1, y1, clip[0], clip[1], clip[2], clip[3]);
+        if (!c) continue;
+        [x0, y0, x1, y1] = c;
+      }
+      buf.push(x0 * 0.001, 0, y0 * 0.001, x1 * 0.001, 0, y1 * 0.001);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf), 3));

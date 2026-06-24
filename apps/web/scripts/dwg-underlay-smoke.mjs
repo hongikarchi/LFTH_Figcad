@@ -29,31 +29,38 @@ try {
     const u = await F.dwg.parseDwgUnderlay(buf, 'dwg');
     const tParse = performance.now() - t0;
 
-    // frozen/off 레이어는 extractor가 layerHidden으로 표시 → denseCenter·addUnderlay가 자동 제외
-    // (CAD 작성자가 숨긴 그대로 = 휴리스틱 regex 불필요). 그냥 파싱→센터→렌더.
+    // frozen/off 레이어는 extractor가 layerHidden으로 표시 → denseCenter·addUnderlay가 자동 제외.
     const [dx, dy] = F.dwg.underlayDenseCenter(u);
-    F.referenceLayer.addUnderlay('smoke', u, { origin: [-dx, -dy], rotation: 0, scale: 1 }, 0);
-
-    let visible = 0, hidden = 0, hiddenLayers = 0;
-    for (let i = 0; i < u.layerHidden.length; i++) if (u.layerHidden[i]) hiddenLayers++;
-    for (let i = 0; i < u.segments.length; i += 4)
-      (u.layerHidden[u.segLayer[i / 4]] ? hidden++ : visible++);
+    // XCLIP: 건물 dense center 주변 60m 박스(DWG mm) → 그 안만 렌더(경계서 트림). 나머지 다 잘림.
+    const HALF = 12000; // ±12m = 24m 박스 → 건물(~60m)보다 작아 사각 클립 경계가 보임
+    const clip = [dx - HALF, dy - HALF, dx + HALF, dy + HALF];
+    // 진단: 보이는(non-hidden) 세그 중 클립박스 안에 든 수 + 보이는 콘텐츠 실제 크기
+    let visIn = 0, visTot = 0, vminx=1e15,vminy=1e15,vmaxx=-1e15,vmaxy=-1e15;
+    for (let i = 0; i < u.segments.length; i += 4) {
+      if (u.layerHidden[u.segLayer[i/4]]) continue;
+      visTot++;
+      const mx=(u.segments[i]+u.segments[i+2])/2, my=(u.segments[i+1]+u.segments[i+3])/2;
+      if (mx>=clip[0]&&mx<=clip[2]&&my>=clip[1]&&my<=clip[3]) visIn++;
+      vminx=Math.min(vminx,mx);vminy=Math.min(vminy,my);vmaxx=Math.max(vmaxx,mx);vmaxy=Math.max(vmaxy,my);
+    }
+    F.referenceLayer.addUnderlay('smoke', u, { origin: [-dx, -dy], rotation: 0, scale: 1, clip }, 0);
+    // 실제 렌더된 LineSegments 정점 수
+    let renderedVerts = 0;
+    F.referenceLayer.root.traverse((o) => { if (o.isLineSegments) renderedVerts += o.geometry.attributes.position.count; });
     return {
-      tParse: Math.round(tParse),
       segments: u.segments.length / 4,
-      visibleSegments: visible,
-      hiddenSegments: hidden,
-      hiddenLayers,
-      totalLayers: u.layers.length,
+      visibleSegs: visTot,
+      visibleSize_m: [Math.round((vmaxx-vminx)/1000), Math.round((vmaxy-vminy)/1000)],
+      segsInsideClip: visIn,
+      renderedSegments: renderedVerts / 2,
       denseCenter: [Math.round(dx), Math.round(dy)],
-      refList: F.referenceLayer.list(),
     };
   });
 
   // 3/4 perspective 줌인 한 장
   await page.evaluate(() => {
     const F = window.__figcad;
-    F.rig?.fitBounds?.({ x: -35, y: -3, z: -35 }, { x: 35, y: 3, z: 35 });
+    F.rig?.fitBounds?.({ x: -45, y: -3, z: -45 }, { x: 45, y: 3, z: 45 });
     F.engine?.requestRender?.();
   });
   await new Promise((r) => setTimeout(r, 1200));
@@ -68,7 +75,7 @@ try {
   await new Promise((r) => setTimeout(r, 1800));
   await page.evaluate(() => {
     const F = window.__figcad;
-    F.rig?.fitBounds?.({ x: -35, y: -3, z: -35 }, { x: 35, y: 3, z: 35 });
+    F.rig?.fitBounds?.({ x: -45, y: -3, z: -45 }, { x: 45, y: 3, z: 45 });
     F.engine?.requestRender?.();
   });
   await new Promise((r) => setTimeout(r, 1200));

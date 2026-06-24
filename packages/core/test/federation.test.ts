@@ -65,6 +65,21 @@ describe('federation 채널 — 스냅샷 4경로 라운드트립 + 구버전 �
     expect(s2.listFederationSources()).toHaveLength(2);
   });
 
+  it('setUnderlayClip — XCLIP 설정/quantize/해제, 메시소스 no-op', () => {
+    const { store, seed } = setup();
+    const id = store.addFederationSource(
+      src({ sourceType: 'dwg', ref: 'x.dwg', underlay: { levelId: seed.levelId, origin: [0, 0], rotation: 0, scale: 1 } }),
+    );
+    store.setUnderlayClip(id, [1.6, -2.4, 100.5, 200]);
+    expect(store.getFederationSource(id)!.underlay!.clip).toEqual([2, -2, 101, 200]); // mm 정수 quantize
+    store.setUnderlayClip(id, null);
+    expect(store.getFederationSource(id)!.underlay!.clip).toBeUndefined(); // 해제
+    // 메시 소스(underlay 없음) → no-op (throw 없음)
+    const mesh = store.addFederationSource(src({ sourceType: 'ifc', ref: 'r.ifc' }));
+    expect(() => store.setUnderlayClip(mesh, [0, 0, 1, 1])).not.toThrow();
+    expect(store.getFederationSource(mesh)!.underlay).toBeUndefined();
+  });
+
   it('snapshotOf(외부 ydoc)도 federation 포함', () => {
     const { store } = setup();
     store.addFederationSource(src());
