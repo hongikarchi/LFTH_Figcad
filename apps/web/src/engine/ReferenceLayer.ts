@@ -94,14 +94,16 @@ export class ReferenceLayer {
     g.rotation.y = -placement.rotation;
     g.position.set(placement.origin[0] * 0.001, levelElevationMm * 0.001, placement.origin[1] * 0.001);
 
+    // frozen/off 레이어는 기본 제외 = CAD 작성자가 숨긴 그대로(임의 hide 아님 — 정보는 underlay에 보존,
+    // 레이어 픽커가 toggle). 메가시트 xref 베이스맵(이 파일=교통 75%)이 자동으로 빠져 CAD 화면과 일치.
     const seg = underlay.segments;
-    const pos = new Float32Array((seg.length / 4) * 6);
-    for (let i = 0, j = 0; i < seg.length; i += 4) {
-      pos[j++] = seg[i]! * 0.001; pos[j++] = 0; pos[j++] = seg[i + 1]! * 0.001;
-      pos[j++] = seg[i + 2]! * 0.001; pos[j++] = 0; pos[j++] = seg[i + 3]! * 0.001;
+    const buf: number[] = [];
+    for (let i = 0; i < seg.length; i += 4) {
+      if (underlay.layerHidden[underlay.segLayer[i / 4]!]) continue;
+      buf.push(seg[i]! * 0.001, 0, seg[i + 1]! * 0.001, seg[i + 2]! * 0.001, 0, seg[i + 3]! * 0.001);
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf), 3));
     const mat = new THREE.LineBasicMaterial({
       color: UNDERLAY_COLOR,
       transparent: true,

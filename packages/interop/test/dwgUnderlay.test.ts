@@ -164,6 +164,46 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
     expect(u.segments.length).toBe(0);
   });
 
+  it('LAYER frozen/off → layerHidden 반영 (CAD 표시 의미론), color도', () => {
+    const u = extractDwgUnderlay({
+      entities: [
+        { type: 'LINE', layer: 'TRAFFIC', startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 0 } },
+        { type: 'LINE', layer: 'OFFLYR', startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 0 } },
+        { type: 'LINE', layer: 'I-WALL', startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 0 } },
+      ],
+      tables: {
+        LAYER: {
+          entries: [
+            { name: 'TRAFFIC', frozen: true, color: 0xff0000 },
+            { name: 'OFFLYR', off: true, color: 0x00ff00 },
+            { name: 'I-WALL', frozen: false, off: false, color: 0x000000 },
+          ],
+        },
+      },
+    } as DwgDatabaseLike);
+    const idx = (n: string) => u.layers.indexOf(n);
+    expect(u.layerHidden[idx('TRAFFIC')]).toBe(true); // frozen
+    expect(u.layerHidden[idx('OFFLYR')]).toBe(true); // off
+    expect(u.layerHidden[idx('I-WALL')]).toBe(false); // 보임
+    expect(u.layerColor[idx('TRAFFIC')]).toBe(0xff0000);
+  });
+
+  it('LAYER 테이블 없으면 전부 보임(layerHidden false)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'LINE', layer: 'X', startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 0 } }]));
+    expect(u.layerHidden).toEqual([false]);
+  });
+
+  it('denseCenter — 숨김 레이어 무시(보이는 콘텐츠에 센터)', () => {
+    // 숨김 레이어에 멀리 빽빽한 클러스터 + 보이는 레이어에 가까운 소수 → 보이는 쪽 센터
+    const ents: unknown[] = [];
+    for (let i = 0; i < 50; i++) ents.push({ type: 'LINE', layer: 'HID', startPoint: { x: 9_000_000 + i, y: 9_000_000 }, endPoint: { x: 9_000_000 + i + 1, y: 9_000_000 } });
+    for (let i = 0; i < 5; i++) ents.push({ type: 'LINE', layer: 'VIS', startPoint: { x: 100 + i, y: 200 }, endPoint: { x: 101 + i, y: 200 } });
+    const u = extractDwgUnderlay({ entities: ents, tables: { LAYER: { entries: [{ name: 'HID', frozen: true }, { name: 'VIS' }] } } } as DwgDatabaseLike);
+    const [cx, cy] = underlayDenseCenter(u);
+    expect(cx).toBeLessThan(1000); // 9M 숨김 클러스터에 안 끌림
+    expect(cy).toBeLessThan(1000);
+  });
+
   it('underlayDenseCenter — 밀집 클러스터 중심(원격 이상점 무시)', () => {
     // 원점 근처 빽빽한 격자(클러스터) + 멀리 떨어진 이상점 1개
     const ents: unknown[] = [];

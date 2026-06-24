@@ -68,10 +68,20 @@ export interface DwgBlockRecord {
   basePoint?: DwgVec;
   entities?: DwgEntity[];
 }
+export interface DwgLayerRecord {
+  name?: string;
+  frozen?: boolean;
+  off?: boolean;
+  /** true-color int (0xRRGGBB). libredwg: 16777215 = 흰색 */
+  color?: number;
+  colorIndex?: number;
+}
+type TableLike<T> = T[] | Record<string, T> | { entries?: T[] | Record<string, T> };
 export interface DwgDatabaseLike {
   entities?: DwgEntity[];
   tables?: {
-    BLOCK_RECORD?: DwgBlockRecord[] | Record<string, DwgBlockRecord> | { entries?: DwgBlockRecord[] | Record<string, DwgBlockRecord> };
+    BLOCK_RECORD?: TableLike<DwgBlockRecord>;
+    LAYER?: TableLike<DwgLayerRecord>;
   };
 }
 
@@ -91,6 +101,14 @@ export interface DwgUnderlay {
   segLayer: Uint16Array;
   /** 인덱스 → 레이어명 */
   layers: string[];
+  /**
+   * 레이어별 frozen||off 여부 (layers 동일 인덱스) — **CAD 표시 의미론**. CAD 작성자가 frozen/off 한
+   * 레이어는 화면에 안 보인다(예: xref 베이스맵). 파싱은 보존하되 렌더 기본은 이걸로 숨김 →
+   * "임의 hide(정보손실)" 아니라 "CAD 화면 그대로". 레이어 픽커가 toggle. LAYER 테이블 없으면 전부 false.
+   */
+  layerHidden: boolean[];
+  /** 레이어별 색(0xRRGGBB, layers 동일 인덱스) — CAD 레이어 색 재현용. 0 = 미지정/기본. */
+  layerColor: number[];
   /** 레이어별 세그먼트 수 (layers와 동일 순서) */
   layerSegCount: number[];
   labels: DwgLabel[];
@@ -143,20 +161,27 @@ function circumcenter(
   ];
 }
 
+/** libredwg 테이블({entries} 래퍼 / 직접 레코드맵 / 배열) → 레코드 배열. 배열도 'entries'(proto) 보유 → !Array.isArray 가드. */
+function tableEntries<T>(table: TableLike<T> | undefined): T[] {
+  const raw = (table && !Array.isArray(table) && 'entries' in table ? table.entries : table) ?? {};
+  return (Array.isArray(raw) ? raw : Object.values(raw)) as T[];
+}
+
 function blockMap(db: DwgDatabaseLike): Map<string, DwgBlockRecord> {
-  const br = db.tables?.BLOCK_RECORD as
-    | DwgBlockRecord[]
-    | Record<string, DwgBlockRecord>
-    | { entries?: DwgBlockRecord[] | Record<string, DwgBlockRecord> }
-    | undefined;
-  // libredwg 테이블은 { entries } 래퍼이거나 직접 레코드 맵/배열 — 모두 흡수.
-  // 주의: 배열도 'entries'(Array.prototype) 보유 → !Array.isArray 가드 필수.
-  const raw = (br && !Array.isArray(br) && 'entries' in br ? br.entries : br) ?? {};
-  const arr = Array.isArray(raw) ? raw : Object.values(raw);
   const m = new Map<string, DwgBlockRecord>();
-  for (const b of arr) {
+  for (const b of tableEntries(db.tables?.BLOCK_RECORD)) {
     const nm = b?.name ?? b?.blockName;
     if (b && nm) m.set(nm, b);
+  }
+  return m;
+}
+
+/** 레이어명 → {hidden(frozen||off), color(0xRRGGBB)}. LAYER 테이블 없으면 빈 맵(전부 보임). */
+function layerStates(db: DwgDatabaseLike): Map<string, { hidden: boolean; color: number }> {
+  const m = new Map<string, { hidden: boolean; color: number }>();
+  for (const l of tableEntries(db.tables?.LAYER)) {
+    if (!l?.name) continue;
+    m.set(l.name, { hidden: !!(l.frozen || l.off), color: typeof l.color === 'number' ? l.color : 0 });
   }
   return m;
 }
@@ -165,6 +190,7 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
   const arcStep = opts.arcStep ?? Math.PI / 16;
   const maxDepth = opts.maxDepth ?? 8;
   const blocks = blockMap(db);
+  const lstates = layerStates(db);
 
   const seg: number[] = [];
   const segLayerIdx: number[] = [];
@@ -172,6 +198,8 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
   const skipped: Record<string, number> = {};
   const layerIndex = new Map<string, number>();
   const layers: string[] = [];
+  const layerHidden: boolean[] = [];
+  const layerColor: number[] = [];
   const layerSegCount: number[] = [];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
@@ -182,6 +210,9 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
       i = layers.length;
       layerIndex.set(name, i);
       layers.push(name);
+      const st = lstates.get(name);
+      layerHidden.push(st?.hidden ?? false);
+      layerColor.push(st?.color ?? 0);
       layerSegCount.push(0);
     }
     return i;
@@ -344,6 +375,8 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
     segments: new Float32Array(seg),
     segLayer: Uint16Array.from(segLayerIdx),
     layers,
+    layerHidden,
+    layerColor,
     layerSegCount,
     labels,
     skipped,
@@ -363,6 +396,7 @@ export function underlayDenseCenter(u: DwgUnderlay, win = 50000): [number, numbe
   const bins = new Map<string, { n: number; sx: number; sy: number }>();
   let best = '', bestN = 0;
   for (let i = 0; i < seg.length; i += 4) {
+    if (u.layerHidden[u.segLayer[i / 4]!]) continue; // 숨김(frozen/off) 레이어 무시 — 보이는 콘텐츠에 센터
     const mx = (seg[i]! + seg[i + 2]!) / 2, my = (seg[i + 1]! + seg[i + 3]!) / 2;
     const k = `${Math.floor(mx / win)},${Math.floor(my / win)}`;
     const c = bins.get(k) ?? { n: 0, sx: 0, sy: 0 };
@@ -370,6 +404,7 @@ export function underlayDenseCenter(u: DwgUnderlay, win = 50000): [number, numbe
     bins.set(k, c);
     if (c.n > bestN) { bestN = c.n; best = k; }
   }
+  if (!best) return [0, 0]; // 보이는 세그 없음
   const c = bins.get(best)!;
   return [c.sx / c.n, c.sy / c.n]; // 밀집 cell 내 세그 중점 평균
 }

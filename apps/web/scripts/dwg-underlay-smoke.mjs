@@ -29,30 +29,23 @@ try {
     const u = await F.dwg.parseDwgUnderlay(buf, 'dwg');
     const tParse = performance.now() - t0;
 
-    // 무필터 denseCenter는 메가시트에서 교통 베이스맵을 집을 수 있다 → 건물레이어(REF/교통 제외)만으로
-    // dense center 재계산해 실제 평면을 원점에 센터링(slice③ 레이어필터의 자동버전 프리뷰).
-    const isRef = (l) => /^REF-|교통|주변|표지판|신호등|현황/.test(l);
-    const win = 50000, bins = new Map();
-    let best = '', bestN = 0, bldSegs = 0;
-    for (let i = 0; i < u.segments.length; i += 4) {
-      if (isRef(u.layers[u.segLayer[i / 4]])) continue;
-      bldSegs++;
-      const mx = (u.segments[i] + u.segments[i + 2]) / 2, my = (u.segments[i + 1] + u.segments[i + 3]) / 2;
-      const k = `${Math.floor(mx / win)},${Math.floor(my / win)}`;
-      const c = bins.get(k) ?? { n: 0, sx: 0, sy: 0 }; c.n++; c.sx += mx; c.sy += my; bins.set(k, c);
-      if (c.n > bestN) { bestN = c.n; best = k; }
-    }
-    const c = bins.get(best);
-    const dx = c ? c.sx / c.n : 0, dy = c ? c.sy / c.n : 0;
+    // frozen/off 레이어는 extractor가 layerHidden으로 표시 → denseCenter·addUnderlay가 자동 제외
+    // (CAD 작성자가 숨긴 그대로 = 휴리스틱 regex 불필요). 그냥 파싱→센터→렌더.
+    const [dx, dy] = F.dwg.underlayDenseCenter(u);
     F.referenceLayer.addUnderlay('smoke', u, { origin: [-dx, -dy], rotation: 0, scale: 1 }, 0);
+
+    let visible = 0, hidden = 0, hiddenLayers = 0;
+    for (let i = 0; i < u.layerHidden.length; i++) if (u.layerHidden[i]) hiddenLayers++;
+    for (let i = 0; i < u.segments.length; i += 4)
+      (u.layerHidden[u.segLayer[i / 4]] ? hidden++ : visible++);
     return {
       tParse: Math.round(tParse),
       segments: u.segments.length / 4,
-      buildingSegments: bldSegs,
-      labels: u.labels.length,
-      layers: u.layers.length,
-      skipped: u.skipped,
-      buildingDenseCenter: [Math.round(dx), Math.round(dy)],
+      visibleSegments: visible,
+      hiddenSegments: hidden,
+      hiddenLayers,
+      totalLayers: u.layers.length,
+      denseCenter: [Math.round(dx), Math.round(dy)],
       refList: F.referenceLayer.list(),
     };
   });
