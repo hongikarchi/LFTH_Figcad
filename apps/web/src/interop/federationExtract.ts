@@ -3,6 +3,8 @@ import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot, type Federat
 import { gltfPositionsToFigcad } from '@figcad/interop/coords';
 import type { ReferenceMesh } from '../engine/ReferenceLayer';
 import { getIfcApi, parseIfc } from './ifcClient';
+import { parseDwgUnderlay } from './dwgClient';
+import type { DwgUnderlay } from '@figcad/interop/dwg-underlay';
 import { backendOrigin } from '../config/backend';
 
 /**
@@ -156,6 +158,20 @@ export async function extract3dm(ref: string): Promise<ReferenceMesh[]> {
   if (meshes.length === 0)
     throw new Error(`.3dm에 표시 가능한 Mesh 없음 (객체 ${skipped}개 전부 Brep/블록) — Rhino7+ glTF export 권장`);
   return meshes.map((m) => ({ positions: m.positions })); // normals 생략 → ReferenceLayer 계산
+}
+
+/**
+ * CAD 2D 언더레이(빽도면) — DWG/DXF blob을 ref에서 페치 → libredwg WASM 파싱 → 평면 라인워크.
+ * 메시 추출기(ReferenceMesh[])와 반환이 다르다(DwgUnderlay = 세그먼트·라벨·레이어) → reconciler가
+ * 별도 경로로 ref.addUnderlay(배치 적용). 불변① 정합: 라인워크는 ref(blob)서 파생, Y.Doc 미진입.
+ */
+export type UnderlayExtractor = (ref: string, kind: 'dwg' | 'dxf') => Promise<DwgUnderlay>;
+export async function fetchDwgUnderlay(ref: string, kind: 'dwg' | 'dxf'): Promise<DwgUnderlay> {
+  const url = ref.trim();
+  if (!url) throw new Error(`빈 ${kind.toUpperCase()} ref`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${kind.toUpperCase()} 페치 실패 "${url}" (${res.status})`);
+  return parseDwgUnderlay(await res.arrayBuffer(), kind);
 }
 
 /** sourceType → 추출기. 미등록(3D-Tiles)은 v1.5 — reconciler가 error 표시. */

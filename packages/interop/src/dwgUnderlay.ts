@@ -350,3 +350,26 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
     bbox: seg.length ? [minX, minY, maxX, maxY] : [0, 0, 0, 0],
   };
 }
+
+/**
+ * 세그먼트가 가장 밀집한 윈도의 중심(mm) — 메가시트(측량좌표·xref 흩어짐) 대비 기본 배치용.
+ * CAD 도면은 건물+부지컨텍스트가 km 스케일로 흩어져 bbox 중심이 빈 공간일 수 있다 →
+ * 가장 빽빽한 cell 중심을 잡아 그 도면을 원점 근처로 센터링(언더레이 origin = -denseCenter).
+ * win = cell 한 변(mm, 기본 50m). 빈 언더레이는 [0,0].
+ */
+export function underlayDenseCenter(u: DwgUnderlay, win = 50000): [number, number] {
+  const seg = u.segments;
+  if (!seg.length) return [0, 0];
+  const bins = new Map<string, { n: number; sx: number; sy: number }>();
+  let best = '', bestN = 0;
+  for (let i = 0; i < seg.length; i += 4) {
+    const mx = (seg[i]! + seg[i + 2]!) / 2, my = (seg[i + 1]! + seg[i + 3]!) / 2;
+    const k = `${Math.floor(mx / win)},${Math.floor(my / win)}`;
+    const c = bins.get(k) ?? { n: 0, sx: 0, sy: 0 };
+    c.n++; c.sx += mx; c.sy += my;
+    bins.set(k, c);
+    if (c.n > bestN) { bestN = c.n; best = k; }
+  }
+  const c = bins.get(best)!;
+  return [c.sx / c.n, c.sy / c.n]; // 밀집 cell 내 세그 중점 평균
+}

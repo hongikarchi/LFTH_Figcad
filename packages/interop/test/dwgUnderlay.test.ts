@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractDwgUnderlay, type DwgDatabaseLike } from '../src/dwgUnderlay';
+import { extractDwgUnderlay, underlayDenseCenter, type DwgDatabaseLike } from '../src/dwgUnderlay';
 
 const db = (entities: unknown[], blockRecords: unknown[] = []): DwgDatabaseLike =>
   ({ entities, tables: { BLOCK_RECORD: blockRecords } }) as DwgDatabaseLike;
@@ -162,6 +162,25 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
     );
     expect(u.skipped).toEqual({ HATCH: 2, DIMENSION: 1, WIPEOUT: 1 });
     expect(u.segments.length).toBe(0);
+  });
+
+  it('underlayDenseCenter — 밀집 클러스터 중심(원격 이상점 무시)', () => {
+    // 원점 근처 빽빽한 격자(클러스터) + 멀리 떨어진 이상점 1개
+    const ents: unknown[] = [];
+    for (let x = 0; x < 10; x++) for (let y = 0; y < 10; y++)
+      ents.push({ type: 'LINE', startPoint: { x: 1000 + x * 100, y: 2000 + y * 100 }, endPoint: { x: 1000 + x * 100 + 50, y: 2000 + y * 100 } });
+    ents.push({ type: 'LINE', startPoint: { x: 9_000_000, y: -9_000_000 }, endPoint: { x: 9_000_050, y: -9_000_000 } });
+    const u = extractDwgUnderlay(db(ents));
+    const [cx, cy] = underlayDenseCenter(u);
+    // 클러스터 중심 ≈ (1500, 2450), 이상점(9M)에 안 끌려감
+    expect(cx).toBeGreaterThan(1000);
+    expect(cx).toBeLessThan(2000);
+    expect(cy).toBeGreaterThan(2000);
+    expect(cy).toBeLessThan(3000);
+  });
+
+  it('빈 언더레이 denseCenter = [0,0]', () => {
+    expect(underlayDenseCenter(extractDwgUnderlay(db([{ type: 'HATCH' }])))).toEqual([0, 0]);
   });
 
   it('BLOCK_RECORD가 {entries} 래퍼여도 흡수', () => {

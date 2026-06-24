@@ -20,6 +20,8 @@ const CONTENT_TYPE: Record<string, string> = {
   gltf: 'model/gltf+json',
   ifc: 'application/x-step',
   '3dm': 'application/octet-stream',
+  dwg: 'image/vnd.dwg', // CAD 언더레이(빽도면) — 클라 libredwg WASM 파싱
+  dxf: 'image/vnd.dxf',
 };
 
 async function sha256HexBytes(buf: ArrayBuffer): Promise<string> {

@@ -9,7 +9,7 @@ import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
 import { ReferenceLayer } from './engine/ReferenceLayer';
 import { FederationReconciler } from './engine/FederationReconciler';
-import { FEDERATION_EXTRACTORS } from './interop/federationExtract';
+import { FEDERATION_EXTRACTORS, fetchDwgUnderlay } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
 import { HudLayer } from './hud/HudLayer';
 import { ToolController } from './tools/ToolController';
@@ -100,7 +100,7 @@ const sceneManager = new SceneManager(store, engine);
 // M13 멀티모델 허브: 외부 모델 read-only 오버레이(별도 표현, derive·store 밖 — 불변①).
 // reconciler가 동기화된 federation 채널을 ReferenceLayer(로컬 메시)에 반영(명령형 — 불변③).
 const referenceLayer = new ReferenceLayer(engine);
-const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS);
+const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS, fetchDwgUnderlay);
 
 // 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.
 // import/federation 모델은 원점서 멀거나 커서 기본 카메라엔 빈 화면 → 이게 해결. 'F' 키 + federation 로드 후 1회 자동.
@@ -358,7 +358,8 @@ if (import.meta.env.DEV) {
     import('./interop/ifcClient'),
     import('./ai/sketchCapture'),
     import('./interop/federationExtract'),
-  ]).then(([{ lint }, ifc, sketch, federationExtract]) => {
+    import('./interop/dwgClient'),
+  ]).then(([{ lint }, ifc, sketch, federationExtract, dwg]) => {
     (window as unknown as Record<string, unknown>)['__figcad'] = {
       store,
       ydoc,
@@ -374,6 +375,7 @@ if (import.meta.env.DEV) {
       referenceLayer,
       federation,
       federationExtract, // { extractFigcadRoom, FEDERATION_EXTRACTORS } — A4 스모크/오프라인 추출용
+      dwg, // { parseDwgUnderlay, underlayDenseCenter } — DWG 언더레이 스모크(libredwg WASM)
       ui: useUiStore,
     };
   });

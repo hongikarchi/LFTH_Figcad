@@ -1,6 +1,9 @@
 import type { DocStore, FederationSource, Id } from '@figcad/core';
 import type { ReferenceLayer } from './ReferenceLayer';
-import type { Extractor } from '../interop/federationExtract';
+import type { Extractor, UnderlayExtractor } from '../interop/federationExtract';
+
+/** 2D 언더레이(빽도면) sourceType — 메시 아닌 라인워크 렌더 경로. */
+const UNDERLAY_TYPES: ReadonlySet<FederationSource['sourceType']> = new Set(['dwg', 'dxf']);
 
 /**
  * Federation reconciler — 동기화된 `federation` 채널을 ReferenceLayer(로컬 메시)에 반영.
@@ -32,6 +35,7 @@ export class FederationReconciler {
     private store: DocStore,
     private ref: ReferenceLayer,
     private extractors: Partial<Record<FederationSource['sourceType'], Extractor>>,
+    private underlayExtractor?: UnderlayExtractor,
   ) {
     this.store.observe(() => this.reconcile());
     this.reconcile();
@@ -89,6 +93,13 @@ export class FederationReconciler {
   private load(s: FederationSource): void {
     const myGen = ++this.gen;
     this.local.set(s.id, { status: 'loading', ref: s.ref, sourceType: s.sourceType, gen: myGen });
+
+    // 2D 언더레이(DWG/DXF) = 메시 아닌 라인워크 경로 — fetch+파싱 → 배치(레벨/origin/회전/스케일) → addUnderlay.
+    if (UNDERLAY_TYPES.has(s.sourceType) && this.underlayExtractor) {
+      this.loadUnderlay(s, myGen);
+      return;
+    }
+
     const extractor = this.extractors[s.sourceType];
     if (!extractor) {
       // 미등록 sourceType (.3dm·3D-Tiles = v1.5)
@@ -112,6 +123,42 @@ export class FederationReconciler {
         const o = this.store.getProjectOrigin();
         const offset: [number, number, number] | undefined = o ? [-o[0] / 1000, 0, -o[1] / 1000] : undefined;
         this.ref.add(s.id, meshes, offset);
+        this.ref.setVisible(s.id, live.visible);
+        this.local.set(s.id, { status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen });
+        this.notify();
+      })
+      .catch((err: unknown) => {
+        const cur = this.local.get(s.id);
+        if (!cur || cur.gen !== myGen) return;
+        this.local.set(s.id, {
+          status: 'error',
+          ref: s.ref,
+          sourceType: s.sourceType,
+          error: err instanceof Error ? err.message : String(err),
+          gen: myGen,
+        });
+        this.notify();
+      });
+  }
+
+  /** 언더레이(DWG/DXF) 로드 — blob 페치+파싱 → live.underlay 배치 적용 → ref.addUnderlay. */
+  private loadUnderlay(s: FederationSource, myGen: number): void {
+    const kind = s.sourceType === 'dxf' ? 'dxf' : 'dwg';
+    this.underlayExtractor!(s.ref, kind)
+      .then((underlay) => {
+        const cur = this.local.get(s.id);
+        if (!cur || cur.gen !== myGen) return; // stale
+        const live = this.store.getFederationSource(s.id);
+        if (!live) return;
+        // 배치: live.underlay(levelId·origin·rotation·scale). 레벨 elevation = 깔 높이. 없으면 기본(원점·레벨0).
+        const pl = live.underlay;
+        const elev = pl ? this.store.getLevel(pl.levelId)?.elevation ?? 0 : 0;
+        this.ref.addUnderlay(
+          s.id,
+          underlay,
+          pl ? { origin: pl.origin, rotation: pl.rotation, scale: pl.scale } : { origin: [0, 0], rotation: 0, scale: 1 },
+          elev,
+        );
         this.ref.setVisible(s.id, live.visible);
         this.local.set(s.id, { status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen });
         this.notify();

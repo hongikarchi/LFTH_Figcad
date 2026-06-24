@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DocStore, FederationSource } from '@figcad/core';
 import { backendOrigin } from '../config/backend';
+import { parseDwgUnderlay, underlayDenseCenter } from '../interop/dwgClient';
 
 export const SOURCE_BADGE: Record<FederationSource['sourceType'], string> = {
   'figcad-room': 'Figcad',
@@ -54,21 +55,31 @@ export function useNavigatorFederation(store: DocStore) {
   const uploadFederationFile = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.glb,.gltf,.ifc,.3dm';
+    input.accept = '.glb,.gltf,.ifc,.3dm,.dwg,.dxf';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
       const ext = (file.name.split('.').pop() ?? '').toLowerCase();
       const sourceType: FederationSource['sourceType'] | null =
-        ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : ext === '3dm' ? '3dm' : null;
+        ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : ext === '3dm' ? '3dm'
+          : ext === 'dwg' ? 'dwg' : ext === 'dxf' ? 'dxf' : null;
       if (!sourceType) {
-        window.alert('glTF(.glb/.gltf)·IFC(.ifc)·Rhino(.3dm) 파일만 지원');
+        window.alert('glTF(.glb/.gltf)·IFC(.ifc)·Rhino(.3dm)·CAD(.dwg/.dxf) 파일만 지원');
         return;
       }
       const room = new URL(location.href).searchParams.get('p');
       if (!room) return;
       try {
         const buf = await file.arrayBuffer();
+        // CAD 언더레이(빽도면): 업로드 전 클라 파싱 1회 → 밀집 클러스터를 원점 근처로 센터링하는
+        // 기본 배치(메가시트=측량좌표·xref 흩어짐 대비). 렌더는 reconciler가 blob 재페치로(협업자 공통).
+        let underlay: FederationSource['underlay'];
+        if (sourceType === 'dwg' || sourceType === 'dxf') {
+          const u = await parseDwgUnderlay(buf.slice(0), sourceType);
+          const [dx, dy] = underlayDenseCenter(u);
+          const levelId = store.listLevels()[0]?.id ?? '';
+          underlay = { levelId, origin: [-dx, -dy], rotation: 0, scale: 1 };
+        }
         const roomKey = new URL(location.href).searchParams.get('key');
         const res = await fetch(
           `${fedBase()}/parties/doc/${room}?op=fed-upload&ext=${ext}${roomKey ? `&key=${encodeURIComponent(roomKey)}` : ''}`,
@@ -82,6 +93,7 @@ export function useNavigatorFederation(store: DocStore) {
           ref: `${fedBase()}/parties/doc/${room}${url}`, // 전체 blob URL — 협업자도 페치 가능
           visible: true,
           addedBy: fedAuthor,
+          ...(underlay ? { underlay } : {}),
         });
       } catch (e) {
         window.alert(`연동 모델 업로드 실패: ${e instanceof Error ? e.message : e}`);

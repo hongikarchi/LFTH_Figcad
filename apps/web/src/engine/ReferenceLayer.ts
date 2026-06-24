@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { DwgUnderlay } from '@figcad/interop/dwg-underlay';
 import type { Engine } from './Engine';
 
 /**
@@ -24,6 +25,15 @@ export interface ReferenceMesh {
 
 const REF_COLOR = 0x6a8caf;
 const REF_OPACITY = 0.5;
+const UNDERLAY_COLOR = 0x8aa0b4; // 빽도면 라인 — 흐릿한 청회색(네이티브 요소와 구분)
+const UNDERLAY_OPACITY = 0.65;
+
+/** 2D 언더레이 배치 (FederationSource.underlay) — origin[mm] 평면이동·rotation[rad]·scale. */
+export interface UnderlayPlacement {
+  origin: [number, number];
+  rotation: number;
+  scale: number;
+}
 
 export class ReferenceLayer {
   private group = new THREE.Group();
@@ -62,6 +72,45 @@ export class ReferenceLayer {
       mesh.userData['figcadReference'] = true;
       g.add(mesh);
     }
+    this.sources.set(name, g);
+    this.group.add(g);
+    this.engine.requestRender();
+  }
+
+  /**
+   * 2D CAD 언더레이(빽도면) 추가 — DWG/DXF 평면 라인워크를 한 레벨 평면에 평평히 깐다.
+   * 같은 name이면 교체. 라인워크는 LineSegments 한 버퍼(1 draw call). 라벨은 렌더 안 함
+   * (텍스처-per-라벨 HUD 예산 초과 회피 — web-tools.md; 18k 라벨은 zoom-gate가 v1.5).
+   *
+   * 좌표: DWG mm 평면 [x,y] → 로컬 미터 [x*.001, 0, y*.001]. 배치는 group TRS로(slice④ 기즈모 =
+   * 재파싱 없이 transform만 갱신 — advisor). origin[mm]→position, scale, rotation→Y축. 레벨 높이 = elevation.
+   */
+  addUnderlay(name: string, underlay: DwgUnderlay, placement: UnderlayPlacement, levelElevationMm: number): void {
+    this.remove(name);
+    const g = new THREE.Group();
+    g.name = `reference:${name}`;
+    g.scale.setScalar(placement.scale);
+    // rotation: DWG-평면 CCW φ → 월드 Y축 회전. (rotation=0 기본이라 슬라이스④ 정합 때 부호 확정.)
+    g.rotation.y = -placement.rotation;
+    g.position.set(placement.origin[0] * 0.001, levelElevationMm * 0.001, placement.origin[1] * 0.001);
+
+    const seg = underlay.segments;
+    const pos = new Float32Array((seg.length / 4) * 6);
+    for (let i = 0, j = 0; i < seg.length; i += 4) {
+      pos[j++] = seg[i]! * 0.001; pos[j++] = 0; pos[j++] = seg[i + 1]! * 0.001;
+      pos[j++] = seg[i + 2]! * 0.001; pos[j++] = 0; pos[j++] = seg[i + 3]! * 0.001;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: UNDERLAY_COLOR,
+      transparent: true,
+      opacity: UNDERLAY_OPACITY,
+      depthWrite: false,
+    });
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.userData['figcadReference'] = true;
+    g.add(lines);
     this.sources.set(name, g);
     this.group.add(g);
     this.engine.requestRender();
@@ -120,7 +169,8 @@ export class ReferenceLayer {
   private disposeGroup(g: THREE.Group): void {
     const disposed = new Set<THREE.Material>();
     g.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
+      // Mesh(오버레이) + LineSegments(언더레이) 둘 다 geometry/material 보유 → 일반 처리.
+      if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
         o.geometry.dispose();
         const mat = o.material;
         const list = Array.isArray(mat) ? mat : [mat];
