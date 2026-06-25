@@ -82,7 +82,7 @@ export function HubStrip({
                   setMenuOpen(false);
                 }}
               >
-                파일 업로드 (glTF / IFC / .3dm)
+                파일 업로드 (glTF / IFC / .3dm / DWG / DXF)
               </button>
               <div className="hub-add-room">
                 <input
