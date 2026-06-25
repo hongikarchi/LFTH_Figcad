@@ -172,8 +172,12 @@ export class CameraRig {
     this.persp.aspect = aspect;
     this.persp.updateProjectionMatrix();
     const half = this.distance * 0.5;
-    this.ortho.left = -half * aspect;
-    this.ortho.right = half * aspect;
+    // 평면(plan) 직교뷰 X 반사 — 동(+X)=화면 오른쪽·북(+Z)=위 = CAD/지도 표준 방위.
+    // (북=+Z·Y-up·위에서 -Y로 내려봄 = 수평면이 left-handed → 반사 없이는 동右+북上 불가.)
+    // left/right 부호 스왑 = 프로젝션 X 음수 스케일. 지오·픽킹은 동일 카메라라 일관. 단 스프라이트
+    // 라벨은 셰이더상 quad가 같이 뒤집힘 → SceneManager가 plan 모드서 scale.x 역-flip으로 상쇄.
+    this.ortho.left = half * aspect;
+    this.ortho.right = -half * aspect;
     this.ortho.top = half;
     this.ortho.bottom = -half;
     this.ortho.updateProjectionMatrix();

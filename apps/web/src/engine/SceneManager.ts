@@ -173,6 +173,7 @@ export class SceneManager {
         }
         sprite = makeCommentPin(!!c.resolved, n);
         sprite.userData['key'] = key;
+        this.flipSprite(sprite); // plan 모드면 X 역-flip
         this.engine.scene.add(sprite);
         this.commentPins.set(c.id, sprite);
       }
@@ -234,8 +235,21 @@ export class SceneManager {
   setViewContext(mode: '3d' | 'plan', activeLevelId: Id | null): void {
     this.viewMode = mode;
     this.activeLevelId = activeLevelId;
-    for (const entry of this.entries.values()) this.applyGhosting(entry);
+    for (const entry of this.entries.values()) {
+      this.applyGhosting(entry);
+      for (const s of entry.sprites) this.flipSprite(s);
+    }
+    for (const s of this.commentPins.values()) this.flipSprite(s);
     this.engine.requestRender();
+  }
+
+  /**
+   * 라벨/핀 스프라이트 X 역-flip — plan 직교뷰는 프로젝션 X가 음수(동右 위해 반사)라 스프라이트
+   * quad(텍스트)가 거울로 그려진다. scale.x를 음수화해 상쇄 → 글자는 똑바로(반사×반사=정방향).
+   * 3D(perspective)는 반사 없음 → scale.x 양수. 멱등(abs 기준).
+   */
+  private flipSprite(s: THREE.Sprite): void {
+    s.scale.x = Math.abs(s.scale.x) * (this.viewMode === 'plan' ? -1 : 1);
   }
 
   private applyGhosting(entry: SceneEntry): void {
@@ -381,6 +395,7 @@ export class SceneManager {
       }
       entry.sprites = labels.map((l) => {
         const s = makeLabelSprite(l.text, l.style ?? 'grid');
+        this.flipSprite(s); // plan 모드면 X 역-flip(생성 시점 반영)
         this.engine.scene.add(s);
         return s;
       });
