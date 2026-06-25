@@ -223,6 +223,38 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
     expect(underlayDenseCenter(extractDwgUnderlay(db([{ type: 'HATCH' }])))).toEqual([0, 0]);
   });
 
+  describe('파일 XCLIP (SPATIAL_FILTER → INSERT 지오 클립)', () => {
+    // INSERT I1(=블록 B: LINE 0~100) + SPATIAL_FILTER가 x∈[20,80]로 클립. invBlock=항등 → 월드폴리=verts.
+    const dbXclip = (verts: { x: number; y: number }[], owner = 'I1') =>
+      ({
+        entities: [{ type: 'INSERT', handle: 'I1', name: 'B', insertionPoint: { x: 0, y: 0 } }],
+        tables: { BLOCK_RECORD: { entries: [{ name: 'B', basePoint: { x: 0, y: 0 }, entities: [{ type: 'LINE', startPoint: { x: 0, y: 0 }, endPoint: { x: 100, y: 0 } }] }] } },
+        objects: { SPATIAL_FILTER: [{ handle: 'F1', ownerHandle: owner, vertices: verts, invertBlockMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] }] },
+      }) as DwgDatabaseLike;
+
+    it('INSERT 지오가 클립 경계서 트림됨', () => {
+      const u = extractDwgUnderlay(dbXclip([{ x: 20, y: -10 }, { x: 80, y: -10 }, { x: 80, y: 10 }, { x: 20, y: 10 }]));
+      expect([...u.segments]).toEqual([20, 0, 80, 0]); // x∈[20,80]만
+    });
+
+    it('클립 완전 바깥 = 전부 버림', () => {
+      const u = extractDwgUnderlay(dbXclip([{ x: 200, y: -10 }, { x: 280, y: -10 }, { x: 280, y: 10 }, { x: 200, y: 10 }]));
+      expect(u.segments.length).toBe(0);
+    });
+
+    it('소유체인 못 풀면(연결 안 됨) 클립 무시 = 전체 통과', () => {
+      const u = extractDwgUnderlay(dbXclip([{ x: 20, y: -10 }, { x: 80, y: -10 }, { x: 80, y: 10 }, { x: 20, y: 10 }], 'NOPE'));
+      expect([...u.segments]).toEqual([0, 0, 100, 0]); // 클립 안 걸림
+    });
+
+    it('SPATIAL_FILTER 없으면 무영향', () => {
+      const u = extractDwgUnderlay({
+        entities: [{ type: 'LINE', startPoint: { x: 0, y: 0 }, endPoint: { x: 100, y: 0 } }],
+      } as DwgDatabaseLike);
+      expect([...u.segments]).toEqual([0, 0, 100, 0]);
+    });
+  });
+
   describe('clipSegmentAabb (XCLIP, Liang-Barsky)', () => {
     const box = [0, 0, 10, 10] as const;
     it('완전 안쪽 → 그대로', () => {

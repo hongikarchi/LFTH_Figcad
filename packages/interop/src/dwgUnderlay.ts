@@ -34,6 +34,9 @@ export interface DwgInsertAttrib {
 export interface DwgEntity {
   type: string;
   layer?: string;
+  /** 핸들 — XCLIP(SPATIAL_FILTER) 연결 + 소유체인용 */
+  handle?: string;
+  ownerBlockRecordSoftId?: string;
   // LINE
   startPoint?: DwgVec;
   endPoint?: DwgVec;
@@ -77,11 +80,26 @@ export interface DwgLayerRecord {
   colorIndex?: number;
 }
 type TableLike<T> = T[] | Record<string, T> | { entries?: T[] | Record<string, T> };
+/** XCLIP — INSERT의 클립 경계(SPATIAL_FILTER). vertices=경계점, invertBlockMatrix=WCS↔블록 역변환(3x4). */
+export interface DwgSpatialFilter {
+  handle?: string;
+  ownerHandle?: string;
+  vertices?: DwgVec[];
+  invertBlockMatrix?: number[];
+}
+export interface DwgDictRecord {
+  handle?: string;
+  ownerHandle?: string;
+}
 export interface DwgDatabaseLike {
   entities?: DwgEntity[];
   tables?: {
     BLOCK_RECORD?: TableLike<DwgBlockRecord>;
     LAYER?: TableLike<DwgLayerRecord>;
+  };
+  objects?: {
+    SPATIAL_FILTER?: DwgSpatialFilter[];
+    DICTIONARY?: DwgDictRecord[];
   };
 }
 
@@ -210,11 +228,74 @@ function layerStates(db: DwgDatabaseLike): Map<string, { hidden: boolean; color:
   return m;
 }
 
+/** 볼록 폴리곤(월드 점 배열)으로 세그먼트 클립 (Cyrus-Beck). 완전 바깥=null, 아니면 트림된 [x0,y0,x1,y1]. */
+function clipSegmentPoly(
+  x0: number, y0: number, x1: number, y1: number, poly: [number, number][],
+): [number, number, number, number] | null {
+  const n = poly.length;
+  if (n < 3) return [x0, y0, x1, y1];
+  const dx = x1 - x0, dy = y1 - y0;
+  let cx = 0, cy = 0;
+  for (const p of poly) { cx += p[0]; cy += p[1]; }
+  cx /= n; cy /= n;
+  let tE = 0, tL = 1;
+  for (let i = 0; i < n; i++) {
+    const a = poly[i]!, b = poly[(i + 1) % n]!;
+    let nx = -(b[1] - a[1]), ny = b[0] - a[0]; // 에지 왼쪽 법선
+    if (nx * (cx - a[0]) + ny * (cy - a[1]) < 0) { nx = -nx; ny = -ny; } // 내부(중심) 향하게
+    const denom = nx * dx + ny * dy;
+    const num = nx * (a[0] - x0) + ny * (a[1] - y0); // 제약: t·denom >= num
+    if (denom > 1e-12) { const t = num / denom; if (t > tE) tE = t; }
+    else if (denom < -1e-12) { const t = num / denom; if (t < tL) tL = t; }
+    else if (num > 1e-9) return null; // 에지에 평행 + 바깥
+    if (tE > tL) return null;
+  }
+  return [x0 + tE * dx, y0 + tE * dy, x0 + tL * dx, y0 + tL * dy];
+}
+
+/**
+ * INSERT 핸들 → XCLIP {invBlock(2x3 아핀), verts}. 파일의 SPATIAL_FILTER(XCLIP)를 소유체인
+ * (filter → ACAD_FILTER dict → xdict → INSERT)으로 연결. invertBlockMatrix(3x4)에서 2x3 추출.
+ * 월드 클립 폴리곤 = mul(M2, invBlock)·verts (M2=INSERT 누적변환) — 실측 검증된 변환.
+ */
+function buildClipMap(db: DwgDatabaseLike): Map<string, { invBlock: Mat; verts: [number, number][] }> {
+  const out = new Map<string, { invBlock: Mat; verts: [number, number][] }>();
+  const filters = db.objects?.SPATIAL_FILTER ?? [];
+  if (!filters.length) return out;
+  const ents = new Map<string, DwgEntity>();
+  const idxE = (e: DwgEntity) => { if (e?.handle) ents.set(e.handle, e); };
+  for (const e of db.entities ?? []) idxE(e);
+  for (const b of tableEntries(db.tables?.BLOCK_RECORD)) for (const e of b.entities ?? []) idxE(e);
+  const dicts = new Map<string, DwgDictRecord>();
+  for (const d of db.objects?.DICTIONARY ?? []) if (d?.handle) dicts.set(d.handle, d);
+  for (const f of filters) {
+    const m = f.invertBlockMatrix;
+    if (!f.vertices?.length || !m || m.length < 8) continue;
+    let cur: string | undefined = f.ownerHandle, hit: string | undefined;
+    for (let d = 0; d < 12 && cur; d++) {
+      const e = ents.get(cur);
+      if (e) { if (e.type === 'INSERT' && e.handle) { hit = e.handle; break; } cur = e.ownerBlockRecordSoftId; continue; }
+      const dict = dicts.get(cur);
+      if (dict) { cur = dict.ownerHandle; continue; }
+      break;
+    }
+    if (hit) {
+      // 3x4 → 2x3: x'=m0·x+m1·y+m3, y'=m4·x+m5·y+m7 → [a,b,c,d,e,f]=[m0,m4,m1,m5,m3,m7]
+      const invBlock: Mat = [m[0]!, m[4]!, m[1]!, m[5]!, m[3]!, m[7]!];
+      out.set(hit, { invBlock, verts: f.vertices.map((v) => [v.x, v.y]) });
+    }
+  }
+  return out;
+}
+
 export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions = {}): DwgUnderlay {
   const arcStep = opts.arcStep ?? Math.PI / 16;
   const maxDepth = opts.maxDepth ?? 8;
   const blocks = blockMap(db);
   const lstates = layerStates(db);
+  const clipMap = buildClipMap(db);
+  // 활성 XCLIP 폴리곤 스택(월드) — clipped INSERT 서브트리 진입 시 push, 나갈 때 pop. 세그는 전부와 교차 클립.
+  const clipStack: [number, number][][] = [];
 
   const seg: number[] = [];
   const segLayerIdx: number[] = [];
@@ -242,17 +323,24 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
     return i;
   };
   const pushSeg = (p0: [number, number], p1: [number, number], li: number) => {
-    seg.push(p0[0], p0[1], p1[0], p1[1]);
+    let x0 = p0[0], y0 = p0[1], x1 = p1[0], y1 = p1[1];
+    // XCLIP: 활성 클립 폴리곤 전부와 교차 — 하나라도 완전 바깥이면 버림(CAD 모델공간 XCLIP 그대로).
+    for (let k = 0; k < clipStack.length; k++) {
+      const c = clipSegmentPoly(x0, y0, x1, y1, clipStack[k]!);
+      if (!c) return;
+      x0 = c[0]; y0 = c[1]; x1 = c[2]; y1 = c[3];
+    }
+    seg.push(x0, y0, x1, y1);
     segLayerIdx.push(li);
     layerSegCount[li]!++;
-    if (p0[0] < minX) minX = p0[0];
-    if (p0[1] < minY) minY = p0[1];
-    if (p0[0] > maxX) maxX = p0[0];
-    if (p0[1] > maxY) maxY = p0[1];
-    if (p1[0] < minX) minX = p1[0];
-    if (p1[1] < minY) minY = p1[1];
-    if (p1[0] > maxX) maxX = p1[0];
-    if (p1[1] > maxY) maxY = p1[1];
+    if (x0 < minX) minX = x0;
+    if (y0 < minY) minY = y0;
+    if (x0 > maxX) maxX = x0;
+    if (y0 > maxY) maxY = y0;
+    if (x1 < minX) minX = x1;
+    if (y1 < minY) minY = y1;
+    if (x1 > maxX) maxX = x1;
+    if (y1 > maxY) maxY = y1;
   };
   /** a0→a1 CCW 호를 테셀 (각도 rad, 로컬좌표 → M 변환) */
   const tessArc = (cx: number, cy: number, r: number, a0: number, a1: number, M: Mat, li: number) => {
@@ -323,7 +411,14 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           const M2 = mul(M, insertMatrix(e.insertionPoint, def.basePoint, e.xScale ?? 1, e.yScale ?? 1, e.rotation ?? 0));
           const seen2 = new Set(seen);
           seen2.add(key);
+          // XCLIP: 이 INSERT에 SPATIAL_FILTER 있으면 월드 클립 폴리곤 = mul(M2, invBlock)·verts → 스택(서브트리 클립).
+          const clip = e.handle ? clipMap.get(e.handle) : undefined;
+          if (clip) {
+            const T = mul(M2, clip.invBlock);
+            clipStack.push(clip.verts.map(([vx, vy]) => apply(T, vx, vy)));
+          }
           walk(def.entities, M2, depth + 1, seen2);
+          if (clip) clipStack.pop();
           for (const at of e.attribs ?? []) {
             if (!at?.text) continue;
             const p = apply(M2, at.startPoint?.x ?? 0, at.startPoint?.y ?? 0);

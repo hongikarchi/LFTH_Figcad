@@ -29,6 +29,7 @@ export class CameraRig {
   private phiFrom = 0;
   private phiTo = 0;
   private savedPhi = Math.PI / 4.5; // 평면 진입 시 복원용
+  private savedTheta = Math.PI / 4; // 평면=북향 스냅, 3D 복귀 시 방위 복원
 
   constructor(aspect: number) {
     this.persp = new THREE.PerspectiveCamera(55, aspect, 0.1, 50000);
@@ -70,8 +71,12 @@ export class CameraRig {
     if (mode === 'plan') {
       this.savedPhi = this.phi;
       this.phiTo = MIN_PHI;
+      // 평면 진입 = 북향 스냅(화면 위=북, 동=오른쪽 = CAD 표준 평면도). 3D 각도(theta)는 저장해 복귀 시 복원.
+      this.savedTheta = this.theta;
+      this.theta = Math.PI;
     } else {
       this.phiTo = this.savedPhi;
+      this.theta = this.savedTheta;
     }
   }
 
