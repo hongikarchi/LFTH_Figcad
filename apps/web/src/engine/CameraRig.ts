@@ -134,8 +134,10 @@ export class CameraRig {
     const sin = Math.sin(this.theta);
     const cos = Math.cos(this.theta);
     if (this.mode === 'plan') {
-      this.target.x -= (dx * cos + dy * sin) * scale;
-      this.target.z += (dx * sin - dy * cos) * scale;
+      // plan ortho는 X 반사(동=오른쪽 CAD표준)라 화면 가로 드래그가 월드와 좌우 반대 → dx 부호 반전.
+      const pdx = -dx;
+      this.target.x -= (pdx * cos + dy * sin) * scale;
+      this.target.z += (pdx * sin - dy * cos) * scale;
     } else {
       const cosPhi = Math.cos(this.phi);
       const sinPhi = Math.sin(this.phi);
