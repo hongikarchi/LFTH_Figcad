@@ -176,12 +176,22 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
     expect(u.labels).toEqual([{ text: '거실', x: 100, y: 200, height: 300, layer: 'A-TEXT' }]);
   });
 
-  it('미지원 타입 → skipped 카운트 (HATCH 빈 경계 = HATCH-empty)', () => {
-    const u = extractDwgUnderlay(
-      db([{ type: 'HATCH' }, { type: 'DIMENSION' }, { type: 'DIMENSION' }, { type: 'WIPEOUT' }]),
-    );
-    expect(u.skipped).toEqual({ 'HATCH-empty': 1, DIMENSION: 2, WIPEOUT: 1 });
+  it('미지원 타입 → skipped 카운트 (WIPEOUT·XLINE 등 진짜 미지원)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'WIPEOUT' }, { type: 'WIPEOUT' }, { type: 'XLINE' }]));
+    expect(u.skipped).toEqual({ WIPEOUT: 2, XLINE: 1 });
     expect(u.segments.length).toBe(0);
+  });
+
+  it('DIMENSION → 익명 *D 블록 전개(치수선 + 측정값 MTEXT 라벨)', () => {
+    const u = extractDwgUnderlay({
+      entities: [{ type: 'DIMENSION', blockName: '*D1', insertionPoint: { x: 0, y: 0 } }],
+      tables: { BLOCK_RECORD: { entries: [{ name: '*D1', basePoint: { x: 0, y: 0 }, entities: [
+        { type: 'LINE', startPoint: { x: 0, y: 0 }, endPoint: { x: 100, y: 0 } },
+        { type: 'MTEXT', text: '100', startPoint: { x: 50, y: 20 }, textHeight: 25 },
+      ] }] } },
+    } as DwgDatabaseLike);
+    expect(u.segments.length / 4).toBe(1); // 치수선
+    expect(u.labels.map((l) => l.text)).toEqual(['100']); // 측정값 텍스트
   });
 
   it('LAYER frozen/off → layerHidden 반영 (CAD 표시 의미론), color도', () => {

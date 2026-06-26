@@ -491,6 +491,15 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           for (let i = 0; i + 1 < pts.length; i++) pushSeg(apply(M, pts[i]!.x, pts[i]!.y), apply(M, pts[i + 1]!.x, pts[i + 1]!.y), li);
           break;
         }
+        case 'DIMENSION': {
+          // 치수 지오 = 익명 *D 블록(치수선·화살표·MTEXT 측정값). 블록 전개 = 치수 텍스트+선 렌더.
+          const def = blocks.get(e.blockName ?? e.name ?? '');
+          if (!def?.entities) { skip('DIMENSION-nodef'); break; }
+          if (depth >= maxDepth) { skip('DIMENSION-deep'); break; }
+          const M2 = mul(M, insertMatrix(e.insertionPoint, def.basePoint, 1, 1, 0));
+          walk(def.entities, M2, depth + 1, seen);
+          break;
+        }
         case 'INSERT': {
           const def = blocks.get(e.name ?? e.blockName ?? '');
           if (!def?.entities) { skip('INSERT-nodef'); break; }
