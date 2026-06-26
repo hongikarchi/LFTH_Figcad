@@ -282,7 +282,14 @@ function buildClipMap(db: DwgDatabaseLike): Map<string, { invBlock: Mat; verts: 
     if (hit) {
       // 3x4 → 2x3: x'=m0·x+m1·y+m3, y'=m4·x+m5·y+m7 → [a,b,c,d,e,f]=[m0,m4,m1,m5,m3,m7]
       const invBlock: Mat = [m[0]!, m[4]!, m[1]!, m[5]!, m[3]!, m[7]!];
-      out.set(hit, { invBlock, verts: f.vertices.map((v) => [v.x, v.y]) });
+      let verts: [number, number][] = f.vertices.map((v) => [v.x, v.y]);
+      // AutoCAD 직사각형 XCLIP = 2점(대각 모서리)으로 저장 → 4코너 폴리곤 확장
+      // (변환이 회전 포함할 수 있으니 클립공간서 확장 후 변환해야 정확).
+      if (verts.length === 2) {
+        const [a, b] = verts as [[number, number], [number, number]];
+        verts = [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]];
+      }
+      out.set(hit, { invBlock, verts });
     }
   }
   return out;

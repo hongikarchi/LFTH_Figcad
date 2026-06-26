@@ -237,6 +237,11 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
       expect([...u.segments]).toEqual([20, 0, 80, 0]); // x∈[20,80]만
     });
 
+    it('2점(직사각형) 클립 — AutoCAD 직사각 XCLIP은 대각 2모서리 → 4코너 확장', () => {
+      const u = extractDwgUnderlay(dbXclip([{ x: 20, y: -10 }, { x: 80, y: 10 }])); // 대각 2점
+      expect([...u.segments]).toEqual([20, 0, 80, 0]); // 4코너 직사각으로 클립
+    });
+
     it('클립 완전 바깥 = 전부 버림', () => {
       const u = extractDwgUnderlay(dbXclip([{ x: 200, y: -10 }, { x: 280, y: -10 }, { x: 280, y: 10 }, { x: 200, y: 10 }]));
       expect(u.segments.length).toBe(0);
