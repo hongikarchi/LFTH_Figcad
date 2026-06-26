@@ -27,6 +27,29 @@ const REF_COLOR = 0x6a8caf;
 const REF_OPACITY = 0.5;
 const UNDERLAY_COLOR = 0x8aa0b4; // 빽도면 라인 — 흐릿한 청회색(네이티브 요소와 구분)
 const UNDERLAY_OPACITY = 0.65;
+const UNDERLAY_MAX_LABELS = 4000; // 초과(예: 메가시트 18k) 시 텍스트 생략 (스프라이트 draw call·텍스처 예산)
+
+/** 언더레이 텍스트 라벨 스프라이트 (CanvasTexture). worldH = 월드 높이(미터), 폭은 글자 비율. */
+function makeTextSprite(text: string, worldH: number): THREE.Sprite {
+  const FONT = 40;
+  const measure = document.createElement('canvas').getContext('2d')!;
+  measure.font = `${FONT}px sans-serif`;
+  const tw = Math.max(2, measure.measureText(text).width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(tw) + 6;
+  canvas.height = FONT + 6;
+  const g = canvas.getContext('2d')!;
+  g.font = `${FONT}px sans-serif`;
+  g.textBaseline = 'middle';
+  g.fillStyle = '#5b6b7a';
+  g.fillText(text, 3, canvas.height / 2);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: false, opacity: 0.92 }),
+  );
+  sprite.scale.set((worldH * canvas.width) / canvas.height, worldH, 1);
+  sprite.renderOrder = 3;
+  return sprite;
+}
 
 /** 2D 언더레이 배치 (FederationSource.underlay) — origin[mm] 평면이동·rotation[rad]·scale + XCLIP. */
 export interface UnderlayPlacement {
@@ -40,6 +63,7 @@ export interface UnderlayPlacement {
 export class ReferenceLayer {
   private group = new THREE.Group();
   private sources = new Map<string, THREE.Group>();
+  private planFlipped = false; // plan 직교뷰 X 반사 상태 — 언더레이 텍스트 스프라이트 역-flip용
 
   constructor(private engine: Engine) {
     this.group.name = 'figcad-reference';
@@ -123,6 +147,22 @@ export class ReferenceLayer {
     const lines = new THREE.LineSegments(geo, mat);
     lines.userData['figcadReference'] = true;
     g.add(lines);
+
+    // 텍스트 라벨(TEXT/MTEXT) — 스프라이트(빌보드). frozen 레이어·클립 밖은 제외. 메가시트(>캡)는 생략.
+    const labels = underlay.labels;
+    if (labels.length && labels.length <= UNDERLAY_MAX_LABELS) {
+      const hidden = new Set<string>();
+      underlay.layers.forEach((nm, i) => { if (underlay.layerHidden[i]) hidden.add(nm); });
+      for (const lb of labels) {
+        if (lb.layer && hidden.has(lb.layer)) continue;
+        if (clip && (lb.x < clip[0] || lb.x > clip[2] || lb.y < clip[1] || lb.y > clip[3])) continue;
+        const sp = makeTextSprite(lb.text, Math.max(0.06, (lb.height || 200) * 0.001));
+        sp.position.set(lb.x * 0.001, 0.02, lb.y * 0.001);
+        if (this.planFlipped) sp.scale.x = -Math.abs(sp.scale.x); // plan 미러 상쇄
+        sp.userData['underlayLabel'] = true;
+        g.add(sp);
+      }
+    }
     this.sources.set(name, g);
     this.group.add(g);
     this.engine.requestRender();
@@ -137,6 +177,22 @@ export class ReferenceLayer {
 
   setAllVisible(visible: boolean): void {
     this.group.visible = visible;
+    this.engine.requestRender();
+  }
+
+  /**
+   * plan 직교뷰는 프로젝션 X 반사(동右 CAD표준)라 빌보드 스프라이트 텍스트가 거울로 그려짐 →
+   * plan에선 scale.x 역-flip으로 상쇄(SceneManager와 동일 원리). main.ts가 뷰모드 변경 시 호출.
+   */
+  setPlanFlipped(flipped: boolean): void {
+    if (flipped === this.planFlipped) return;
+    this.planFlipped = flipped;
+    for (const g of this.sources.values()) {
+      g.traverse((o) => {
+        const s = o as THREE.Sprite;
+        if (s.isSprite && o.userData['underlayLabel']) s.scale.x = Math.abs(s.scale.x) * (flipped ? -1 : 1);
+      });
+    }
     this.engine.requestRender();
   }
 
@@ -192,6 +248,11 @@ export class ReferenceLayer {
             disposed.add(m);
           }
         }
+      } else if ((o as THREE.Sprite).isSprite) {
+        // 텍스트 라벨 스프라이트 — CanvasTexture + material dispose.
+        const m = (o as THREE.Sprite).material;
+        m.map?.dispose();
+        if (!disposed.has(m)) { m.dispose(); disposed.add(m); }
       }
     });
   }

@@ -261,6 +261,7 @@ useUiStore.subscribe((state, prev) => {
   if (state.viewMode !== prev.viewMode || state.activeLevelId !== prev.activeLevelId) {
     rig.setMode(state.viewMode);
     sceneManager.setViewContext(state.viewMode, state.activeLevelId);
+    referenceLayer.setPlanFlipped(state.viewMode === 'plan'); // 언더레이 텍스트 미러 상쇄
     engine.requestRender();
   }
   if (state.selection !== prev.selection) {
