@@ -64,6 +64,35 @@ export interface DwgEntity {
   textHeight?: number;
   height?: number;
   position?: DwgVec;
+  // HATCH
+  boundaryPaths?: DwgHatchPath[];
+  // SOLID / TRACE (2D 채움 4점)
+  corner1?: DwgVec;
+  corner2?: DwgVec;
+  corner3?: DwgVec;
+  corner4?: DwgVec;
+  // SPLINE
+  controlPoints?: DwgVec[];
+  fitPoints?: DwgVec[];
+}
+/** HATCH 경계 경로 — polyline(flag&2: vertices) 또는 edge 기반(edges: line/arc/ellipse/spline). */
+export interface DwgHatchEdge {
+  type?: number; // 1=line, 2=arc, 3=ellipse, 4=spline
+  start?: DwgVec;
+  end?: DwgVec;
+  center?: DwgVec;
+  radius?: number;
+  startAngle?: number;
+  endAngle?: number;
+  isCounterClockwise?: number;
+  majorAxisEndPoint?: DwgVec;
+  axisRatio?: number;
+  controlPoints?: DwgVec[];
+}
+export interface DwgHatchPath {
+  boundaryPathTypeFlag?: number;
+  edges?: DwgHatchEdge[];
+  vertices?: DwgVertex[];
 }
 export interface DwgBlockRecord {
   name?: string;
@@ -381,7 +410,9 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
         case 'POLYLINE2D': {
           const vs = e.vertices ?? [];
           if (vs.length < 2) { skip(`${e.type}-short`); break; }
-          const closed = (e.flag != null && (e.flag & 1) === 1) || e.closed === true;
+          // libredwg LWPOLYLINE는 flag bit 512(0x200)=closed, POLYLINE2D는 bit 1(DXF) — 둘 다 체크.
+          const fl = e.flag ?? 0;
+          const closed = (fl & 1) !== 0 || (fl & 512) !== 0 || e.closed === true;
           const count = closed ? vs.length : vs.length - 1;
           for (let i = 0; i < count; i++) {
             const a = vs[i]!;
@@ -407,6 +438,57 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
         case 'ELLIPSE': {
           if (!e.center || !e.majorAxisEndPoint) { skip('ELLIPSE-bad'); break; }
           tessEllipse(e, M, li);
+          break;
+        }
+        case 'HATCH': {
+          // 채움 패턴 대신 경계선만 렌더 (라인워크 backdrop엔 충분, SOLID도 영역 외곽 보임).
+          const paths = e.boundaryPaths ?? [];
+          if (!paths.length) { skip('HATCH-empty'); break; }
+          for (const path of paths) {
+            const pv = path.vertices;
+            if (((path.boundaryPathTypeFlag ?? 0) & 2) && pv && pv.length >= 2) {
+              for (let i = 0; i < pv.length; i++) { // 폴리라인 경계(닫힘)
+                const a = pv[i]!, b = pv[(i + 1) % pv.length]!;
+                if (a.bulge && Math.abs(a.bulge) > 1e-9) tessBulge(a, b, a.bulge, M, li);
+                else pushSeg(apply(M, a.x, a.y), apply(M, b.x, b.y), li);
+              }
+              continue;
+            }
+            for (const ed of path.edges ?? []) { // edge 기반 경계
+              if (!ed) continue;
+              if (ed.type === 1 && ed.start && ed.end) {
+                pushSeg(apply(M, ed.start.x, ed.start.y), apply(M, ed.end.x, ed.end.y), li);
+              } else if (ed.type === 2 && ed.center && ed.radius != null) {
+                const a0 = ed.startAngle ?? 0, a1 = ed.endAngle ?? Math.PI * 2;
+                if (ed.isCounterClockwise === 0) tessArc(ed.center.x, ed.center.y, ed.radius, a1, a0, M, li);
+                else tessArc(ed.center.x, ed.center.y, ed.radius, a0, a1, M, li);
+              } else if (ed.type === 4 && ed.controlPoints && ed.controlPoints.length >= 2) {
+                const cps = ed.controlPoints; // 스플라인 = 제어점 폴리라인 근사
+                for (let i = 0; i + 1 < cps.length; i++) pushSeg(apply(M, cps[i]!.x, cps[i]!.y), apply(M, cps[i + 1]!.x, cps[i + 1]!.y), li);
+              } else {
+                skip(`HATCH-edge${ed.type ?? '?'}`);
+              }
+            }
+          }
+          break;
+        }
+        case 'SOLID':
+        case 'TRACE': {
+          // 2D 채움 4점 — 외곽선 렌더 (DXF 와인딩 1-2-4-3). 채움 대신 경계.
+          const c = [e.corner1, e.corner2, e.corner4, e.corner3].filter(Boolean) as DwgVec[];
+          if (c.length < 3) { skip(`${e.type}-bad`); break; }
+          for (let i = 0; i < c.length; i++) {
+            const a = c[i]!, b = c[(i + 1) % c.length]!;
+            if (a.x === b.x && a.y === b.y) continue; // SOLID는 코너 중복 흔함(삼각형)
+            pushSeg(apply(M, a.x, a.y), apply(M, b.x, b.y), li);
+          }
+          break;
+        }
+        case 'SPLINE': {
+          // fitPoints(곡선 위 점) 우선, 없으면 controlPoints 폴리라인 근사.
+          const pts = (e.fitPoints?.length ? e.fitPoints : e.controlPoints) ?? [];
+          if (pts.length < 2) { skip('SPLINE-short'); break; }
+          for (let i = 0; i + 1 < pts.length; i++) pushSeg(apply(M, pts[i]!.x, pts[i]!.y), apply(M, pts[i + 1]!.x, pts[i + 1]!.y), li);
           break;
         }
         case 'INSERT': {

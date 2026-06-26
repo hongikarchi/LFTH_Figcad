@@ -25,6 +25,26 @@ describe('extractDwgUnderlay — 기본 엔티티', () => {
     expect(u.bbox).toEqual([0, 0, 1000, 500]);
   });
 
+  it('LWPOLYLINE closed = libredwg flag bit 512 → 닫는 세그 포함', () => {
+    const u = extractDwgUnderlay(db([{ type: 'LWPOLYLINE', flag: 512, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] }]));
+    expect(u.segments.length / 4).toBe(4); // 4점 닫힘 = 4세그 (마지막 (0,10)→(0,0))
+  });
+
+  it('LWPOLYLINE 열림(flag 0) → 닫는 세그 없음', () => {
+    const u = extractDwgUnderlay(db([{ type: 'LWPOLYLINE', flag: 0, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }]));
+    expect(u.segments.length / 4).toBe(2);
+  });
+
+  it('SOLID → 외곽 쿼드(DXF 와인딩 1-2-4-3)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'SOLID', corner1: { x: 0, y: 0 }, corner2: { x: 10, y: 0 }, corner3: { x: 0, y: 10 }, corner4: { x: 10, y: 10 } }]));
+    expect(u.segments.length / 4).toBe(4);
+  });
+
+  it('HATCH edge 경계 → 경계선 세그', () => {
+    const u = extractDwgUnderlay(db([{ type: 'HATCH', boundaryPaths: [{ boundaryPathTypeFlag: 1, edges: [{ type: 1, start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }, { type: 1, start: { x: 10, y: 0 }, end: { x: 10, y: 10 } }] }] }]));
+    expect(u.segments.length / 4).toBe(2);
+  });
+
   it('CIRCLE → 닫힌 폴리곤, 모든 점이 원 위', () => {
     const u = extractDwgUnderlay(db([{ type: 'CIRCLE', center: { x: 100, y: 200 }, radius: 50 }]));
     expect(u.segments.length / 4).toBeGreaterThanOrEqual(16); // π/16 분해능
@@ -156,11 +176,11 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
     expect(u.labels).toEqual([{ text: '거실', x: 100, y: 200, height: 300, layer: 'A-TEXT' }]);
   });
 
-  it('미지원 타입 → skipped 카운트', () => {
+  it('미지원 타입 → skipped 카운트 (HATCH 빈 경계 = HATCH-empty)', () => {
     const u = extractDwgUnderlay(
-      db([{ type: 'HATCH' }, { type: 'HATCH' }, { type: 'DIMENSION' }, { type: 'WIPEOUT' }]),
+      db([{ type: 'HATCH' }, { type: 'DIMENSION' }, { type: 'DIMENSION' }, { type: 'WIPEOUT' }]),
     );
-    expect(u.skipped).toEqual({ HATCH: 2, DIMENSION: 1, WIPEOUT: 1 });
+    expect(u.skipped).toEqual({ 'HATCH-empty': 1, DIMENSION: 2, WIPEOUT: 1 });
     expect(u.segments.length).toBe(0);
   });
 
