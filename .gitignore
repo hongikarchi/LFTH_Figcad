@@ -18,3 +18,4 @@ coverage/
 .mf-r2/
 d_test.*
 cmp_full.glb
+apps/web/public/__dwgtest.dwg
