@@ -504,6 +504,10 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           if (!paths.length) { skip('HATCH-empty'); break; }
           const fillLoops: [number, number][][] = [];
           for (const path of paths) {
+            // libredwg 부분 디코드 — 멀티엣지 경계인데 일부 엣지가 NULL이면 외곽선 불완전(복잡 해치 글자: 28엣지 중 1개만 디코드 등).
+            // 그 path는 통째 스킵 → 깨진 파편(채움·경계선) 대신 빈칸. 단순 글자(완전 디코드)는 그대로.
+            const eds = path.edges;
+            if (eds && eds.length > 1 && eds.some((e) => e == null)) { skip('HATCH-부분디코드'); continue; }
             const loop: [number, number][] = []; // 채움용 월드 점(호=시작점 근사)
             const pv = path.vertices;
             if (((path.boundaryPathTypeFlag ?? 0) & 2) && pv && pv.length >= 2) {

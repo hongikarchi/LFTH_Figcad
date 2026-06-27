@@ -56,6 +56,13 @@ describe('extractDwgUnderlay — 기본 엔티티', () => {
     expect(u.fills.length).toBe(0);
   });
 
+  it('HATCH 부분디코드(멀티엣지에 NULL) path 스킵 — 깨진 파편 방지', () => {
+    const u = extractDwgUnderlay(db([{ type: 'HATCH', solidFill: 1, boundaryPaths: [{ boundaryPathTypeFlag: 4, edges: [{ type: 1, start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }, null, null] }] }]));
+    expect(u.fills.length).toBe(0); // 부분디코드 → 채움·경계선 둘 다 스킵
+    expect(u.segments.length).toBe(0);
+    expect(u.skipped['HATCH-부분디코드']).toBe(1);
+  });
+
   it('CIRCLE → 닫힌 폴리곤, 모든 점이 원 위', () => {
     const u = extractDwgUnderlay(db([{ type: 'CIRCLE', center: { x: 100, y: 200 }, radius: 50 }]));
     expect(u.segments.length / 4).toBeGreaterThanOrEqual(16); // π/16 분해능
