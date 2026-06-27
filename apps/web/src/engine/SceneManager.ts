@@ -73,7 +73,8 @@ function makeLabelSprite(text: string, style: LabelStyle = 'grid'): THREE.Sprite
   g.fillStyle = '#1d1d1f';
   g.fillText(text, W / 2, H / 2 + 2);
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }),
+    // side: DoubleSide — plan 직교뷰 X-반사 투영서 front-side 스프라이트는 back-face 컬링됨
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, side: THREE.DoubleSide }),
   );
   // 높이 0.5m 고정, 폭은 캔버스 비율 유지
   const scaleH = grid ? 0.5 : 0.4;
@@ -101,7 +102,7 @@ function makeCommentPin(resolved: boolean, replyCount: number): THREE.Sprite {
   g.textBaseline = 'middle';
   g.fillText(resolved ? '✓' : replyCount > 0 ? String(replyCount + 1) : '💬', S / 2, S / 2 + 1);
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }),
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, side: THREE.DoubleSide }),
   );
   sprite.scale.setScalar(0.6);
   sprite.renderOrder = 6;
@@ -244,12 +245,16 @@ export class SceneManager {
   }
 
   /**
-   * 라벨/핀 스프라이트 X 역-flip — plan 직교뷰는 프로젝션 X가 음수(동右 위해 반사)라 스프라이트
-   * quad(텍스트)가 거울로 그려진다. scale.x를 음수화해 상쇄 → 글자는 똑바로(반사×반사=정방향).
-   * 3D(perspective)는 반사 없음 → scale.x 양수. 멱등(abs 기준).
+   * 라벨/핀 스프라이트 X 역-flip — plan 직교뷰는 프로젝션 X가 음수(동=右 위해 반사)라 스프라이트
+   * quad(텍스트)가 거울로 그려진다. **텍스처 U를 뒤집어** 상쇄(반사×반사=정방향). scale.x 부호는
+   * 스프라이트 렌더러가 무시(|scale|)라 안 먹힘. 3D는 반사 없음 → repeat.x=1. 멱등.
    */
   private flipSprite(s: THREE.Sprite): void {
-    s.scale.x = Math.abs(s.scale.x) * (this.viewMode === 'plan' ? -1 : 1);
+    const map = (s.material as THREE.SpriteMaterial).map;
+    if (!map) return;
+    map.center.set(0.5, 0.5);
+    map.repeat.x = this.viewMode === 'plan' ? -1 : 1;
+    map.needsUpdate = true;
   }
 
   private applyGhosting(entry: SceneEntry): void {

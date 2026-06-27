@@ -44,11 +44,21 @@ function makeTextSprite(text: string, worldH: number): THREE.Sprite {
   g.fillStyle = '#5b6b7a';
   g.fillText(text, 3, canvas.height / 2);
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: false, opacity: 0.92 }),
+    // side: DoubleSide 필수 — plan 직교뷰는 X-반사 투영(음수폭 frustum)이라 front-side 스프라이트는 back-face 컬링돼 안 보임.
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: false, opacity: 0.92, side: THREE.DoubleSide }),
   );
   sprite.scale.set((worldH * canvas.width) / canvas.height, worldH, 1);
   sprite.renderOrder = 3;
   return sprite;
+}
+
+/** plan X-반사 상쇄 — 스프라이트는 scale.x 부호 무시(|scale|)라 텍스처 U를 뒤집어 미러 해제. */
+function flipSpriteTexture(sp: THREE.Sprite, flipped: boolean): void {
+  const map = (sp.material as THREE.SpriteMaterial).map;
+  if (!map) return;
+  map.center.set(0.5, 0.5);
+  map.repeat.x = flipped ? -1 : 1;
+  map.needsUpdate = true;
 }
 
 /** 2D 언더레이 배치 (FederationSource.underlay) — origin[mm] 평면이동·rotation[rad]·scale + XCLIP. */
@@ -180,7 +190,7 @@ export class ReferenceLayer {
         if (clip && (lb.x < clip[0] || lb.x > clip[2] || lb.y < clip[1] || lb.y > clip[3])) continue;
         const sp = makeTextSprite(lb.text, Math.max(0.06, (lb.height || 200) * 0.001));
         sp.position.set(lb.x * 0.001, 0.02, lb.y * 0.001);
-        if (this.planFlipped) sp.scale.x = -Math.abs(sp.scale.x); // plan 미러 상쇄
+        if (this.planFlipped) flipSpriteTexture(sp, true); // plan 미러 상쇄(텍스처 U)
         sp.userData['underlayLabel'] = true;
         g.add(sp);
       }
@@ -203,8 +213,8 @@ export class ReferenceLayer {
   }
 
   /**
-   * plan 직교뷰는 프로젝션 X 반사(동右 CAD표준)라 빌보드 스프라이트 텍스트가 거울로 그려짐 →
-   * plan에선 scale.x 역-flip으로 상쇄(SceneManager와 동일 원리). main.ts가 뷰모드 변경 시 호출.
+   * plan 직교뷰는 프로젝션 X 반사(동=右 CAD표준)라 빌보드 스프라이트 텍스트가 거울로 그려짐 →
+   * 텍스처 U 플립으로 상쇄(scale.x 부호는 스프라이트가 무시). main.ts가 뷰모드 변경 시 호출.
    */
   setPlanFlipped(flipped: boolean): void {
     if (flipped === this.planFlipped) return;
@@ -212,7 +222,7 @@ export class ReferenceLayer {
     for (const g of this.sources.values()) {
       g.traverse((o) => {
         const s = o as THREE.Sprite;
-        if (s.isSprite && o.userData['underlayLabel']) s.scale.x = Math.abs(s.scale.x) * (flipped ? -1 : 1);
+        if (s.isSprite && o.userData['underlayLabel']) flipSpriteTexture(s, flipped);
       });
     }
     this.engine.requestRender();
