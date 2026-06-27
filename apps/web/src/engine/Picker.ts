@@ -43,6 +43,24 @@ export function pickElement(
   return firstId;
 }
 
+/**
+ * 화면 좌표 → 임의 평면(origin·normal, 월드 m) 교차점 (자유 3D 스케치 — iter-3 S4).
+ * 평면 법선=카메라 시선이면 레이가 수직이라 그레이징 불안정 없음.
+ */
+export function screenToWorldPlane(
+  clientX: number,
+  clientY: number,
+  camera: THREE.Camera,
+  origin: THREE.Vector3,
+  normal: THREE.Vector3,
+): THREE.Vector3 | null {
+  ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  plane.setFromNormalAndCoplanarPoint(normal, origin);
+  const out = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(plane, out) ? out : null;
+}
+
 /** 월드(m) → 화면 px (HUD 배치용) */
 export function worldToScreen(
   world: THREE.Vector3,

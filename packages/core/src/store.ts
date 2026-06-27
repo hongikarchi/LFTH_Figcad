@@ -794,7 +794,15 @@ export class DocStore {
       mode: params.mode,
       boundary,
       style: params.style,
-      ...(params.frame !== undefined ? { frame: params.frame } : {}),
+      ...(params.frame !== undefined
+        ? {
+            frame: {
+              o: [quantize(params.frame.o[0]), quantize(params.frame.o[1]), quantize(params.frame.o[2])],
+              x: params.frame.x,
+              y: params.frame.y,
+            },
+          }
+        : {}),
     }) as SketchElement;
     this.setElement(id, el);
     return id;

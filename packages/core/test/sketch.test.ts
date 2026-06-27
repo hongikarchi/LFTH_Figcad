@@ -60,6 +60,26 @@ describe('스케치 — derive (DeriveCache 디스패치)', () => {
     expect(g2!.edges.length).toBe(2 * 6); // 3점 = 2 세그
   });
 
+  it('frame = 자유 3D 평면에 매핑 (수직 벽면 — S4)', () => {
+    const { store, seed } = setup();
+    const id = store.createSketch({
+      levelId: seed.levelId,
+      mode: 'line',
+      boundary: [[0, 0], [1000, 0], [1000, 2000]],
+      style: STYLE,
+      frame: { o: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0] }, // 동(+X)-상(+Y) = 수직 평면
+    });
+    const geo = derive(store, id)!;
+    // 1번째 세그: map(0,0)=[0,0,0] → map(1000,0)=[1,0,0] (동쪽 1m)
+    expect([geo.edges[0], geo.edges[1], geo.edges[2]]).toEqual([0, 0, 0]);
+    expect(geo.edges[3]).toBeCloseTo(1);
+    expect(geo.edges[5]).toBeCloseTo(0);
+    // 끝점 = map(1000,2000)=[1,2,0] — y=2m 위로(수직 평면 증명, 바닥 아님)
+    expect(geo.edges[9]).toBeCloseTo(1);
+    expect(geo.edges[10]).toBeCloseTo(2);
+    expect(geo.edges[11]).toBeCloseTo(0);
+  });
+
   it('move = boundary 전 정점 평행이동 (POSITIONAL polygon)', () => {
     const { store, seed } = setup();
     const id = store.createSketch({
