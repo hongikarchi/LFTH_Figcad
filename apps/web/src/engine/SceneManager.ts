@@ -348,6 +348,7 @@ export class SceneManager {
     const key = `${el.mode}|${s.color}|${s.opacity}|${s.width}|${s.lineType}`;
     if (key === entry.styleKey) return;
     entry.styleKey = key;
+    // 메시: line=픽 프록시(투명), zone=styled 채움
     const mat = entry.mesh.material as THREE.MeshLambertMaterial;
     if (el.mode === 'line') {
       mat.transparent = true;
@@ -360,12 +361,28 @@ export class SceneManager {
       mat.depthWrite = true;
     }
     mat.needsUpdate = true;
-    if (entry.ownedEdgeMat) {
-      entry.ownedEdgeMat.color.set(s.color);
-      entry.ownedEdgeMat.transparent = s.opacity < 1;
-      entry.ownedEdgeMat.opacity = s.opacity;
-      entry.ownedEdgeMat.needsUpdate = true;
+    // owned 에지 머티리얼 — lineType별 클래스(solid=Basic / dashed·dotted=Dashed). 변경 시 재생성.
+    // edges.material 자체는 applyHighlight(upsert 끝)가 선택상태대로 설정 → 여기선 안 건드림.
+    const wantDashed = s.lineType !== 'solid';
+    const isDashed = entry.ownedEdgeMat instanceof THREE.LineDashedMaterial;
+    if (!entry.ownedEdgeMat || wantDashed !== isDashed) {
+      entry.ownedEdgeMat?.dispose();
+      entry.ownedEdgeMat = wantDashed
+        ? new THREE.LineDashedMaterial({ color: s.color })
+        : new THREE.LineBasicMaterial({ color: s.color });
     }
+    const ed = entry.ownedEdgeMat;
+    ed.color.set(s.color);
+    ed.transparent = s.opacity < 1;
+    ed.opacity = s.opacity;
+    if (ed instanceof THREE.LineDashedMaterial) {
+      // 대시 크기 = 데시메이트 세그(≥40mm)보다 작게 — LineSegments는 세그별 거리 리셋이라
+      // 세그보다 크면 solid로 보임(다정점 연속 대시 = S3b Line2). 월드 m 단위.
+      ed.dashSize = s.lineType === 'dotted' ? 0.006 : 0.025;
+      ed.gapSize = s.lineType === 'dotted' ? 0.018 : 0.025;
+      entry.edges.computeLineDistances();
+    }
+    ed.needsUpdate = true;
   }
 
   private applyGhosting(entry: SceneEntry): void {
@@ -468,8 +485,6 @@ export class SceneManager {
       this.entries.set(id, entry);
       this.applyGhosting(entry);
     }
-    // 스케치 스타일 적용(생성+변경) — deriveKey가 style 제외라 geo 무변경 시에도 갱신
-    if (el.kind === 'sketch') this.applySketchStyle(entry, el);
     if (entry.baseColor !== color) {
       (entry.mesh.material as THREE.MeshLambertMaterial).color.set(color);
       entry.baseColor = color;
@@ -483,10 +498,15 @@ export class SceneManager {
     if (entry.lastGeo !== geo) {
       setBufferGeometry(entry.mesh.geometry, geo.positions, geo.normals);
       setLineGeometry(entry.edges.geometry, geo.edges);
+      // dashed/dotted 스케치는 대시 패턴용 누적거리 필요(geo 갱신마다 재계산 — LineSegments 메서드)
+      if (el.kind === 'sketch' && el.style.lineType !== 'solid') entry.edges.computeLineDistances();
       entry.lastGeo = geo;
       this.updateLabels(entry, geo);
       this.syncGlass(entry, id, geo);
     }
+
+    // 스케치 스타일 적용(생성+변경) — geo 설정 후(대시 거리 유효). deriveKey가 style 제외라 무변경시에도.
+    if (el.kind === 'sketch') this.applySketchStyle(entry, el);
 
     this.applyHighlight(id);
   }
