@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipSegmentAabb, extractDwgUnderlay, underlayDenseCenter, type DwgDatabaseLike } from '../src/dwgUnderlay';
+import { cleanMText, clipSegmentAabb, extractDwgUnderlay, underlayDenseCenter, type DwgDatabaseLike } from '../src/dwgUnderlay';
 
 const db = (entities: unknown[], blockRecords: unknown[] = []): DwgDatabaseLike =>
   ({ entities, tables: { BLOCK_RECORD: blockRecords } }) as DwgDatabaseLike;
@@ -330,5 +330,24 @@ describe('extractDwgUnderlay — 라벨 + 스킵', () => {
       tables: { BLOCK_RECORD: { entries: [{ name: 'd', basePoint: { x: 0, y: 0 }, entities: [{ type: 'LINE', startPoint: { x: 0, y: 0 }, endPoint: { x: 5, y: 0 } }] }] } },
     } as DwgDatabaseLike);
     expect([...u.segments]).toEqual([0, 0, 5, 0]);
+  });
+});
+
+describe('cleanMText', () => {
+  it('정렬코드 \\A1; 벗김 → 평문', () => {
+    expect(cleanMText('\\A1;13000')).toBe('13000');
+  });
+  it('폰트·높이·중괄호 벗김', () => {
+    expect(cleanMText('{\\fArial|b0|i0;\\H2x;방 이름}')).toBe('방 이름');
+  });
+  it('단락 \\P → 공백', () => {
+    expect(cleanMText('1층\\P평면도')).toBe('1층 평면도');
+  });
+  it('%%d/%%c/%%p → °/Ø/±', () => {
+    expect(cleanMText('45%%d')).toBe('45°');
+    expect(cleanMText('%%c100')).toBe('Ø100');
+  });
+  it('일반 텍스트 무변화', () => {
+    expect(cleanMText('지상1층 평면도')).toBe('지상1층 평면도');
   });
 });

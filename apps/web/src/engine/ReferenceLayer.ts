@@ -25,8 +25,8 @@ export interface ReferenceMesh {
 
 const REF_COLOR = 0x6a8caf;
 const REF_OPACITY = 0.5;
-const UNDERLAY_COLOR = 0x8aa0b4; // 빽도면 라인 — 흐릿한 청회색(네이티브 요소와 구분)
-const UNDERLAY_OPACITY = 0.65;
+const UNDERLAY_COLOR = 0x49545e; // 빽도면 라인 — 진한 청회색(PDF 흑백 대비, 네이티브 요소와 구분)
+const UNDERLAY_OPACITY = 1; // 불투명 — 반투명이면 빽빽한 데서 겹치는 선 알파 누적해 회색 덩어리. opacity 1 = 누적 없음(transparent는 채움/라인 렌더순서용 유지)
 const UNDERLAY_MAX_LABELS = 4000; // 초과(예: 메가시트 18k) 시 텍스트 생략 (스프라이트 draw call·텍스처 예산)
 
 /** 언더레이 텍스트 라벨 스프라이트 (CanvasTexture). worldH = 월드 높이(미터), 폭은 글자 비율. */
@@ -195,9 +195,18 @@ export class ReferenceLayer {
         g.add(sp);
       }
     }
+    g.userData['isUnderlay'] = true; // DWG 빽도면 — 그리드 숨김 트리거
     this.sources.set(name, g);
     this.group.add(g);
+    this.updateGridVisibility();
     this.engine.requestRender();
+  }
+
+  /** DWG 언더레이 표시 중이면 네이티브 1m 그리드 숨김 — 평면서 빽빽한 도면 위 격자 클러터 방지. */
+  private updateGridVisibility(): void {
+    const grid = this.engine.scene.userData['grid'] as THREE.Object3D | undefined;
+    if (!grid) return;
+    grid.visible = ![...this.sources.values()].some((g) => g.userData['isUnderlay']);
   }
 
   setVisible(name: string, visible: boolean): void {
@@ -254,6 +263,7 @@ export class ReferenceLayer {
     this.disposeGroup(g);
     this.group.remove(g);
     this.sources.delete(name);
+    this.updateGridVisibility();
     this.engine.requestRender();
   }
 
@@ -263,6 +273,7 @@ export class ReferenceLayer {
       this.group.remove(g);
     }
     this.sources.clear();
+    this.updateGridVisibility();
     this.engine.requestRender();
   }
 

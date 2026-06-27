@@ -25,4 +25,5 @@ export function buildScene(scene: THREE.Scene): void {
   // 1m 간격 그리드 (스냅 그리드 100mm의 시각 보조) — 연한 회색
   const grid = new THREE.GridHelper(100, 100, 0xc4c8cd, 0xe2e4e8);
   scene.add(grid);
+  scene.userData['grid'] = grid; // ReferenceLayer가 DWG 언더레이 표시 시 숨김(평면 클러터 방지)
 }

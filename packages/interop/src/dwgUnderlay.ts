@@ -239,6 +239,19 @@ function splinePoints(cps: DwgVec[], degree: number, knots: number[] | undefined
   return pts;
 }
 
+/** MTEXT/DText 인라인 포맷 코드 제거 → 평문. \A1;(정렬)·\fFont;·\H1.5x;·\C1;·\P·{}·%%d 등 벗김. */
+export function cleanMText(t: string): string {
+  if (!t) return t;
+  return t
+    .replace(/\\P/g, ' ') // 단락 → 공백
+    .replace(/\\~/g, ' ') // 비분리 공백
+    .replace(/\\[A-Za-z][^;\\]*;/g, '') // 세미콜론 종료 제어코드(\A1; \fArial|..; \H1.5x; \C1; \W.. \T.. \Q.. \p..)
+    .replace(/\\[LlOoKk]/g, '') // 토글(밑줄/윗줄/취소선 — 세미콜론 없음)
+    .replace(/[{}]/g, '') // 그룹 중괄호
+    .replace(/%%[dD]/g, '°').replace(/%%[cC]/g, 'Ø').replace(/%%[pP]/g, '±') // DText 특수문자
+    .trim();
+}
+
 /**
  * 세그먼트(x0,y0)-(x1,y1)를 AABB [xmin,ymin,xmax,ymax]로 클립 (Liang-Barsky) — XCLIP 렌더용.
  * 경계서 **트림**(cull 아님 — 가로지르는 선은 경계까지 잘림). 완전 바깥이면 null. 결과 [x0,y0,x1,y1].
@@ -577,7 +590,7 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           for (const at of e.attribs ?? []) {
             if (!at?.text) continue;
             const p = apply(M2, at.startPoint?.x ?? 0, at.startPoint?.y ?? 0);
-            labels.push({ text: at.text, x: p[0], y: p[1], height: at.textHeight ?? 100, layer });
+            labels.push({ text: cleanMText(at.text), x: p[0], y: p[1], height: at.textHeight ?? 100, layer });
           }
           break;
         }
@@ -586,7 +599,9 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           const ip = e.startPoint ?? e.insertionPoint ?? e.position;
           if (!ip || !e.text) { skip(`${e.type}-bad`); break; }
           const p = apply(M, ip.x, ip.y);
-          labels.push({ text: e.text, x: p[0], y: p[1], height: e.textHeight ?? e.height ?? 100, layer });
+          const txt = cleanMText(e.text);
+          if (!txt) { skip(`${e.type}-empty`); break; }
+          labels.push({ text: txt, x: p[0], y: p[1], height: e.textHeight ?? e.height ?? 100, layer });
           break;
         }
         default:
