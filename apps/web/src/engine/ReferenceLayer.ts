@@ -148,20 +148,19 @@ export class ReferenceLayer {
     const fillTris: number[] = [];
     for (const fl of underlay.fills) {
       if (underlay.layerHidden[fl.layerIdx]) continue;
-      const loopsV = fl.loops.map((lp) => lp.map(([x, y]) => new THREE.Vector2(x, y)));
-      let oi = 0, oa = -1; // 가장 큰 루프 = 외곽, 나머지 = 구멍
-      for (let i = 0; i < loopsV.length; i++) { const ar = Math.abs(THREE.ShapeUtils.area(loopsV[i]!)); if (ar > oa) { oa = ar; oi = i; } }
-      const outer = loopsV[oi]!;
-      const holes = loopsV.filter((_, i) => i !== oi);
-      const all = [...outer, ...holes.flat()];
-      let faces: number[][];
-      try { faces = THREE.ShapeUtils.triangulateShape(outer, holes); } catch { continue; }
-      for (const f of faces) for (const idx of f) { const v = all[idx]; if (v) fillTris.push(v.x * 0.001, -0.01, v.y * 0.001); }
+      // 각 루프 독립 삼각화 — 한 HATCH의 여러 path는 별개 영역(예 로고 글자)이라 outer/holes로 묶으면 garbage.
+      for (const lp of fl.loops) {
+        if (lp.length < 3) continue;
+        const pts = lp.map(([x, y]) => new THREE.Vector2(x, y));
+        let faces: number[][];
+        try { faces = THREE.ShapeUtils.triangulateShape(pts, []); } catch { continue; }
+        for (const f of faces) for (const idx of f) { const v = pts[idx]; if (v) fillTris.push(v.x * 0.001, -0.01, v.y * 0.001); }
+      }
     }
     if (fillTris.length) {
       const fgeo = new THREE.BufferGeometry();
       fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fillTris), 3));
-      const fmesh = new THREE.Mesh(fgeo, new THREE.MeshBasicMaterial({ color: UNDERLAY_COLOR, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+      const fmesh = new THREE.Mesh(fgeo, new THREE.MeshBasicMaterial({ color: 0x6b8095, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
       fmesh.userData['figcadReference'] = true;
       fmesh.renderOrder = -1;
       g.add(fmesh);
