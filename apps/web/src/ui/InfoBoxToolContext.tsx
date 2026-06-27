@@ -2,7 +2,32 @@ import type { DocStore, Id } from '@figcad/core';
 import { useUiStore, type TypeKind } from '../state/uiStore';
 import { TypeSelect } from './InfoBoxTypeSelect';
 
-/** 마크업 펜 컨텍스트 — 색·투명도·굵기·선종류·모드(uiStore). MarkupTool이 createSketch에 사용. */
+/** 펜 종류 선택 — 마크업(영속 저장) vs AI 스케치(손그림→모델 생성). iter-3 S5. */
+function PenTypeSelect({ current }: { current: 'markup' | 'ai' }) {
+  return (
+    <span className="infobox-field">
+      <label>펜</label>
+      <select
+        value={current}
+        onChange={(e) => {
+          const ui = useUiStore.getState();
+          if (e.target.value === 'ai') {
+            ui.setViewMode('plan');
+            ui.setTool('sketch');
+            ui.setAiOpen(true);
+          } else {
+            ui.setTool('sketch-pen');
+          }
+        }}
+      >
+        <option value="markup">마크업 (저장·공유)</option>
+        <option value="ai">AI 스케치 (모델 생성)</option>
+      </select>
+    </span>
+  );
+}
+
+/** 마크업 펜 컨텍스트 — 펜종류 + 색·투명도·굵기·선종류·모드(uiStore). MarkupTool이 createSketch에 사용. */
 function SketchPenContext() {
   const style = useUiStore((s) => s.sketchStyle);
   const mode = useUiStore((s) => s.sketchMode);
@@ -11,6 +36,7 @@ function SketchPenContext() {
   return (
     <div className="infobox">
       <span className="infobox-title">마크업 펜</span>
+      <PenTypeSelect current="markup" />
       <span className="infobox-field">
         <label>모드</label>
         <select value={mode} onChange={(e) => setMode(e.target.value as 'line' | 'zone')}>
@@ -179,7 +205,8 @@ export function renderToolContext(
   if (activeTool === 'sketch') {
     return (
       <div className="infobox">
-        <span className="infobox-title">AI 스케치 도구</span>
+        <span className="infobox-title">AI 스케치</span>
+        <PenTypeSelect current="ai" />
         <span className="infobox-hint">펜으로 평면을 그린 뒤 AI 패널에서 보내면 손그림대로 생성</span>
       </div>
     );
