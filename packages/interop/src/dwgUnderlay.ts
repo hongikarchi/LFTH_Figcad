@@ -76,6 +76,8 @@ export interface DwgEntity {
   // SPLINE
   controlPoints?: DwgVec[];
   fitPoints?: DwgVec[];
+  knots?: number[];
+  degree?: number;
 }
 /** HATCH 경계 경로 — polyline(flag&2: vertices) 또는 edge 기반(edges: line/arc/ellipse/spline). */
 export interface DwgHatchEdge {
@@ -90,6 +92,8 @@ export interface DwgHatchEdge {
   majorAxisEndPoint?: DwgVec;
   axisRatio?: number;
   controlPoints?: DwgVec[];
+  knots?: number[];
+  degree?: number;
 }
 export interface DwgHatchPath {
   boundaryPathTypeFlag?: number;
@@ -202,6 +206,37 @@ function insertMatrix(ins: DwgVec | undefined, base: DwgVec | undefined, sx: num
   const rsa = sx * c, rsb = sx * s, rsc = -sy * s, rsd = sy * c; // R·S
   const bx = base?.x ?? 0, by = base?.y ?? 0;
   return [rsa, rsb, rsc, rsd, rsa * -bx + rsc * -by + (ins?.x ?? 0), rsb * -bx + rsd * -by + (ins?.y ?? 0)];
+}
+
+/** B-spline de Boor 평가 (비유리 근사 — weight 무시). knots = 매듭벡터, t = 파라미터. */
+function deBoor(cps: DwgVec[], degree: number, knots: number[], t: number): [number, number] {
+  const n = cps.length - 1;
+  let k = degree;
+  while (k < n && (knots[k + 1] ?? Infinity) <= t) k++;
+  const dx: number[] = [], dy: number[] = [];
+  for (let i = 0; i <= degree; i++) { const c = cps[k - degree + i]; dx[i] = c?.x ?? 0; dy[i] = c?.y ?? 0; }
+  for (let r = 1; r <= degree; r++) {
+    for (let i = degree; i >= r; i--) {
+      const ki = k - degree + i;
+      const lo = knots[ki] ?? 0, hi = knots[ki + degree - r + 1] ?? 0;
+      const a = hi - lo > 1e-12 ? (t - lo) / (hi - lo) : 0;
+      dx[i] = (1 - a) * dx[i - 1]! + a * dx[i]!;
+      dy[i] = (1 - a) * dy[i - 1]! + a * dy[i]!;
+    }
+  }
+  return [dx[degree]!, dy[degree]!];
+}
+/** 스플라인(제어점·차수·매듭) → 테셀 점들(로컬). 매듭 부실하면 제어점 폴백(거칠게라도). */
+function splinePoints(cps: DwgVec[], degree: number, knots: number[] | undefined): [number, number][] {
+  const n = cps.length - 1;
+  if (n < 1) return cps.map((c) => [c.x, c.y]);
+  if (n < degree || !knots || knots.length < n + degree + 2) return cps.map((c) => [c.x, c.y]);
+  const t0 = knots[degree]!, t1 = knots[n + 1]!;
+  if (!(t1 > t0)) return cps.map((c) => [c.x, c.y]);
+  const steps = Math.max(8, (n + 1) * 4);
+  const pts: [number, number][] = [];
+  for (let s = 0; s <= steps; s++) pts.push(deBoor(cps, degree, knots, t0 + ((t1 - t0) * s) / steps));
+  return pts;
 }
 
 /**
@@ -479,9 +514,9 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
                   else tessArc(ed.center.x, ed.center.y, ed.radius, a0, a1, M, li);
                   loop.push(apply(M, ed.center.x + ed.radius * Math.cos(a0), ed.center.y + ed.radius * Math.sin(a0)));
                 } else if (ed.type === 4 && ed.controlPoints && ed.controlPoints.length >= 2) {
-                  const cps = ed.controlPoints; // 스플라인 = 제어점 폴리라인 근사
-                  for (let i = 0; i + 1 < cps.length; i++) pushSeg(apply(M, cps[i]!.x, cps[i]!.y), apply(M, cps[i + 1]!.x, cps[i + 1]!.y), li);
-                  for (const c of cps) loop.push(apply(M, c.x, c.y));
+                  const pts = splinePoints(ed.controlPoints, ed.degree ?? 3, ed.knots); // B-spline 테셀(de Boor)
+                  for (let i = 0; i + 1 < pts.length; i++) pushSeg(apply(M, pts[i]![0], pts[i]![1]), apply(M, pts[i + 1]![0], pts[i + 1]![1]), li);
+                  for (const pt of pts) loop.push(apply(M, pt[0], pt[1]));
                 } else {
                   skip(`HATCH-edge${ed.type ?? '?'}`);
                 }
@@ -505,10 +540,12 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           break;
         }
         case 'SPLINE': {
-          // fitPoints(곡선 위 점) 우선, 없으면 controlPoints 폴리라인 근사.
-          const pts = (e.fitPoints?.length ? e.fitPoints : e.controlPoints) ?? [];
+          // fitPoints(곡선 위 점) 우선, 없으면 controlPoints+매듭 de Boor 테셀.
+          const pts: [number, number][] = e.fitPoints?.length
+            ? e.fitPoints.map((p) => [p.x, p.y])
+            : splinePoints(e.controlPoints ?? [], e.degree ?? 3, e.knots);
           if (pts.length < 2) { skip('SPLINE-short'); break; }
-          for (let i = 0; i + 1 < pts.length; i++) pushSeg(apply(M, pts[i]!.x, pts[i]!.y), apply(M, pts[i + 1]!.x, pts[i + 1]!.y), li);
+          for (let i = 0; i + 1 < pts.length; i++) pushSeg(apply(M, pts[i]![0], pts[i]![1]), apply(M, pts[i + 1]![0], pts[i + 1]![1]), li);
           break;
         }
         case 'DIMENSION': {
