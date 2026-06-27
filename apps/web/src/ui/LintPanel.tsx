@@ -123,7 +123,7 @@ function anchorOf(store: DocStore, el: Element): { x: number; y: number; levelId
       ...(el.kind !== 'grid' ? { levelId: el.levelId } : {}),
     };
   }
-  if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
+  if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone' || el.kind === 'sketch') {
     const c = el.boundary.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
     return { x: c[0] / el.boundary.length, y: c[1] / el.boundary.length, levelId: el.levelId };
   }

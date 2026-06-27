@@ -35,6 +35,13 @@ const FACTORY: Record<Element['kind'], Factory> = {
   label: (s, d) => s.createLabel({ levelId: d.levelId, at: [3100, 3100], template: 'custom', customText: 'L' }),
   // 끝점이 다른 요소와 mm-일치하지 않게 → 자동 바인딩 회피(stored a/b가 곧 좌표)
   dimension: (s, d) => s.createDimension({ levelId: d.levelId, a: [9123, 9123], b: [9123, 13123] }),
+  sketch: (s, d) =>
+    s.createSketch({
+      levelId: d.levelId,
+      mode: 'line',
+      boundary: [[200, 9000], [4200, 9000], [4200, 9500]],
+      style: { color: '#0a84ff', opacity: 1, width: 2, lineType: 'solid' },
+    }),
 };
 
 const ALL_KINDS = Object.keys(POSITIONAL) as Element['kind'][];

@@ -55,6 +55,7 @@ export function exportDxf(snap: DocSnapshot): string {
   d.addLayer('Roof', ACI_GRAY, 'CONTINUOUS');
   d.addLayer('Zone', Drawing.ACI.GREEN, 'CONTINUOUS');
   d.addLayer('CurtainWall', Drawing.ACI.CYAN, 'CONTINUOUS');
+  d.addLayer('Sketch', Drawing.ACI.YELLOW, 'CONTINUOUS'); // 마크업 스케치(iter-3) — line/zone 폴리라인
 
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
@@ -158,6 +159,10 @@ export function exportDxf(snap: DocSnapshot): string {
       // 평면 = 베이스라인 (멀리언 그리드는 입면/3D, 2D 평면은 선)
       d.setActiveLayer('CurtainWall');
       d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+    } else if (el.kind === 'sketch') {
+      // 마크업 스케치(iter-3) — line=열린/zone=닫힌 폴리라인. style·3D frame은 DXF 미보존(2D 평면 투영).
+      d.setActiveLayer('Sketch');
+      d.drawPolyline(el.boundary.map((p) => [p[0], p[1]] as [number, number]), el.mode === 'zone');
     }
   }
 

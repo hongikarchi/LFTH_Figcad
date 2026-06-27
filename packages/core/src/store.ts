@@ -34,6 +34,8 @@ import {
   type TextElement,
   type LabelElement,
   type WallElement,
+  type SketchElement,
+  type SketchStyle,
 } from './schema';
 import { resolveDimAnchor } from './select';
 
@@ -775,6 +777,29 @@ export class DocStore {
     return id;
   }
 
+  /** 스케치/마크업 — 프리핸드 폴리라인(line)·채움(zone). 정점=boundary(파라미터). 자기교차 허용. */
+  createSketch(params: {
+    levelId: Id;
+    boundary: Pt[];
+    mode: 'line' | 'zone';
+    style: SketchStyle;
+    frame?: SketchElement['frame'];
+  }): Id {
+    const boundary = params.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+    const id = nanoid(12);
+    const el = ElementSchema.parse({
+      id,
+      kind: 'sketch',
+      levelId: params.levelId,
+      mode: params.mode,
+      boundary,
+      style: params.style,
+      ...(params.frame !== undefined ? { frame: params.frame } : {}),
+    }) as SketchElement;
+    this.setElement(id, el);
+    return id;
+  }
+
   createText(params: { levelId: Id; at: Pt; text: string; size?: number }): Id {
     const id = nanoid(12);
     const el = ElementSchema.parse({
@@ -958,6 +983,14 @@ export class DocStore {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
       if (next.offset !== undefined) next.offset = quantize(next.offset);
+    } else if (next.kind === 'sketch') {
+      next.boundary = next.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+      // style은 float 렌더힌트(quantize 안 함). frame.o(mm)만 quantize, basis(float) 유지.
+      if (next.frame)
+        next.frame = {
+          ...next.frame,
+          o: [quantize(next.frame.o[0]), quantize(next.frame.o[1]), quantize(next.frame.o[2])],
+        };
     }
     const parsed = ElementSchema.parse(next) as unknown as Record<string, unknown>;
     const ymap = this.yElements.get(id);

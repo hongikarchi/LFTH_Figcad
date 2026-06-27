@@ -6,6 +6,7 @@ import {
   type DeriveIndex,
   type DocStore,
   type Id,
+  type SketchElement,
 } from '@figcad/core';
 import type { Engine } from './Engine';
 import type { HudLayer, CommentBubble } from '../hud/HudLayer';
@@ -26,6 +27,8 @@ interface SceneEntry {
   sprites: THREE.Sprite[];
   lastGeo: DerivedGeometry | null;
   glassMesh: THREE.Mesh | null; // 반투명 자식(커튼월 유리) — 메인 메시 단일 머티리얼 보존
+  ownedEdgeMat: THREE.LineBasicMaterial | null; // 스케치 전용 에지 머티리얼(스타일색) — 공유mat 아님, remove서 dispose
+  styleKey: string; // 스케치 스타일 직렬화(diff — deriveKey가 style 제외라 여기서 갱신)
 }
 
 const GLASS_COLOR = 0x88ccee;
@@ -280,21 +283,22 @@ export class SceneManager {
     } else {
       mat.emissive.setHex(0x000000);
     }
-    // 주석(grid/text/label/dimension): 픽 프록시 메시(opacity 0.04)는 emissive가 안 보임 →
-    // 보이는 에지(치수선·지시선·그리드선)·스프라이트(텍스트 알약)를 강조해 선택을 표시.
+    // 주석·스케치(line): 픽 프록시 메시(opacity 0.04)는 emissive가 안 보임 → 보이는 에지·스프라이트 강조.
+    // 스케치 복원색 = owned 에지 머티리얼(스타일색, 공유 edgeMat 아님). zone은 채움 emissive도 같이 동작.
     if (
       entry.kind === 'grid' ||
       entry.kind === 'text' ||
       entry.kind === 'label' ||
-      entry.kind === 'dimension'
+      entry.kind === 'dimension' ||
+      entry.kind === 'sketch'
     ) {
-      entry.edges.material = sel
-        ? this.selEdgeMat
-        : remote
-          ? this.remoteEdgeMat(remote)
-          : entry.kind === 'grid'
-            ? this.gridEdgeMat
+      const base =
+        entry.kind === 'grid'
+          ? this.gridEdgeMat
+          : entry.kind === 'sketch'
+            ? (entry.ownedEdgeMat ?? this.edgeMat)
             : this.edgeMat;
+      entry.edges.material = sel ? this.selEdgeMat : remote ? this.remoteEdgeMat(remote) : base;
       const tint = sel ? SELECT_EMISSIVE : remote ?? 0xffffff;
       for (const s of entry.sprites) (s.material as THREE.SpriteMaterial).color.set(tint);
     }
@@ -335,10 +339,46 @@ export class SceneManager {
     map.needsUpdate = true;
   }
 
+  /**
+   * 스케치 스타일(색·투명도·모드) 적용 — deriveKey가 style 제외라 geo 무변경 시에도 호출됨.
+   * line=메시는 픽 프록시(투명)+보이는 styled edges · zone=styled 채움+edges. owned 에지 머티리얼 갱신.
+   */
+  private applySketchStyle(entry: SceneEntry, el: SketchElement): void {
+    const s = el.style;
+    const key = `${el.mode}|${s.color}|${s.opacity}|${s.width}|${s.lineType}`;
+    if (key === entry.styleKey) return;
+    entry.styleKey = key;
+    const mat = entry.mesh.material as THREE.MeshLambertMaterial;
+    if (el.mode === 'line') {
+      mat.transparent = true;
+      mat.opacity = 0.04;
+      mat.depthWrite = false;
+    } else {
+      mat.color.set(s.color);
+      mat.transparent = s.opacity < 1;
+      mat.opacity = s.opacity;
+      mat.depthWrite = true;
+    }
+    mat.needsUpdate = true;
+    if (entry.ownedEdgeMat) {
+      entry.ownedEdgeMat.color.set(s.color);
+      entry.ownedEdgeMat.transparent = s.opacity < 1;
+      entry.ownedEdgeMat.opacity = s.opacity;
+      entry.ownedEdgeMat.needsUpdate = true;
+    }
+  }
+
   private applyGhosting(entry: SceneEntry): void {
     // 그리드·주석(text/label/dimension)은 픽 프록시 메시가 거의 투명(생성 시 설정) — 고스팅 제외.
     // 그리드는 전 층 공통, 주석은 메시가 픽 전용이라 불투명 처리하면 안 됨(불투명화 시 텍스트 위 솔리드 박스).
-    if (entry.kind === 'grid' || entry.kind === 'text' || entry.kind === 'label' || entry.kind === 'dimension')
+    // 스케치는 owned 에지 머티리얼이라 공유 ghostEdgeMat로 덮으면 색 손실 → 제외(S1: 전 레벨 표시).
+    if (
+      entry.kind === 'grid' ||
+      entry.kind === 'text' ||
+      entry.kind === 'label' ||
+      entry.kind === 'dimension' ||
+      entry.kind === 'sketch'
+    )
       return;
     const ghosted =
       this.viewMode === 'plan' &&
@@ -370,7 +410,13 @@ export class SceneManager {
     // 종류별 시각 속성
     const elType = 'typeId' in el ? this.store.getType(el.typeId) : undefined;
     const color =
-      el.kind === 'grid' ? '#c0392b' : elType && 'color' in elType ? elType.color : '#cccccc';
+      el.kind === 'grid'
+        ? '#c0392b'
+        : el.kind === 'sketch'
+          ? el.style.color
+          : elType && 'color' in elType
+            ? elType.color
+            : '#cccccc';
     const kind =
       el.kind === 'opening' && elType?.kind === 'opening'
         ? `opening:${elType.opening.kind}`
@@ -397,11 +443,13 @@ export class SceneManager {
       }
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.userData['elementId'] = id;
-      // 주석 프록시 = Picker 우선 픽(솔리드에 가려도 선택되게 — iter-2 3)
-      if (isAnnotationKind) mesh.userData['annotation'] = true;
+      // 주석·스케치 프록시 = Picker 우선 픽(솔리드에 가려도 선택되게 — iter-2 3)
+      if (isAnnotationKind || el.kind === 'sketch') mesh.userData['annotation'] = true;
+      // 스케치 = 스타일색 owned 에지 머티리얼(공유 edgeMat 아님 — remove서 dispose)
+      const ownedEdgeMat = el.kind === 'sketch' ? new THREE.LineBasicMaterial({ color: el.style.color }) : null;
       const edges = new THREE.LineSegments(
         new THREE.BufferGeometry(),
-        el.kind === 'grid' ? this.gridEdgeMat : this.edgeMat,
+        el.kind === 'grid' ? this.gridEdgeMat : (ownedEdgeMat ?? this.edgeMat),
       );
       this.engine.scene.add(mesh, edges);
       entry = {
@@ -414,10 +462,14 @@ export class SceneManager {
         sprites: [],
         lastGeo: null,
         glassMesh: null,
+        ownedEdgeMat,
+        styleKey: '',
       };
       this.entries.set(id, entry);
       this.applyGhosting(entry);
     }
+    // 스케치 스타일 적용(생성+변경) — deriveKey가 style 제외라 geo 무변경 시에도 갱신
+    if (el.kind === 'sketch') this.applySketchStyle(entry, el);
     if (entry.baseColor !== color) {
       (entry.mesh.material as THREE.MeshLambertMaterial).color.set(color);
       entry.baseColor = color;
@@ -503,6 +555,7 @@ export class SceneManager {
     entry.mesh.geometry.dispose();
     entry.edges.geometry.dispose();
     (entry.mesh.material as THREE.Material).dispose();
+    entry.ownedEdgeMat?.dispose(); // 스케치 owned 에지 머티리얼 (공유 edgeMat은 dispose 안 함)
     if (entry.glassMesh) {
       this.engine.scene.remove(entry.glassMesh);
       entry.glassMesh.geometry.dispose();

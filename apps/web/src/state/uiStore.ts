@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Id } from '@figcad/core';
+import type { Id, SketchStyle } from '@figcad/core';
 
 export type ToolName =
   | 'select'
@@ -19,6 +19,7 @@ export type ToolName =
   | 'text'
   | 'label'
   | 'sketch'
+  | 'sketch-pen'
   | 'comment'
   | 'section'
   | 'elevation';
@@ -46,12 +47,20 @@ export type WorkspaceMode = 'review' | 'model' | 'hub';
  * AI 도구(스케치)는 mode 아닌 AI dock서 무장. 도면(단면·입면)은 DrawingPanel서 진입.
  */
 export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
-  review: ['select', 'sketch', 'comment', 'label', 'dimension'],
+  review: ['select', 'sketch', 'sketch-pen', 'comment', 'label', 'dimension'],
   model: [
     'select', 'wall', 'door', 'window', 'slab', 'grid', 'column', 'beam',
-    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'label',
+    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'label', 'sketch-pen',
   ],
   hub: ['select'],
+};
+
+/** 마크업 펜 기본 스타일 (iter-3 스케치 업그레이드) */
+export const DEFAULT_SKETCH_STYLE: SketchStyle = {
+  color: '#0a84ff',
+  opacity: 1,
+  width: 3,
+  lineType: 'solid',
 };
 
 /** AI 모델 선택 (서버 allowlist와 동기) — 정확(opus)/균형(sonnet)/빠름(haiku). */
@@ -104,7 +113,12 @@ interface UiState {
   aiAutoApply: boolean;
   /** AI dock 표시 (iter-2: AI = 탭 아닌 전 모드 앰비언트 dock 토글) */
   aiOpen: boolean;
+  /** 마크업 펜 스타일·모드 (iter-3 스케치 업그레이드) — MarkupTool이 createSketch에 사용 */
+  sketchStyle: SketchStyle;
+  sketchMode: 'line' | 'zone';
   setTool: (t: ToolName) => void;
+  setSketchStyle: (patch: Partial<SketchStyle>) => void;
+  setSketchMode: (m: 'line' | 'zone') => void;
   setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
   setArrayCount: (n: number) => void;
@@ -160,6 +174,8 @@ export const useUiStore = create<UiState>((set) => ({
   aiModel: (localStorage.getItem('figcad.aiModel') as AiModelId | null) ?? 'claude-opus-4-8',
   aiAutoApply: false,
   aiOpen: false,
+  sketchStyle: { ...DEFAULT_SKETCH_STYLE },
+  sketchMode: 'line',
   // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
   setTool: (activeTool) =>
     set(
@@ -184,6 +200,8 @@ export const useUiStore = create<UiState>((set) => ({
   },
   setAiAutoApply: (aiAutoApply) => set({ aiAutoApply }),
   setAiOpen: (aiOpen) => set({ aiOpen }),
+  setSketchStyle: (patch) => set((s) => ({ sketchStyle: { ...s.sketchStyle, ...patch } })),
+  setSketchMode: (sketchMode) => set({ sketchMode }),
   setViewMode: (viewMode) => set({ viewMode }),
   // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor)
   setMode: (activeMode) =>

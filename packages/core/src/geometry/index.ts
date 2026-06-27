@@ -28,6 +28,7 @@ import {
   textDeriveKey,
 } from './deriveAnnotations';
 import { deriveZone, zoneDeriveKey } from './deriveZone';
+import { deriveSketch, sketchDeriveKey } from './deriveSketch';
 import { deriveLabel, labelDeriveKey, labelText } from './deriveLabel';
 import { resolveDimAnchor, labelTargetCenter } from '../select';
 import type { JoinInfo } from './joins';
@@ -55,6 +56,7 @@ export * from './deriveOthers';
 export * from './deriveStructure';
 export * from './deriveAnnotations';
 export * from './deriveZone';
+export * from './deriveSketch';
 export * from './deriveLabel';
 export * from './deriveDrawing';
 export * from './hatch';
@@ -282,6 +284,12 @@ export class DeriveCache {
       const input = { dim: el, level, a, b };
       key = `dim:${dimensionDeriveKey(input)}`;
       compute = () => deriveDimension(input);
+    } else if (el.kind === 'sketch') {
+      const level = store.getLevel(el.levelId);
+      if (!level) return null;
+      const input = { sketch: el, level };
+      key = `sk:${sketchDeriveKey(input)}`;
+      compute = () => deriveSketch(input);
     }
 
     if (!key || !compute) return null;

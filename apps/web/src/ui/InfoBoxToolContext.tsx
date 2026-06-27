@@ -1,6 +1,61 @@
 import type { DocStore, Id } from '@figcad/core';
-import type { TypeKind } from '../state/uiStore';
+import { useUiStore, type TypeKind } from '../state/uiStore';
 import { TypeSelect } from './InfoBoxTypeSelect';
+
+/** 마크업 펜 컨텍스트 — 색·투명도·굵기·선종류·모드(uiStore). MarkupTool이 createSketch에 사용. */
+function SketchPenContext() {
+  const style = useUiStore((s) => s.sketchStyle);
+  const mode = useUiStore((s) => s.sketchMode);
+  const setStyle = useUiStore((s) => s.setSketchStyle);
+  const setMode = useUiStore((s) => s.setSketchMode);
+  return (
+    <div className="infobox">
+      <span className="infobox-title">마크업 펜</span>
+      <span className="infobox-field">
+        <label>모드</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value as 'line' | 'zone')}>
+          <option value="line">선</option>
+          <option value="zone">영역(채움)</option>
+        </select>
+      </span>
+      <span className="infobox-field">
+        <label>색</label>
+        <input type="color" value={style.color} onChange={(e) => setStyle({ color: e.target.value })} />
+      </span>
+      <span className="infobox-field">
+        <label>투명도</label>
+        <input
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.1}
+          value={style.opacity}
+          onChange={(e) => setStyle({ opacity: Number(e.target.value) })}
+        />
+      </span>
+      <span className="infobox-field">
+        <label>굵기</label>
+        <select value={style.width} onChange={(e) => setStyle({ width: Number(e.target.value) })}>
+          <option value={1}>가늘게</option>
+          <option value={3}>보통</option>
+          <option value={6}>굵게</option>
+        </select>
+      </span>
+      <span className="infobox-field">
+        <label>선종류</label>
+        <select
+          value={style.lineType}
+          onChange={(e) => setStyle({ lineType: e.target.value as 'solid' | 'dashed' | 'dotted' })}
+        >
+          <option value="solid">실선</option>
+          <option value="dashed">파선</option>
+          <option value="dotted">점선</option>
+        </select>
+      </span>
+      <span className="infobox-hint">드래그로 그리기 — 저장·공유됨 (3D서도 가능)</span>
+    </div>
+  );
+}
 
 /**
  * 활성 도구의 컨텍스트(타입 선택 + 사용 힌트). 알려진 도구 없으면 null
@@ -128,6 +183,10 @@ export function renderToolContext(
         <span className="infobox-hint">펜으로 평면을 그린 뒤 AI 패널에서 보내면 손그림대로 생성</span>
       </div>
     );
+  }
+
+  if (activeTool === 'sketch-pen') {
+    return <SketchPenContext />;
   }
 
   return null;

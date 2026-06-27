@@ -343,6 +343,42 @@ export const DimensionElementSchema = z.object({
 });
 export type DimensionElement = z.infer<typeof DimensionElementSchema>;
 
+/**
+ * 스케치/마크업 스타일 — 렌더 힌트(파생 아님, 웹 레이어가 el.style서 읽음. type.color와 동일 패턴).
+ * opacity·width는 **float**(mm=정수라 0.5 거부 → z.number()). width=mm(단 WebGL 라인 1px 한계, 진짜굵기=Line2).
+ */
+export const SketchStyleSchema = z.object({
+  color: z.string(), // #rrggbb
+  opacity: z.number().min(0).max(1),
+  width: z.number().min(0), // mm (렌더 힌트)
+  lineType: z.enum(['solid', 'dashed', 'dotted']),
+});
+export type SketchStyle = z.infer<typeof SketchStyleSchema>;
+
+/**
+ * 스케치/마크업 — 프리핸드 스트로크. 정점=`boundary`(파라미터, zone/slab 선례 → 불변①).
+ * mode: 'line'=열린 폴리라인 · 'zone'=채운 닫힌 폴리곤(deriveZone 재사용).
+ * frame 부재=레벨 바닥 평면(boundary=문서 평면 mm) · frame 존재=자유 3D 평면(boundary=평면-로컬 uv, Stage4).
+ * `boundary` 필드명·POSITIONAL='polygon' = move/rotate/footprint 기계부 재사용(신규코드 0).
+ */
+export const SketchElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('sketch'),
+  levelId: z.string(),
+  mode: z.enum(['line', 'zone']),
+  boundary: z.array(Pt).min(2), // 정점 (line=열림, zone=닫힘) — 자기교차 허용(isSimplePolygon 검사 안 함)
+  style: SketchStyleSchema,
+  // 자유 3D 평면(Stage4) — 원점(mm)+직교 단위 basis. 부재 시 레벨 바닥(수평).
+  frame: z
+    .object({
+      o: z.tuple([mm, mm, mm]),
+      x: z.tuple([z.number(), z.number(), z.number()]),
+      y: z.tuple([z.number(), z.number(), z.number()]),
+    })
+    .optional(),
+});
+export type SketchElement = z.infer<typeof SketchElementSchema>;
+
 export const ElementSchema = z.discriminatedUnion('kind', [
   WallElementSchema,
   OpeningElementSchema,
@@ -358,6 +394,7 @@ export const ElementSchema = z.discriminatedUnion('kind', [
   TextElementSchema,
   LabelElementSchema,
   DimensionElementSchema,
+  SketchElementSchema,
 ]);
 export type Element = z.infer<typeof ElementSchema>;
 
@@ -381,6 +418,7 @@ export const KIND_LABEL: Record<Element['kind'], string> = {
   text: '텍스트',
   label: '레이블',
   dimension: '치수',
+  sketch: '스케치',
 };
 
 /**
@@ -407,6 +445,7 @@ export const POSITIONAL: Record<Element['kind'], PositionalCategory> = {
   slab: 'polygon',
   roof: 'polygon',
   zone: 'polygon',
+  sketch: 'polygon', // boundary 정점 — move/rotate/footprint 기계부 재사용
   column: 'point',
   text: 'point',
   label: 'point',

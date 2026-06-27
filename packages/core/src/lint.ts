@@ -262,6 +262,8 @@ export function lint(store: DocStore): LintFinding[] {
       key = `zn|${el.levelId}|${el.name}|${el.number ?? ''}|${boundaryKey(el.boundary)}`;
     } else if (el.kind === 'label') {
       key = `lbl|${el.levelId}|${el.at[0]},${el.at[1]}|${el.template}|${el.targetId ?? ''}|${el.customText ?? ''}`;
+    } else if (el.kind === 'sketch') {
+      key = `sk|${el.levelId}|${el.mode}|${boundaryKey(el.boundary)}`;
     } else {
       key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
     }
