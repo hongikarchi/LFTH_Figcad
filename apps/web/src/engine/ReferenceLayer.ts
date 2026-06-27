@@ -144,6 +144,29 @@ export class ReferenceLayer {
       opacity: UNDERLAY_OPACITY,
       depthWrite: false,
     });
+    // 솔리드 해치 채움(로고·poché) — 루프 삼각화해 한 메시(1 draw call). 라인보다 살짝 아래(y) 둬 경계선이 위.
+    const fillTris: number[] = [];
+    for (const fl of underlay.fills) {
+      if (underlay.layerHidden[fl.layerIdx]) continue;
+      const loopsV = fl.loops.map((lp) => lp.map(([x, y]) => new THREE.Vector2(x, y)));
+      let oi = 0, oa = -1; // 가장 큰 루프 = 외곽, 나머지 = 구멍
+      for (let i = 0; i < loopsV.length; i++) { const ar = Math.abs(THREE.ShapeUtils.area(loopsV[i]!)); if (ar > oa) { oa = ar; oi = i; } }
+      const outer = loopsV[oi]!;
+      const holes = loopsV.filter((_, i) => i !== oi);
+      const all = [...outer, ...holes.flat()];
+      let faces: number[][];
+      try { faces = THREE.ShapeUtils.triangulateShape(outer, holes); } catch { continue; }
+      for (const f of faces) for (const idx of f) { const v = all[idx]; if (v) fillTris.push(v.x * 0.001, -0.01, v.y * 0.001); }
+    }
+    if (fillTris.length) {
+      const fgeo = new THREE.BufferGeometry();
+      fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fillTris), 3));
+      const fmesh = new THREE.Mesh(fgeo, new THREE.MeshBasicMaterial({ color: UNDERLAY_COLOR, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+      fmesh.userData['figcadReference'] = true;
+      fmesh.renderOrder = -1;
+      g.add(fmesh);
+    }
+
     const lines = new THREE.LineSegments(geo, mat);
     lines.userData['figcadReference'] = true;
     g.add(lines);

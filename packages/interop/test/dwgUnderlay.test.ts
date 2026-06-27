@@ -45,6 +45,17 @@ describe('extractDwgUnderlay — 기본 엔티티', () => {
     expect(u.segments.length / 4).toBe(2);
   });
 
+  it('solidFill HATCH → fills 채움 루프(로고·poché)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'HATCH', solidFill: 1, boundaryPaths: [{ boundaryPathTypeFlag: 2, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] }] }]));
+    expect(u.fills.length).toBe(1);
+    expect(u.fills[0]!.loops[0]!.length).toBe(4); // 4코너 루프
+  });
+
+  it('패턴 HATCH(solidFill 없음) → 채움 안 함(경계만)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'HATCH', boundaryPaths: [{ boundaryPathTypeFlag: 2, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }] }]));
+    expect(u.fills.length).toBe(0);
+  });
+
   it('CIRCLE → 닫힌 폴리곤, 모든 점이 원 위', () => {
     const u = extractDwgUnderlay(db([{ type: 'CIRCLE', center: { x: 100, y: 200 }, radius: 50 }]));
     expect(u.segments.length / 4).toBeGreaterThanOrEqual(16); // π/16 분해능

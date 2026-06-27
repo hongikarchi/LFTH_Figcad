@@ -100,6 +100,7 @@ const sceneManager = new SceneManager(store, engine);
 // M13 멀티모델 허브: 외부 모델 read-only 오버레이(별도 표현, derive·store 밖 — 불변①).
 // reconciler가 동기화된 federation 채널을 ReferenceLayer(로컬 메시)에 반영(명령형 — 불변③).
 const referenceLayer = new ReferenceLayer(engine);
+referenceLayer.setPlanFlipped(useUiStore.getState().viewMode === 'plan'); // 초기 모드 반영(뷰모드 변경 훅이 init엔 안 불림 → 평면서 업로드 시 텍스트 미러 방지)
 const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS, fetchDwgUnderlay);
 
 // 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.

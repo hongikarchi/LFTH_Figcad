@@ -66,6 +66,8 @@ export interface DwgEntity {
   position?: DwgVec;
   // HATCH
   boundaryPaths?: DwgHatchPath[];
+  solidFill?: number; // 1 = 솔리드 채움(로고·poché) → 영역 채움
+  patternName?: string;
   // SOLID / TRACE (2D 채움 4점)
   corner1?: DwgVec;
   corner2?: DwgVec;
@@ -159,10 +161,17 @@ export interface DwgUnderlay {
   /** 레이어별 세그먼트 수 (layers와 동일 순서) */
   layerSegCount: number[];
   labels: DwgLabel[];
+  /** 솔리드 해치 채움 영역(로고·poché 등) — 경계 루프(월드 mm). 삼각화는 렌더(addUnderlay)서. */
+  fills: DwgFill[];
   /** 미지원/미렌더 엔티티 타입별 개수 — 조용한 누락 방지(UI 고지) */
   skipped: Record<string, number>;
   /** 전체 bbox [minX, minY, maxX, maxY] mm (세그먼트만) */
   bbox: [number, number, number, number];
+}
+/** 솔리드 해치 채움 — 경계 루프들(월드 mm). 첫 루프=외곽. */
+export interface DwgFill {
+  loops: [number, number][][];
+  layerIdx: number;
 }
 
 export interface DwgUnderlayOptions {
@@ -336,6 +345,7 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
   const seg: number[] = [];
   const segLayerIdx: number[] = [];
   const labels: DwgLabel[] = [];
+  const fills: DwgFill[] = [];
   const skipped: Record<string, number> = {};
   const layerIndex = new Map<string, number>();
   const layers: string[] = [];
@@ -441,35 +451,45 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
           break;
         }
         case 'HATCH': {
-          // 채움 패턴 대신 경계선만 렌더 (라인워크 backdrop엔 충분, SOLID도 영역 외곽 보임).
+          // 경계선 렌더 + solidFill이면 채움 루프 수집(로고·poché). 삼각화는 addUnderlay. 패턴해치=경계만.
           const paths = e.boundaryPaths ?? [];
           if (!paths.length) { skip('HATCH-empty'); break; }
+          const fillLoops: [number, number][][] = [];
           for (const path of paths) {
+            const loop: [number, number][] = []; // 채움용 월드 점(호=시작점 근사)
             const pv = path.vertices;
             if (((path.boundaryPathTypeFlag ?? 0) & 2) && pv && pv.length >= 2) {
               for (let i = 0; i < pv.length; i++) { // 폴리라인 경계(닫힘)
                 const a = pv[i]!, b = pv[(i + 1) % pv.length]!;
+                const wa = apply(M, a.x, a.y);
                 if (a.bulge && Math.abs(a.bulge) > 1e-9) tessBulge(a, b, a.bulge, M, li);
-                else pushSeg(apply(M, a.x, a.y), apply(M, b.x, b.y), li);
+                else pushSeg(wa, apply(M, b.x, b.y), li);
+                loop.push(wa);
               }
-              continue;
-            }
-            for (const ed of path.edges ?? []) { // edge 기반 경계
-              if (!ed) continue;
-              if (ed.type === 1 && ed.start && ed.end) {
-                pushSeg(apply(M, ed.start.x, ed.start.y), apply(M, ed.end.x, ed.end.y), li);
-              } else if (ed.type === 2 && ed.center && ed.radius != null) {
-                const a0 = ed.startAngle ?? 0, a1 = ed.endAngle ?? Math.PI * 2;
-                if (ed.isCounterClockwise === 0) tessArc(ed.center.x, ed.center.y, ed.radius, a1, a0, M, li);
-                else tessArc(ed.center.x, ed.center.y, ed.radius, a0, a1, M, li);
-              } else if (ed.type === 4 && ed.controlPoints && ed.controlPoints.length >= 2) {
-                const cps = ed.controlPoints; // 스플라인 = 제어점 폴리라인 근사
-                for (let i = 0; i + 1 < cps.length; i++) pushSeg(apply(M, cps[i]!.x, cps[i]!.y), apply(M, cps[i + 1]!.x, cps[i + 1]!.y), li);
-              } else {
-                skip(`HATCH-edge${ed.type ?? '?'}`);
+            } else {
+              for (const ed of path.edges ?? []) { // edge 기반 경계
+                if (!ed) continue;
+                if (ed.type === 1 && ed.start && ed.end) {
+                  const wa = apply(M, ed.start.x, ed.start.y);
+                  pushSeg(wa, apply(M, ed.end.x, ed.end.y), li);
+                  loop.push(wa);
+                } else if (ed.type === 2 && ed.center && ed.radius != null) {
+                  const a0 = ed.startAngle ?? 0, a1 = ed.endAngle ?? Math.PI * 2;
+                  if (ed.isCounterClockwise === 0) tessArc(ed.center.x, ed.center.y, ed.radius, a1, a0, M, li);
+                  else tessArc(ed.center.x, ed.center.y, ed.radius, a0, a1, M, li);
+                  loop.push(apply(M, ed.center.x + ed.radius * Math.cos(a0), ed.center.y + ed.radius * Math.sin(a0)));
+                } else if (ed.type === 4 && ed.controlPoints && ed.controlPoints.length >= 2) {
+                  const cps = ed.controlPoints; // 스플라인 = 제어점 폴리라인 근사
+                  for (let i = 0; i + 1 < cps.length; i++) pushSeg(apply(M, cps[i]!.x, cps[i]!.y), apply(M, cps[i + 1]!.x, cps[i + 1]!.y), li);
+                  for (const c of cps) loop.push(apply(M, c.x, c.y));
+                } else {
+                  skip(`HATCH-edge${ed.type ?? '?'}`);
+                }
               }
             }
+            if (loop.length >= 3) fillLoops.push(loop);
           }
+          if (e.solidFill && fillLoops.length) fills.push({ loops: fillLoops, layerIdx: li });
           break;
         }
         case 'SOLID':
@@ -596,6 +616,7 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
     layerColor,
     layerSegCount,
     labels,
+    fills,
     skipped,
     bbox: seg.length ? [minX, minY, maxX, maxY] : [0, 0, 0, 0],
   };
