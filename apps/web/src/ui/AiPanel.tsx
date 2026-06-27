@@ -26,8 +26,8 @@ interface Plan {
 }
 
 export function AiPanel({ store }: { store: DocStore }) {
-  // AI = peer 모드(피드백). aiOpen 게이트 대신 activeMode==='ai'서 보임 — 단 항상 mount(챗 history 보존).
-  const activeMode = useUiStore((s) => s.activeMode);
+  // AI = 앰비언트 dock(iter-2). aiOpen으로 전 모드에서 토글 — 단 항상 mount(챗 history 보존).
+  const aiOpen = useUiStore((s) => s.aiOpen);
   const selection = useUiStore((s) => s.selection);
   const aiModel = useUiStore((s) => s.aiModel);
   const aiAutoApply = useUiStore((s) => s.aiAutoApply);
@@ -228,10 +228,21 @@ export function AiPanel({ store }: { store: DocStore }) {
   };
 
   return (
-    <div className={`ai-panel ${activeMode === 'ai' ? '' : 'ai-hidden'}`}>
+    <div className={`ai-panel ${aiOpen ? '' : 'ai-hidden'}`}>
       <div className="ai-head">
-        <span className="ai-title">AI 모드</span>
+        <span className="ai-title">AI</span>
         <div className="ai-controls">
+          <button
+            className="ai-icon-btn"
+            title="스케치 — 손그림 평면을 그려 보내면 모델로 (평면 전환)"
+            onClick={() => {
+              const s = useUiStore.getState();
+              s.setViewMode('plan');
+              s.setTool('sketch');
+            }}
+          >
+            ✏ 스케치
+          </button>
           <select
             className="ai-model"
             value={aiModel}
@@ -251,6 +262,13 @@ export function AiPanel({ store }: { store: DocStore }) {
             />
             자동
           </label>
+          <button
+            className="ai-close"
+            title="AI dock 닫기"
+            onClick={() => useUiStore.getState().setAiOpen(false)}
+          >
+            ✕
+          </button>
         </div>
       </div>
       <div className="ai-msgs" ref={listRef}>

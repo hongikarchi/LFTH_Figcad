@@ -65,10 +65,10 @@ export function HubStrip({
       <div className="hub-add-wrap">
         <button
           className="hub-add"
-          title="다른 툴의 모델을 read-only 오버레이로 겹쳐 봅니다 (비파괴 — 문서 안 바뀜)"
+          title="다른 툴의 모델(Rhino·CAD·IFC·다른 Figcad 룸)을 read-only 오버레이로 겹쳐 봅니다 (비파괴 — 내 문서 안 바뀜). 소스 관리는 허브 탭."
           onClick={() => setMenuOpen((o) => !o)}
         >
-          + 모델
+          + 연동 모델
         </button>
         {menuOpen && (
           <>

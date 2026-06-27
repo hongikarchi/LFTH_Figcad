@@ -172,6 +172,7 @@ export function LintPanel({
     if (!el) return;
     const { x, y, levelId } = anchorOf(store, el);
     const ui = useUiStore.getState();
+    ui.setMode('model'); // 검사=모델링 이슈 해결 → 점프는 모델 모드로 착지 (iter-2 1-1)
     if (levelId && store.getLevel(levelId)) ui.setActiveLevel(levelId);
     ui.setSelection([el.id]);
     const elev = levelId ? (store.getLevel(levelId)?.elevation ?? 0) : 0;

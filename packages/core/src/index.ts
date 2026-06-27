@@ -12,3 +12,4 @@ export * from './ai';
 export * from './capabilities';
 export * from './lint';
 export * from './diff';
+export * from './connectorDedup';

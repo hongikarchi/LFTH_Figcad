@@ -338,12 +338,22 @@ export class DocStore {
 
   get meta(): DocMeta {
     const po = this.yMeta.get('projectOrigin');
+    const cp = this.yMeta.get('connectorPush');
     return {
       schemaVersion: (this.yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
       projectName: (this.yMeta.get('projectName') as string) ?? '새 프로젝트',
       units: 'mm',
       ...(Array.isArray(po) && po.length === 2 ? { projectOrigin: [Number(po[0]), Number(po[1])] as [number, number] } : {}),
+      ...(cp && typeof cp === 'object' ? { connectorPush: cp as DocMeta['connectorPush'] } : {}),
     };
+  }
+
+  /** 커넥터 푸시 누계 상태 기록 (서버 ?op=apply가 호출 — 허브 UI 표시용). */
+  setConnectorPush(info: { count: number; deduped: number; ts: number }): void {
+    this.transact(() => this.yMeta.set('connectorPush', info));
+  }
+  getConnectorPush(): { count: number; deduped: number; ts: number } | null {
+    return this.meta.connectorPush ?? null;
   }
 
   /** 프로젝트 원점 offset 설정 (recenter import 시 1회 — 부지좌표 복원용 기억). [0,0]이면 제거. */
@@ -783,6 +793,7 @@ export class DocStore {
     levelId: Id;
     at: Pt;
     targetId?: Id;
+    leaderAt?: Pt;
     template: 'name' | 'area' | 'custom';
     customText?: string;
     leader?: boolean;
@@ -795,6 +806,9 @@ export class DocStore {
       at: [quantize(params.at[0]), quantize(params.at[1])],
       template: params.template,
       ...(params.targetId !== undefined ? { targetId: params.targetId } : {}),
+      ...(params.leaderAt !== undefined
+        ? { leaderAt: [quantize(params.leaderAt[0]), quantize(params.leaderAt[1])] }
+        : {}),
       ...(params.customText !== undefined ? { customText: params.customText } : {}),
       ...(params.leader !== undefined ? { leader: params.leader } : {}),
     }) as LabelElement;
@@ -939,6 +953,7 @@ export class DocStore {
       if (next.size !== undefined) next.size = quantize(next.size);
     } else if (next.kind === 'label') {
       next.at = [quantize(next.at[0]), quantize(next.at[1])];
+      if (next.leaderAt) next.leaderAt = [quantize(next.leaderAt[0]), quantize(next.leaderAt[1])];
     } else if (next.kind === 'dimension') {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
@@ -1182,7 +1197,10 @@ export class DocStore {
       }
       case 'point': {
         const p = el as Extract<Element, { at: Pt }>;
-        return { at: q2(xform(p.at)) };
+        const out: Record<string, unknown> = { at: q2(xform(p.at)) };
+        // 라벨 free 지시선 시작점도 함께 변환(텍스트와 강체) — 없으면 무시
+        if (el.kind === 'label' && el.leaderAt) out['leaderAt'] = q2(xform(el.leaderAt));
+        return out;
       }
       case 'hosted':
         return {}; // opening은 2nd pass(호스트 재맵)에서 처리
@@ -1279,6 +1297,8 @@ export class DocStore {
       case 'point': {
         const p = el as Extract<Element, { at: Pt }>;
         ymap.set('at', q2(f(p.at)));
+        // 라벨 free 지시선 시작점도 강체 이동(at과 함께)
+        if (el.kind === 'label' && el.leaderAt) ymap.set('leaderAt', q2(f(el.leaderAt)));
         break;
       }
       case 'hosted':
@@ -1484,12 +1504,14 @@ export class DocStore {
       if (p.success) federation.push(p.data);
     }
     const po = yMeta.get('projectOrigin');
+    const cp = yMeta.get('connectorPush');
     return {
       meta: {
         schemaVersion: (yMeta.get('schemaVersion') as number) ?? CORE_SCHEMA_VERSION,
         projectName: (yMeta.get('projectName') as string) ?? '새 프로젝트',
         units: 'mm',
         ...(Array.isArray(po) && po.length === 2 ? { projectOrigin: [Number(po[0]), Number(po[1])] as [number, number] } : {}),
+        ...(cp && typeof cp === 'object' ? { connectorPush: cp as DocMeta['connectorPush'] } : {}),
       },
       levels,
       types,
@@ -1508,6 +1530,7 @@ export class DocStore {
       store.yMeta.set('projectName', snap.meta.projectName);
       store.yMeta.set('units', snap.meta.units);
       if (snap.meta.projectOrigin) store.yMeta.set('projectOrigin', snap.meta.projectOrigin);
+      if (snap.meta.connectorPush) store.yMeta.set('connectorPush', snap.meta.connectorPush);
       for (const lv of snap.levels) store.yLevels.set(lv.id, LevelSchema.parse(lv));
       for (const t of snap.types) store.yTypes.set(t.id, ElemTypeSchema.parse(t));
       for (const el of snap.elements) {
@@ -1560,6 +1583,8 @@ export class DocStore {
       this.yMeta.set('units', snap.meta.units);
       if (snap.meta.projectOrigin) this.yMeta.set('projectOrigin', snap.meta.projectOrigin);
       else this.yMeta.delete('projectOrigin');
+      if (snap.meta.connectorPush) this.yMeta.set('connectorPush', snap.meta.connectorPush);
+      else this.yMeta.delete('connectorPush');
       for (const lv of levels) this.yLevels.set(lv.id, lv);
       for (const t of types) this.yTypes.set(t.id, t);
       for (const el of elements) {
@@ -1732,6 +1757,7 @@ export class DocStore {
             ne['boundary'] = (e as { boundary: Pt[] }).boundary.map(shiftPt);
           } else if (cat === 'point') {
             ne['at'] = shiftPt((e as { at: Pt }).at);
+            if (e.kind === 'label' && e.leaderAt) ne['leaderAt'] = shiftPt(e.leaderAt);
           }
         }
         if ('levelId' in e && e.levelId) ne['levelId'] = remap(e.levelId);
@@ -2024,8 +2050,10 @@ export function rebaseSnapshot(snap: DocSnapshot, sign: 1 | -1): DocSnapshot {
       return { ...el, boundary: e.boundary.map(shiftPt) };
     }
     if (cat === 'point') {
-      const e = el as { at: Pt };
-      return { ...el, at: shiftPt(e.at) };
+      const e = el as { at: Pt; leaderAt?: Pt };
+      return e.leaderAt
+        ? { ...el, at: shiftPt(e.at), leaderAt: shiftPt(e.leaderAt) }
+        : { ...el, at: shiftPt(e.at) };
     }
     return el; // hosted(opening) — 호스트 상대, 절대좌표 없음
   }) as Element[];

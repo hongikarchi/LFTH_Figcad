@@ -1,90 +1,71 @@
 import * as THREE from 'three';
-import { snapPoint, type SnapResult } from '@figcad/core';
-import { pickElement } from '../engine/Picker';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
-
-const SNAP_PX = 12;
-const GRID_MM = 100;
+import { LeaderCapture, type LeaderResult } from './leaderCapture';
 
 /**
- * 레이블(Revit 태그) 도구 — 점 클릭:
- *   요소 위 = 그 요소를 타깃으로 자동 라벨 (존=면적, 그 외=이름/타입명) + 지시선.
- *   빈 곳 = 떠있는 입력으로 자유 custom 노트.
- * 타깃 추종·고아 fallback은 파생(deriveLabel)에서. CommentTool 앵커 패턴 재사용.
+ * 레이블(Revit 태그) 도구 — 2클릭 지시선(iter-2 3-2):
+ *   클릭1 = 지시선 시작점. 요소 위면 그 요소를 타깃(자동 템플릿, 지시선이 타깃 추종).
+ *           빈 곳이면 leaderAt(고정 지시선 시작점)로 자유 custom 노트.
+ *   클릭2 = 텍스트 위치(at). 요소 타깃은 즉시 생성, 자유 노트는 텍스트 입력 후 생성.
+ * 타깃 추종·고아 fallback·지시선 끝점(targetCenter ?? leaderAt)은 파생(deriveLabel)에서.
  */
 export class LabelTool implements Tool {
-  private marker: THREE.Mesh;
+  private cap: LeaderCapture;
   private editing = false;
 
   constructor(private ctx: EditorContext) {
-    this.marker = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff9500 }),
-    );
-    this.marker.visible = false;
-    ctx.engine.scene.add(this.marker);
+    this.cap = new LeaderCapture(ctx, 0xff9500, (r) => this.complete(r));
   }
 
   down(): void {}
 
   move(info: ToolPointerInfo): void {
-    if (!info.doc || this.editing) return;
-    this.updateMarker(this.snap(info), info.mmPerPixel);
-    this.ctx.engine.requestRender();
+    if (!this.editing) this.cap.move(info);
   }
 
   // up에서 처리 (down의 mouseup이 입력창 포커스 강탈)
   up(info: ToolPointerInfo): void {
-    if (!info.doc || this.editing) return;
-    const at = this.snap(info).point;
-    let levelId = this.ctx.levelId();
-    const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
-    const target = hit ? this.ctx.store.getElement(hit) : undefined;
-    // 자기 자신(라벨)·코멘트류는 타깃으로 안 씀
-    if (target && target.kind !== 'label') {
-      if ('levelId' in target) levelId = target.levelId;
-      const template = target.kind === 'zone' ? 'area' : 'name';
-      this.ctx.store.createLabel({ levelId, at, targetId: target.id, template, leader: true });
-      this.marker.visible = false; // 펜 탭은 후속 hover move가 없어 마커가 남음 — 즉시 숨김
-      this.ctx.engine.requestRender();
-      return;
-    }
-    // 빈 곳 = 자유 custom 노트 (텍스트 입력)
-    const elev = (this.ctx.store.getLevel(levelId)?.elevation ?? 0) / 1000;
-    const world = new THREE.Vector3(at[0] / 1000, elev + 0.02, at[1] / 1000);
-    this.editing = true;
-    this.marker.visible = false;
-    void this.ctx.hud.promptText(world, this.ctx.rig.active).then((text) => {
-      this.editing = false;
-      if (text) {
-        this.ctx.store.createLabel({ levelId, at, template: 'custom', customText: text });
-        this.ctx.engine.requestRender();
-      }
-    });
+    if (!this.editing) this.cap.up(info);
   }
 
   cancel(): void {
-    this.marker.visible = false;
-    this.ctx.engine.requestRender();
+    this.editing = false;
+    this.cap.cancel();
   }
 
   enter(): void {
     this.cancel();
   }
 
-  private snap(info: ToolPointerInfo): SnapResult {
-    return snapPoint([info.doc![0], info.doc![1]], {
-      endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
-      endpointTolerance: SNAP_PX * info.mmPerPixel,
-      grid: GRID_MM,
+  private complete(r: LeaderResult): void {
+    const levelId = r.anchorLevelId;
+    // 자기 자신(라벨)·코멘트류는 타깃으로 안 씀
+    const target = r.anchorEl && r.anchorEl.kind !== 'label' ? r.anchorEl : null;
+    if (target) {
+      // 요소 태그 — 자동 템플릿(존=면적, 그 외=이름) + 지시선(타깃 중심 추종)
+      const template = target.kind === 'zone' ? 'area' : 'name';
+      this.ctx.store.createLabel({ levelId, at: r.textAt, targetId: target.id, template, leader: true });
+      this.ctx.engine.requestRender();
+      return;
+    }
+    // 자유 custom 노트 — 지시선 시작점=anchor(leaderAt 고정), 텍스트 입력
+    const elev = (this.ctx.store.getLevel(levelId)?.elevation ?? 0) / 1000;
+    const world = new THREE.Vector3(r.textAt[0] / 1000, elev + 0.02, r.textAt[1] / 1000);
+    this.editing = true;
+    void this.ctx.hud.promptText(world, this.ctx.rig.active).then((text) => {
+      this.editing = false;
+      if (text) {
+        this.ctx.store.createLabel({
+          levelId,
+          at: r.textAt,
+          leaderAt: r.anchor,
+          template: 'custom',
+          customText: text,
+          leader: true,
+        });
+        this.ctx.engine.requestRender();
+      }
     });
-  }
-
-  private updateMarker(snap: SnapResult, mmPerPixel: number): void {
-    const elev = (this.ctx.store.getLevel(this.ctx.levelId())?.elevation ?? 0) / 1000;
-    this.marker.visible = true;
-    this.marker.position.set(snap.point[0] / 1000, elev + 0.02, snap.point[1] / 1000);
-    this.marker.scale.setScalar(Math.max((6 * mmPerPixel) / 1000, 0.01));
   }
 }

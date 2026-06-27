@@ -11,9 +11,9 @@ import { HubManage } from './HubManage';
 import { useDocVersion, type ViewActions } from './App';
 
 /**
- * 좌 WorkRail (UI/UX 재구성 P1) — mode별 working surface.
- * 협업·리뷰: 코멘트 + 검사 + 버전(섹션). 모델: 도구(Toolbox) + 프로젝트 맵(도면 뷰 포함).
- * 허브: HubManage. AI: 명령 도구 팔레트. (도면=mode 아님 — ProjectMap 뷰 네비.)
+ * 좌 WorkRail (UI/UX 재구성 iter-2) — mode별 working surface.
+ * 협업·리뷰: 코멘트 + 버전(섹션). 모델: 도구(Toolbox) + 프로젝트 맵 + 검사(lintOpen 시 도킹).
+ * 검사(lint)=모델링 이슈 해결이라 모델 모드에 둠(iter-2 1-1). 허브: HubManage. AI=탭 아닌 dock.
  */
 export function WorkRail({
   store,
@@ -35,17 +35,6 @@ export function WorkRail({
     );
   }
 
-  if (activeMode === 'ai') {
-    return (
-      <div className="work-rail">
-        <ToolPalette tools={MODE_TOOLS.ai} title="AI 명령 도구" />
-        <div className="rail-hint">
-          선택·스케치·코멘트로 AI에게 정확히 지시 — 선택한 요소는 우측 챗에서 "이거"로 참조됩니다.
-        </div>
-      </div>
-    );
-  }
-
   if (activeMode === 'review') {
     const noComments = store.listComments().length === 0;
     return (
@@ -53,11 +42,10 @@ export function WorkRail({
         <ToolPalette tools={MODE_TOOLS.review} title="리뷰 도구" />
         {noComments && (
           <div className="review-onboard">
-            협업·리뷰 — 코멘트·검사·버전이 여기 모입니다. 상단 <b>공유</b>로 팀을 초대하세요.
+            협업·리뷰 — 코멘트·버전이 여기 모입니다. 상단 <b>공유</b>로 팀을 초대하세요. (검사는 모델 모드)
           </div>
         )}
         <CommentPanel store={store} actions={actions} embedded />
-        <LintPanel store={store} actions={actions} embedded />
         <VersionPanel store={store} embedded />
       </div>
     );
@@ -75,6 +63,8 @@ export function WorkRail({
     <div className="work-rail">
       <Toolbox />
       <ProjectMap store={store} />
+      {/* 검사(lint) — 모델 모드 도킹 패널. lintOpen일 때만 렌더(LintPanel 내부 게이트). */}
+      <LintPanel store={store} actions={actions} />
     </div>
   );
 }

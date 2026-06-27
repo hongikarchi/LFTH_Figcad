@@ -36,21 +36,21 @@ export type TypeKind =
 export type ViewModeUi = '3d' | 'plan';
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
-/** 정체성 순 작업 모드 (UI/UX 재구성 Part4). AI = peer 모드. 도면=mode 아닌 view(피드백 — ProjectMap서 navigate). */
-export type WorkspaceMode = 'review' | 'model' | 'hub' | 'ai';
+/** 정체성 순 작업 모드 (UI/UX 재구성 iter-2). AI = 탭 아닌 앰비언트 dock(전 모드 토글, aiOpen). 도면=mode 아닌 view. */
+export type WorkspaceMode = 'review' | 'model' | 'hub';
 
 /**
- * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기, 협업=코멘트,
- * AI=명령 grounding(선택·스케치·코멘트). mode 전환 시 도구가 팔레트에 없으면 select로 리셋.
- * 도면(단면·입면·치수)은 mode 아님 — 모델 Toolbox + DrawingPanel서 진입.
+ * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기,
+ * 협업·리뷰=선택·스케치·주석(코멘트/레이블/치수). mode 전환 시 도구가 팔레트에 없으면 select로 리셋.
+ * 텍스트('text')는 신규 생성 중단(iter-2 3-3) — back-compat 위해 스키마·TextTool은 유지, 팔레트서만 제외.
+ * AI 도구(스케치)는 mode 아닌 AI dock서 무장. 도면(단면·입면)은 DrawingPanel서 진입.
  */
 export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
-  review: ['select', 'comment'],
+  review: ['select', 'sketch', 'comment', 'label', 'dimension'],
   model: [
     'select', 'wall', 'door', 'window', 'slab', 'grid', 'column', 'beam',
-    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'text', 'label',
+    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'label',
   ],
-  ai: ['select', 'sketch', 'comment'],
   hub: ['select'],
 };
 
@@ -102,6 +102,8 @@ interface UiState {
   aiModel: AiModelId;
   /** AI auto mode — 계획 승인 게이트 건너뛰고 자동 적용(에러 잔존 시 게이트 fallback) */
   aiAutoApply: boolean;
+  /** AI dock 표시 (iter-2: AI = 탭 아닌 전 모드 앰비언트 dock 토글) */
+  aiOpen: boolean;
   setTool: (t: ToolName) => void;
   setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
@@ -114,6 +116,7 @@ interface UiState {
   setActiveViewId: (id: Id | null) => void;
   setAiModel: (m: AiModelId) => void;
   setAiAutoApply: (v: boolean) => void;
+  setAiOpen: (open: boolean) => void;
   setViewMode: (m: ViewModeUi) => void;
   setMode: (m: WorkspaceMode) => void;
   setActiveType: (kind: TypeKind, id: Id) => void;
@@ -156,6 +159,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeViewId: null,
   aiModel: (localStorage.getItem('figcad.aiModel') as AiModelId | null) ?? 'claude-opus-4-8',
   aiAutoApply: false,
+  aiOpen: false,
   // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
   setTool: (activeTool) =>
     set(
@@ -179,6 +183,7 @@ export const useUiStore = create<UiState>((set) => ({
     set({ aiModel });
   },
   setAiAutoApply: (aiAutoApply) => set({ aiAutoApply }),
+  setAiOpen: (aiOpen) => set({ aiOpen }),
   setViewMode: (viewMode) => set({ viewMode }),
   // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor)
   setMode: (activeMode) =>

@@ -38,8 +38,8 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
   {
     title: '문서',
     items: [
+      // 텍스트 도구 제거(iter-2 3-3) — 자유 텍스트는 레이블 custom 노트로 대체. 스키마·기존 요소는 보존.
       { label: '치수', icon: 'dimension', tool: 'dimension' },
-      { label: '텍스트', icon: 'text', tool: 'text' },
       { label: '레이블', icon: 'pencil', tool: 'label' },
       { label: '해치', icon: 'hatch', planned: '2D 도면 단계' },
     ],

@@ -90,6 +90,21 @@ export class CameraRig {
     return true;
   }
 
+  /**
+   * 북(문서 +y = 월드 +Z)이 화면에서 향하는 각도(rad, 화면좌표 atan2(dy,dx), y는 아래로 +).
+   * 방위표(읽기전용)용 — 타깃과 타깃+북 한 점을 투영해 화면 방향 산출(plan X-반사·3D 회전 모두 일반).
+   */
+  northScreenAngle(): number {
+    const cam = this.active;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const p0 = this.target.clone().project(cam);
+    const pN = this.target.clone().add(new THREE.Vector3(0, 0, 1)).project(cam);
+    const dx = (pN.x - p0.x) * W;
+    const dy = -(pN.y - p0.y) * H; // NDC y(위로+) → 화면 y(아래로+)
+    return Math.atan2(dy, dx);
+  }
+
   /** 화면 1px당 월드 m (타깃 깊이 기준) — 스냅 톨러런스/팬 환산용 */
   worldPerPixel(): number {
     if (this.mode === 'plan' && this.tweenT >= 1) {

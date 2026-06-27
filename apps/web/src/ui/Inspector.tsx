@@ -16,15 +16,19 @@ import { ReviewInspector } from './ReviewInspector';
  */
 export function Inspector({ store }: { store: DocStore }) {
   const activeMode = useUiStore((s) => s.activeMode);
+  const selection = useUiStore((s) => s.selection);
   // mode-gated(사용자 결정): 협업 = 선택 요소의 코멘트 스레드, 모델 = 속성. 한 곳서 분기.
   if (activeMode === 'review') {
+    // 협업·리뷰에도 주석(치수·레이블) 편집 노출(iter-2 3-1) — 선택이 주석이면 InfoBox 에디터 + 코멘트.
+    const el = selection.length === 1 ? store.getElement(selection[0]!) : undefined;
+    const isAnnot = el && (el.kind === 'dimension' || el.kind === 'label' || el.kind === 'text');
     return (
       <div className="inspector">
+        {isAnnot && <InfoBox store={store} />}
         <ReviewInspector store={store} />
       </div>
     );
   }
-  if (activeMode === 'ai') return null; // 우측은 AiPanel(챗)이 차지 — Inspector 비움
   if (activeMode === 'hub') {
     return (
       <div className="inspector">

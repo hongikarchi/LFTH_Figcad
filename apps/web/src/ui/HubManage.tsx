@@ -31,6 +31,7 @@ export function HubManage({
 
   const sources = store.listFederationSources();
   const room = new URL(location.href).searchParams.get('p') ?? '—';
+  const cp = store.getConnectorPush(); // 커넥터(Rhino) 푸시 누계 — 라이브 쓰기 시 서버가 기록
 
   // 머지 게이트(Slice9): figcad-room만 — pull 스냅샷 캡처 → 미리보기 → 승인 시 additive ops 머지.
   const startMerge = async (source: FederationSource) => {
@@ -114,6 +115,10 @@ export function HubManage({
       </button>
 
       <div className="nav-subsection">연동 소스 ({sources.length})</div>
+      <div className="hub-manage-hint">
+        read-only 오버레이(다른 Figcad 룸·파일) — <b>내 문서와 별개</b>로 겹쳐만 봅니다(비파괴).
+        Rhino 커넥터로 보낸 요소는 여기 아닌 <b>내 문서의 편집가능 요소</b>로 들어갑니다(아래 커넥터).
+      </div>
       {sources.length === 0 ? (
         <div className="hub-manage-hint">아직 없음 — 위에서 추가</div>
       ) : (
@@ -159,8 +164,18 @@ export function HubManage({
       )}
 
       <div className="nav-subsection">커넥터 (Rhino)</div>
+      {cp ? (
+        <div className="hub-connector-status">
+          <span className="hub-connector-dot">🟢</span> 푸시됨 — <b>{cp.count}</b>개 요소(편집가능)
+          {cp.deduped > 0 && ` · 중복스킵 ${cp.deduped}`}
+          <div className="hub-manage-hint">최근 {new Date(cp.ts).toLocaleString('ko-KR')}</div>
+        </div>
+      ) : (
+        <div className="hub-manage-hint">아직 푸시 없음 — Rhino에서 <b>FigcadPushBreps</b>로 보내세요.</div>
+      )}
       <div className="hub-manage-hint">
-        Rhino에서 <b>FigcadPull / FigcadPush</b> = 이 룸과 라이브 왕복. 룸 = <b>{room}</b>
+        Rhino <b>FigcadPull / FigcadPush / FigcadPushBreps</b> = 이 룸과 라이브 왕복(룸 = <b>{room}</b>).
+        푸시 = <b>네이티브 편집가능 요소</b> 생성(오버레이와 다름). 재푸시는 멱등 — 같은 모델은 중첩 안 됩니다.
       </div>
     </div>
   );

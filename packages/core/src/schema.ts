@@ -307,14 +307,16 @@ export type TextElement = z.infer<typeof TextElementSchema>;
  * 라벨(Revit 태그) — 참조 요소(targetId)의 속성을 자동 표기하는 주석. 타입 없음.
  * template: 'name'=요소 이름/타입명, 'area'=존/슬라브/지붕 면적(㎡), 'custom'=customText.
  * 타깃 삭제(고아) 시 연쇄삭제 안 함 — customText 또는 '—' fallback(lint orphan 경고).
- * leader=지시선(at→타깃 중심). 텍스트·중심은 파생(저장 안 함).
+ * leader=지시선. 끝점 = targetId 있으면 타깃 중심(추종), 없으면 leaderAt(고정 점, 2클릭 생성).
+ * 텍스트·타깃 중심은 파생(저장 안 함). leaderAt은 free 노트의 지시선 시작점(iter-2 3-2).
  */
 export const LabelElementSchema = z.object({
   id: z.string(),
   kind: z.literal('label'),
   levelId: z.string(),
-  at: Pt, // 라벨 위치 mm
+  at: Pt, // 라벨(텍스트) 위치 mm
   targetId: z.string().optional(), // 참조 요소 id (없으면 자유 custom 노트)
+  leaderAt: Pt.optional(), // 지시선 시작점(고정) — targetId 없을 때만 의미. move/rotate 시 at과 함께 이동.
   template: z.enum(['name', 'area', 'custom']),
   customText: z.string().optional(),
   leader: z.boolean().optional(), // 지시선 표시
@@ -502,6 +504,11 @@ export interface DocMeta {
    * 없음 = recenter 안 함(좌표 그대로). Z는 rebase 안 함(모델 Z는 원점 근처라 불필요).
    */
   projectOrigin?: [number, number];
+  /**
+   * 최근 커넥터(Rhino 등) 푸시 상태 (v6) — 허브 UI 표시·디버그용. 라이브 쓰기(?op=apply) 시 서버가 기록.
+   * count=총 커넥터 푸시로 생긴 요소 누계, deduped=중복으로 스킵된 누계(멱등), ts=마지막 푸시 epoch ms.
+   */
+  connectorPush?: { count: number; deduped: number; ts: number };
 }
 
 // --- 파생 입력 스냅샷 (derive 순수성 보장) ---

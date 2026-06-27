@@ -8,6 +8,7 @@ import {
   type Id,
 } from '@figcad/core';
 import type { Engine } from './Engine';
+import type { HudLayer, CommentBubble } from '../hud/HudLayer';
 import type { DerivedGeometry } from '@figcad/core';
 
 const EDGE_COLOR = 0x2a2a2e;
@@ -124,14 +125,23 @@ export class SceneManager {
     transparent: true,
     opacity: 0.15,
   });
+  // 주석(치수·레이블·그리드) 선택 피드백 — 픽 프록시 메시가 opacity 0.04라 emissive가 안 보임 →
+  // 보이는 에지·스프라이트를 강조. 선택=파랑, 원격=피어색(색별 캐시).
+  private selEdgeMat = new THREE.LineBasicMaterial({ color: SELECT_EMISSIVE });
+  private remoteEdgeMats = new Map<string, THREE.LineBasicMaterial>();
   private selected = new Set<Id>(); // 내 선택 (다중)
   private remoteHighlights = new Map<Id, string>(); // 원격 사용자 선택 (id → 사용자 색)
   private viewMode: '3d' | 'plan' = '3d';
   private activeLevelId: Id | null = null;
 
+  // 코멘트 지시선(말풍선 at → 앵커 핀) — 파랑 반투명
+  private commentLeaderMat = new THREE.LineBasicMaterial({ color: 0x0a84ff, transparent: true, opacity: 0.55 });
+  private commentLeaders = new Map<Id, THREE.Line>();
+
   constructor(
     private store: DocStore,
     private engine: Engine,
+    private hud: HudLayer,
   ) {
     store.observe((change) => {
       // 빈 change = 코멘트 등 요소-아닌 변경(notifyAll) → 핀만 재동기, 전체 요소 재파생 스킵
@@ -151,17 +161,23 @@ export class SceneManager {
     });
   }
 
-  /** 코멘트 핀 동기화 — 루트 코멘트마다 앵커 해석 위치에 스프라이트(요소 파이프라인 밖). */
+  /**
+   * 코멘트 핀·지시선·말풍선 동기화 — 루트 코멘트마다:
+   *  핀 = 앵커 해석 위치(resolveCommentPoint, 요소 추종), 말풍선 = at(텍스트 위치, HUD DOM),
+   *  지시선 = 핀→말풍선(둘이 다를 때). 요소 파이프라인 밖(불변①·③).
+   */
   private commentPins = new Map<Id, THREE.Sprite>();
   private syncComments(store: DocStore): void {
     const comments = store.listComments();
     const replyCount = new Map<Id, number>();
     for (const c of comments) if (c.parentId) replyCount.set(c.parentId, (replyCount.get(c.parentId) ?? 0) + 1);
     const seen = new Set<Id>();
+    const bubbles: CommentBubble[] = [];
     for (const c of comments) {
       if (c.parentId) continue; // 루트만 핀
       seen.add(c.id);
-      const pt = resolveCommentPoint(store, c);
+      const anchor = resolveCommentPoint(store, c); // 핀 = 앵커(요소 추종)
+      const bubblePt = c.at; // 말풍선·지시선 끝 = 텍스트 위치
       const elev = (store.getLevel(c.levelId)?.elevation ?? 0) / 1000 + 0.05;
       const n = replyCount.get(c.id) ?? 0;
       const key = `${c.resolved ? 'r' : 'o'}:${n}`;
@@ -178,7 +194,34 @@ export class SceneManager {
         this.engine.scene.add(sprite);
         this.commentPins.set(c.id, sprite);
       }
-      sprite.position.set(pt[0] / 1000, elev, pt[1] / 1000);
+      sprite.position.set(anchor[0] / 1000, elev, anchor[1] / 1000);
+
+      // 지시선 (핀→말풍선) — 1mm 넘게 떨어졌을 때만 (앵커=at인 자유 코멘트는 생략)
+      const apart = Math.hypot(anchor[0] - bubblePt[0], anchor[1] - bubblePt[1]) > 1;
+      let leader = this.commentLeaders.get(c.id);
+      if (apart) {
+        if (!leader) {
+          leader = new THREE.Line(new THREE.BufferGeometry(), this.commentLeaderMat);
+          this.engine.scene.add(leader);
+          this.commentLeaders.set(c.id, leader);
+        }
+        leader.geometry.setFromPoints([
+          new THREE.Vector3(anchor[0] / 1000, elev, anchor[1] / 1000),
+          new THREE.Vector3(bubblePt[0] / 1000, elev, bubblePt[1] / 1000),
+        ]);
+        leader.visible = true;
+      } else if (leader) {
+        leader.visible = false;
+      }
+
+      // 말풍선 (텍스트 — HUD DOM) at 위치. 첫 줄 ~24자.
+      const oneLine = c.text.replace(/\s+/g, ' ').trim();
+      bubbles.push({
+        id: c.id,
+        text: oneLine.length > 24 ? `${oneLine.slice(0, 24)}…` : oneLine,
+        world: new THREE.Vector3(bubblePt[0] / 1000, elev, bubblePt[1] / 1000),
+        resolved: !!c.resolved,
+      });
     }
     for (const [id, sprite] of this.commentPins) {
       if (seen.has(id)) continue;
@@ -187,6 +230,13 @@ export class SceneManager {
       sprite.material.dispose();
       this.commentPins.delete(id);
     }
+    for (const [id, leader] of this.commentLeaders) {
+      if (seen.has(id)) continue;
+      this.engine.scene.remove(leader);
+      leader.geometry.dispose();
+      this.commentLeaders.delete(id);
+    }
+    this.hud.setCommentBubbles(bubbles);
   }
 
   get pickables(): THREE.Object3D[] {
@@ -217,19 +267,47 @@ export class SceneManager {
   private applyHighlight(id: Id): void {
     const entry = this.entries.get(id);
     if (!entry) return;
+    const sel = this.selected.has(id);
+    const remote = sel ? undefined : this.remoteHighlights.get(id);
+    // 솔리드: 메시 emissive (보이는 메시라 그대로 동작)
     const mat = entry.mesh.material as THREE.MeshLambertMaterial;
-    if (this.selected.has(id)) {
+    if (sel) {
       mat.emissive.setHex(SELECT_EMISSIVE);
       mat.emissiveIntensity = 0.3;
+    } else if (remote) {
+      mat.emissive.set(remote);
+      mat.emissiveIntensity = 0.25;
     } else {
-      const remote = this.remoteHighlights.get(id);
-      if (remote) {
-        mat.emissive.set(remote);
-        mat.emissiveIntensity = 0.25;
-      } else {
-        mat.emissive.setHex(0x000000);
-      }
+      mat.emissive.setHex(0x000000);
     }
+    // 주석(grid/text/label/dimension): 픽 프록시 메시(opacity 0.04)는 emissive가 안 보임 →
+    // 보이는 에지(치수선·지시선·그리드선)·스프라이트(텍스트 알약)를 강조해 선택을 표시.
+    if (
+      entry.kind === 'grid' ||
+      entry.kind === 'text' ||
+      entry.kind === 'label' ||
+      entry.kind === 'dimension'
+    ) {
+      entry.edges.material = sel
+        ? this.selEdgeMat
+        : remote
+          ? this.remoteEdgeMat(remote)
+          : entry.kind === 'grid'
+            ? this.gridEdgeMat
+            : this.edgeMat;
+      const tint = sel ? SELECT_EMISSIVE : remote ?? 0xffffff;
+      for (const s of entry.sprites) (s.material as THREE.SpriteMaterial).color.set(tint);
+    }
+  }
+
+  /** 원격 선택 에지색 — 피어 색별 LineBasicMaterial 캐시(매 변경 재생성 방지). */
+  private remoteEdgeMat(color: string): THREE.LineBasicMaterial {
+    let m = this.remoteEdgeMats.get(color);
+    if (!m) {
+      m = new THREE.LineBasicMaterial({ color });
+      this.remoteEdgeMats.set(color, m);
+    }
+    return m;
   }
 
   /** 평면 모드에서 비활성 레벨 고스팅 (15% — ArchiCAD 고스트 스토리 식) */
@@ -308,7 +386,9 @@ export class SceneManager {
     let entry = this.entries.get(id);
     if (!entry) {
       const mat = new THREE.MeshLambertMaterial({ color });
-      if (el.kind === 'grid' || el.kind === 'text' || el.kind === 'label' || el.kind === 'dimension') {
+      const isAnnotationKind =
+        el.kind === 'grid' || el.kind === 'text' || el.kind === 'label' || el.kind === 'dimension';
+      if (isAnnotationKind) {
         // 픽킹 전용 프록시 메시 (거의 안 보이게) — 그리드 리본·텍스트/레이블 박스·치수선 리본.
         // 보이는 것은 라벨 스프라이트(text/label/dim)와 에지(dimension 치수선·label 지시선)뿐.
         mat.transparent = true;
@@ -317,6 +397,8 @@ export class SceneManager {
       }
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.userData['elementId'] = id;
+      // 주석 프록시 = Picker 우선 픽(솔리드에 가려도 선택되게 — iter-2 3)
+      if (isAnnotationKind) mesh.userData['annotation'] = true;
       const edges = new THREE.LineSegments(
         new THREE.BufferGeometry(),
         el.kind === 'grid' ? this.gridEdgeMat : this.edgeMat,

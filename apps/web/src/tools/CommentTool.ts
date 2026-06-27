@@ -1,71 +1,72 @@
 import * as THREE from 'three';
-import { snapPoint, type SnapResult } from '@figcad/core';
-import { pickElement } from '../engine/Picker';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
-
-const SNAP_PX = 12;
-const GRID_MM = 100;
+import { LeaderCapture, type LeaderResult } from './leaderCapture';
 
 /**
- * 코멘트 도구 — 평면 점 클릭 → (요소 위면 그 요소에 앵커링) → 떠있는 입력 → addComment.
- * 앵커된 코멘트는 요소가 움직이면 따라가고, 삭제돼도 fallback 위치로 남는다.
+ * 코멘트 도구 — 2클릭 지시선(레이블과 같은 UX, iter-2 3-2):
+ *   클릭1 = 지시선 시작점. 요소 위면 그 요소에 앵커링(세그먼트=가까운 끝점, 기둥=at).
+ *   클릭2 = 말풍선(at) 위치 → 떠있는 입력 → addComment.
+ * 앵커된 코멘트는 요소가 움직이면 따라가고(resolveCommentPoint), 삭제돼도 at으로 남는다.
+ * 데이터 모델은 레이블과 분리(스레드·resolve·작성자) — 화면 외형(지시선+말풍선)만 공유.
  */
 export class CommentTool implements Tool {
-  private marker: THREE.Mesh;
+  private cap: LeaderCapture;
   private editing = false;
 
   constructor(private ctx: EditorContext) {
-    this.marker = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0x0a84ff }),
-    );
-    this.marker.visible = false;
-    ctx.engine.scene.add(this.marker);
+    this.cap = new LeaderCapture(ctx, 0x0a84ff, (r) => this.complete(r));
   }
 
   down(): void {}
 
   move(info: ToolPointerInfo): void {
-    if (!info.doc || this.editing) return;
-    this.updateMarker(this.snap(info), info.mmPerPixel);
-    this.ctx.engine.requestRender();
+    if (!this.editing) this.cap.move(info);
   }
 
   // up에서 입력창 (down은 mouseup이 포커스 강탈)
   up(info: ToolPointerInfo): void {
-    if (!info.doc || this.editing) return;
-    const at = this.snap(info).point;
-    // 요소 위 클릭이면 앵커링 (세그먼트=가까운 끝점, 기둥=at). 그 외=자유 코멘트.
+    if (!this.editing) this.cap.up(info);
+  }
+
+  cancel(): void {
+    this.editing = false;
+    this.cap.cancel();
+  }
+
+  enter(): void {
+    this.cancel();
+  }
+
+  private complete(r: LeaderResult): void {
+    // 클릭1 요소에 앵커링 (세그먼트=가까운 끝점, 기둥=a). 그 외=자유 코멘트.
     let anchorId: string | undefined;
     let anchorWhich: 'a' | 'b' | undefined;
-    let levelId = this.ctx.levelId();
-    const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
-    if (hit) {
-      const el = this.ctx.store.getElement(hit);
-      if (el && 'a' in el && 'b' in el) {
+    let levelId = r.anchorLevelId;
+    const el = r.anchorEl;
+    if (el) {
+      if ('a' in el && 'b' in el) {
         anchorId = el.id;
-        const da = Math.hypot(at[0] - el.a[0], at[1] - el.a[1]);
-        const db = Math.hypot(at[0] - el.b[0], at[1] - el.b[1]);
+        const da = Math.hypot(r.anchor[0] - el.a[0], r.anchor[1] - el.a[1]);
+        const db = Math.hypot(r.anchor[0] - el.b[0], r.anchor[1] - el.b[1]);
         anchorWhich = da <= db ? 'a' : 'b';
-        if ('levelId' in el) levelId = el.levelId;
-      } else if (el?.kind === 'column') {
+      } else if (el.kind === 'column') {
         anchorId = el.id;
         anchorWhich = 'a';
-        levelId = el.levelId;
       }
+      if ('levelId' in el) levelId = el.levelId;
     }
+    // 말풍선(텍스트) = 클릭2 위치(at). 앵커 있으면 핀=요소 끝점, 말풍선=at → 지시선.
     const elev = (this.ctx.store.getLevel(levelId)?.elevation ?? 0) / 1000;
-    const world = new THREE.Vector3(at[0] / 1000, elev + 0.05, at[1] / 1000);
+    const world = new THREE.Vector3(r.textAt[0] / 1000, elev + 0.05, r.textAt[1] / 1000);
     const author = localStorage.getItem('figcad.userName') ?? '게스트';
     this.editing = true;
-    this.marker.visible = false;
     void this.ctx.hud.promptText(world, this.ctx.rig.active).then((text) => {
       this.editing = false;
       if (text) {
         this.ctx.store.addComment({
           levelId,
-          at,
+          at: r.textAt,
           author,
           text,
           ...(anchorId ? { anchorId } : {}),
@@ -74,25 +75,5 @@ export class CommentTool implements Tool {
         this.ctx.engine.requestRender();
       }
     });
-  }
-
-  cancel(): void {
-    this.marker.visible = false;
-    this.ctx.engine.requestRender();
-  }
-
-  private snap(info: ToolPointerInfo): SnapResult {
-    return snapPoint([info.doc![0], info.doc![1]], {
-      endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
-      endpointTolerance: SNAP_PX * info.mmPerPixel,
-      grid: GRID_MM,
-    });
-  }
-
-  private updateMarker(snap: SnapResult, mmPerPixel: number): void {
-    const elev = (this.ctx.store.getLevel(this.ctx.levelId())?.elevation ?? 0) / 1000;
-    this.marker.visible = true;
-    this.marker.position.set(snap.point[0] / 1000, elev + 0.05, snap.point[1] / 1000);
-    this.marker.scale.setScalar(Math.max((6 * mmPerPixel) / 1000, 0.01));
   }
 }

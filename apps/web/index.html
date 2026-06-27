@@ -132,6 +132,23 @@
         align-items: center;
         gap: 8px;
       }
+      /* AI dock 토글 (iter-2: AI = 탭 아닌 전 모드 앰비언트 dock) */
+      .ai-toggle {
+        padding: 4px 10px;
+        border: 1px solid rgba(130, 125, 189, 0.35);
+        border-radius: 7px;
+        background: rgba(130, 125, 189, 0.1);
+        color: #6b66a8;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .ai-toggle.active {
+        background: rgba(130, 125, 189, 0.9);
+        color: #fff;
+        border-color: transparent;
+      }
       .presence-dot {
         width: 8px;
         height: 8px;
@@ -656,6 +673,17 @@
         color: var(--ink-soft);
         line-height: 1.5;
       }
+      .hub-connector-status {
+        padding: 6px 8px;
+        font-size: 12px;
+        color: var(--ink);
+      }
+      .hub-connector-status .hub-manage-hint {
+        padding: 2px 0 0;
+      }
+      .hub-connector-dot {
+        margin-right: 4px;
+      }
       .hub-add-row {
         display: flex;
         gap: 6px;
@@ -804,6 +832,74 @@
       }
       .viewport-cluster .vc-view {
         min-width: 40px;
+      }
+
+      /* ---- 뷰포트 위젯: 방위표 + 스케일바 (iter-2 4, 우하단 ViewportCluster 위) ---- */
+      .viewport-widgets {
+        position: fixed;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 70px);
+        right: calc(env(safe-area-inset-right, 0px) + 16px);
+        z-index: 25;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+        pointer-events: none;
+      }
+      .vw-north {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--glass);
+        border: 1px solid var(--hairline);
+        box-shadow: var(--shadow);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .vw-north-rot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        line-height: 1;
+        transform-origin: center;
+      }
+      .vw-n {
+        font-size: 9px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+      .vw-arrow {
+        font-size: 10px;
+        color: #ff375f;
+        margin-top: -1px;
+      }
+      .vw-scale {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: var(--glass);
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        padding: 5px 8px 4px;
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+      }
+      .vw-scale-bar {
+        height: 6px;
+        min-width: 30px;
+        border: 2px solid var(--ink);
+        border-top: none;
+      }
+      .vw-scale-label {
+        margin-top: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
       }
 
       /* ---- AI peer 모드 보강(피드백) ---- */

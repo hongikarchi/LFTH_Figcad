@@ -30,11 +30,17 @@ export function pickElement(
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const hits = raycaster.intersectObjects(meshes, false);
+  // 주석(치수·레이블·텍스트·그리드) 픽 프록시 우선 — 평면 top-down서 슬라브 윗면이 주석 프록시보다
+  // 높아 레이가 솔리드를 먼저 맞히면 주석이 안 잡히던 문제(iter-2 3). 주석 프록시는 작아서 그 위에
+  // 커서가 있을 때만 맞으므로, 맞았다면 사용자가 그 주석을 가리킨 것 → 우선 선택.
+  let firstId: string | null = null;
   for (const h of hits) {
     const id = h.object.userData['elementId'];
-    if (typeof id === 'string') return id;
+    if (typeof id !== 'string') continue;
+    if (h.object.userData['annotation']) return id;
+    if (firstId === null) firstId = id;
   }
-  return null;
+  return firstId;
 }
 
 /** 월드(m) → 화면 px (HUD 배치용) */

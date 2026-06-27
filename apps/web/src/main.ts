@@ -96,7 +96,8 @@ const rig = new CameraRig(window.innerWidth / window.innerHeight);
 const engine = new Engine(canvas, () => rig.active);
 engine.addTicker((dt) => rig.tick(dt));
 buildScene(engine.scene);
-const sceneManager = new SceneManager(store, engine);
+const hud = new HudLayer();
+const sceneManager = new SceneManager(store, engine, hud);
 // M13 멀티모델 허브: 외부 모델 read-only 오버레이(별도 표현, derive·store 밖 — 불변①).
 // reconciler가 동기화된 federation 채널을 ReferenceLayer(로컬 메시)에 반영(명령형 — 불변③).
 const referenceLayer = new ReferenceLayer(engine);
@@ -125,9 +126,9 @@ federation.onChange(() => {
   if (didFitFed) return;
   if (referenceLayer.list().length > 0) { didFitFed = true; setTimeout(fitView, 100); }
 });
-const hud = new HudLayer();
 engine.addTicker(() => {
   hud.reproject(rig.active);
+  hud.updateViewportWidgets(rig.worldPerPixel(), rig.northScreenAngle()); // 스케일바·방위표(줌/회전 실시간)
   return false;
 });
 

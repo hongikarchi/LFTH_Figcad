@@ -88,6 +88,34 @@ describe('레이블 — 타깃 추종 (재파생)', () => {
   });
 });
 
+describe('레이블 — free 지시선 (leaderAt, iter-2 3-2)', () => {
+  it('targetId 없는 free 노트도 leaderAt로 지시선 끝점', () => {
+    const { store, seed } = setup();
+    const lid = store.createLabel({
+      levelId: seed.levelId, at: [2000, 2000], leaderAt: [0, 0], template: 'custom', customText: 'N1', leader: true,
+    });
+    const geo = deriveOf(store, lid);
+    expect(geo!.edges.length).toBe(6); // 지시선 1세그
+    expect(geo!.edges[0]).toBeCloseTo(2); // at.x = 2000mm = 2m (월드)
+    expect(geo!.edges[3]).toBeCloseTo(0); // leaderAt.x = 0
+  });
+
+  it('move/duplicate가 at·leaderAt를 함께(강체) 이동', () => {
+    const { store, seed } = setup();
+    const lid = store.createLabel({
+      levelId: seed.levelId, at: [100, 100], leaderAt: [0, 0], template: 'custom', customText: 'x', leader: true,
+    });
+    store.moveElements([lid], [50, 60]);
+    const l = store.getElement(lid) as LabelElement;
+    expect(l.at).toEqual([150, 160]);
+    expect(l.leaderAt).toEqual([50, 60]);
+    const [cid] = store.duplicateElements([lid], [1000, 0]);
+    const copy = store.getElement(cid!) as LabelElement;
+    expect(copy.at).toEqual([1150, 160]);
+    expect(copy.leaderAt).toEqual([1050, 60]);
+  });
+});
+
 describe('레이블 — 편집 ops (silent if-chain)', () => {
   it('move/duplicate at 적용 + 복사가 targetId/template 유지', () => {
     const { store, seed } = setup();

@@ -350,20 +350,24 @@ namespace Figcad
             }
             if (ops.Count == 0) return "PushBreps: 인식된 구조부재 없음 (Brep " + breps.Count + " · 잔여 " + nResidual + " — 레이어 시맨틱 매칭 0)";
 
-            // 3) 배치 POST (Push와 동일 패턴, writeback은 생략 — in-block id 매핑 불가, ingest=PR 1회)
+            // 3) 배치 POST. writeback 생략(in-block id 매핑 불가) 대신 서버 멱등화(?dedup=1):
+            //    같은 content(종류+레벨+타입+좌표) create는 서버가 스킵 → 재푸시 정확중첩 차단(iter-2 2).
+            //    (writeback과 달리 in-block geo·커넥터 버전 무관. 곡선 Push는 dedup 미사용 — 순서 writeback.)
             const int BATCH = 1500;
-            int applied = 0, failedTotal = 0;
+            int applied = 0, failedTotal = 0, dedupedTotal = 0;
+            string applyUrl = Url(cfg, "apply") + "&dedup=1";
             for (int off = 0; off < ops.Count; off += BATCH)
             {
                 var slice = ops.GetRange(off, Math.Min(BATCH, ops.Count - off));
                 var content = new StringContent("{\"ops\":[" + string.Join(",", slice) + "]}", Encoding.UTF8, "application/json");
-                var resp = Http.PostAsync(Url(cfg, "apply"), content).GetAwaiter().GetResult();
+                var resp = Http.PostAsync(applyUrl, content).GetAwaiter().GetResult();
                 var res = (Dictionary<string, object>)Json.Parse(resp.Content.ReadAsStringAsync().GetAwaiter().GetResult());
                 applied += Convert.ToInt32(D(res["applied"]));
                 failedTotal += ((List<object>)res["failed"]).Count;
+                if (res.ContainsKey("deduped")) dedupedTotal += Convert.ToInt32(D(res["deduped"]));
             }
-            // 충실도 보고 (ingest=PR)
-            return "PushBreps 충실도 보고: 적용 " + applied + " · 실패 " + failedTotal +
+            // 충실도 보고 (ingest=PR). deduped = 이미 있어 스킵된 수(재푸시 멱등 — 중첩 안 됨).
+            return "PushBreps 충실도 보고: 적용 " + applied + " · 실패 " + failedTotal + " · 중복스킵 " + dedupedTotal +
                    " | 기둥 " + nCol + " · 벽 " + nWall + " · 슬라브 " + nSlab + " · 보 " + nBeam +
                    " · 계단 " + nStair + " · 난간 " + nRail +
                    " · 자유곡면/미인식 잔여 " + nResidual + " (Lane-2 passthrough 대상)";

@@ -46,13 +46,26 @@ export function PresenceStrip({ collab, store }: { collab: CollabHandle; store: 
       .catch(() => window.prompt('이 URL을 복사해 공유하세요', location.href));
   };
 
+  const aiOpen = useUiStore((s) => s.aiOpen);
+
   return (
     <div className="presence-strip">
+      <button
+        className={`ai-toggle ${aiOpen ? 'active' : ''}`}
+        title="AI — 손그림→모델·자연어 편집 (전 모드에서 사용)"
+        onClick={() => useUiStore.getState().setAiOpen(!aiOpen)}
+      >
+        ✦ AI
+      </button>
       {findings.length > 0 && (
         <button
           className={`lint-badge ${worst ?? ''}`}
-          title="데이터 위생 검사 — 눌러 협업·리뷰 모드로"
-          onClick={() => useUiStore.getState().setMode('review')}
+          title="데이터 위생 검사 — 눌러 모델 모드에서 문제 해결"
+          onClick={() => {
+            const s = useUiStore.getState();
+            s.setMode('model');
+            s.setLintOpen(true);
+          }}
         >
           검사 {findings.length}
         </button>

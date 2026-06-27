@@ -86,8 +86,10 @@ export function deriveLabel(input: LabelDeriveInput): DerivedGeometry {
   const mesh = buildFaces([{ profile: ribbon, map: (u, v) => [u * MM, y, -v * MM] }]);
   const pos: [number, number, number] = [ax * MM, y, ay * MM];
   const edges: number[] = [];
-  if (label.leader && targetCenter) {
-    edges.push(ax * MM, y, ay * MM, targetCenter[0] * MM, y, targetCenter[1] * MM);
+  // 지시선 끝점 = 타깃 중심(추종) 우선, 없으면 leaderAt(고정 점, 2클릭 free 노트)
+  const leaderEnd = targetCenter ?? label.leaderAt ?? null;
+  if (label.leader && leaderEnd) {
+    edges.push(ax * MM, y, ay * MM, leaderEnd[0] * MM, y, leaderEnd[1] * MM);
   }
   return {
     positions: mesh.positions,
@@ -105,6 +107,7 @@ export function labelDeriveKey(input: LabelDeriveInput): string {
     input.text,
     input.label.leader ?? false,
     input.targetCenter,
+    input.label.leaderAt ?? null,
     input.level.elevation,
   ]);
 }

@@ -1,4 +1,10 @@
-import { applyOpLog, type DocStore, type OpLogEntry } from '@figcad/core';
+import {
+  applyOpLog,
+  createOpContentKey,
+  elementContentKey,
+  type DocStore,
+  type OpLogEntry,
+} from '@figcad/core';
 import { CORS, isSafeRoom, json } from './version';
 
 /**
@@ -117,11 +123,41 @@ export async function handleConnectorRequest(
       log.push({ op: opName, args: a, result: rec['result'] });
     }
 
+    // 멱등화(iter-2 2, opt-in ?dedup=1) — figcadpushbreps 재푸시 정확중첩 차단:
+    //   기존 요소와 content(종류+레벨+타입+좌표)가 같은 create 옵 스킵. 배치 내 중복도 1개만.
+    //   PushBreps만 opt-in(writeback 없음). Push()는 createdIds 순서 writeback이라 dedup 비활성.
+    let toApply = log;
+    let deduped = 0;
+    if (url.searchParams.get('dedup') === '1') {
+      const seen = new Set<string>();
+      for (const el of store.listElements()) seen.add(elementContentKey(el));
+      const filtered: OpLogEntry[] = [];
+      for (const entry of log) {
+        const key = createOpContentKey(entry.op, entry.args as Record<string, unknown>);
+        if (key !== null) {
+          if (seen.has(key)) {
+            deduped++;
+            continue;
+          }
+          seen.add(key);
+        }
+        filtered.push(entry);
+      }
+      toApply = filtered;
+    }
+
     // op마다 별도 transact(applyOpLog 내부) — 후속 op가 선행 결과를 미러로 봄.
     // 비뮤테이팅 op는 applyOpLog가 스킵. 개별 실패는 failed로 보고(계속).
-    const result = applyOpLog(store, log);
+    const result = applyOpLog(store, toApply);
+    // 커넥터 푸시 상태 누계 기록 (허브 UI 표시 — iter-2 F2)
+    const prev = store.getConnectorPush();
+    store.setConnectorPush({
+      count: (prev?.count ?? 0) + result.applied,
+      deduped: (prev?.deduped ?? 0) + deduped,
+      ts: Date.now(),
+    });
     await persist(); // 무인 룸도 즉시 영속 (접속 클라 없으면 자동 체크포인트 안 도므로)
-    return json(200, result);
+    return json(200, { ...result, deduped });
   }
 
   return json(400, { error: 'op은 apply(POST)/pull(GET) 중 하나' });
