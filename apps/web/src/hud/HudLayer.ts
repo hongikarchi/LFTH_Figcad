@@ -177,6 +177,7 @@ export class HudLayer {
       let bubble = this.bubbles.get(b.id);
       if (!bubble) {
         const el = document.createElement('div');
+        el.className = 'hud-comment-bubble';
         el.style.cssText = [
           'position:fixed',
           'max-width:180px',
