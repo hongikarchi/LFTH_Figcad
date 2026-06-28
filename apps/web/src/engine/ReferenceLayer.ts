@@ -202,6 +202,50 @@ export class ReferenceLayer {
     this.engine.requestRender();
   }
 
+  /**
+   * 래스터 언더레이(이미지/PDF) 추가 — 텍스처 쿼드를 한 레벨 평면(XZ)에 평평히 깐다 (iter-3 import 업그레이드).
+   * addUnderlay와 동일 group TRS(origin[mm]→position·rotation→Y·scale). 쿼드 = wMm×hMm(그룹 scale 전 mm).
+   * 텍스처 메시는 라인워크처럼 geometry라 plan X-반사서 자연 정합(스프라이트와 달리 flip 불요).
+   * rotateX(+90°): 이미지 상단(+V)→북(+Z)·우(+U)→동(+X) — 평면도 방위 일치.
+   */
+  addImageUnderlay(
+    name: string,
+    source: ImageBitmap | HTMLCanvasElement,
+    wMm: number,
+    hMm: number,
+    placement: UnderlayPlacement,
+    levelElevationMm: number,
+    opacity: number,
+  ): void {
+    this.remove(name);
+    const texture = new THREE.Texture(source);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    const g = new THREE.Group();
+    g.name = `reference:${name}`;
+    g.scale.setScalar(placement.scale);
+    g.rotation.y = -placement.rotation;
+    g.position.set(placement.origin[0] * 0.001, levelElevationMm * 0.001 + 0.001, placement.origin[1] * 0.001);
+    const geo = new THREE.PlaneGeometry(wMm * 0.001, hMm * 0.001);
+    geo.rotateX(Math.PI / 2); // XY 평면 → XZ 바닥 (상단→+Z 북, 우→+X 동)
+    const mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData['figcadReference'] = true;
+    mesh.renderOrder = -2; // 라인워크(-1)·요소보다 아래
+    g.add(mesh);
+    g.userData['isUnderlay'] = true; // 그리드 숨김 트리거
+    this.sources.set(name, g);
+    this.group.add(g);
+    this.updateGridVisibility();
+    this.engine.requestRender();
+  }
+
   /** DWG 언더레이 표시 중이면 네이티브 1m 그리드 숨김 — 평면서 빽빽한 도면 위 격자 클러터 방지. */
   private updateGridVisibility(): void {
     const grid = this.engine.scene.userData['grid'] as THREE.Object3D | undefined;
@@ -287,6 +331,7 @@ export class ReferenceLayer {
         const list = Array.isArray(mat) ? mat : [mat];
         for (const m of list) {
           if (!disposed.has(m)) {
+            (m as THREE.MeshBasicMaterial).map?.dispose(); // 래스터 언더레이 텍스처 dispose
             m.dispose();
             disposed.add(m);
           }

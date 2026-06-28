@@ -111,7 +111,7 @@ export function HubManage({
         </button>
       </div>
       <button className="nav-item indent" onClick={uploadFederationFile}>
-        파일 업로드 (glTF / IFC / .3dm / DWG / DXF)
+        파일 업로드 (glTF / IFC / .3dm / DWG / DXF / 이미지 / PDF)
       </button>
 
       <div className="nav-subsection">연동 소스 ({sources.length})</div>

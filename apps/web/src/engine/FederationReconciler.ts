@@ -5,6 +5,8 @@ import type { Extractor, UnderlayExtractor } from '../interop/federationExtract'
 
 /** 2D 언더레이(빽도면) sourceType — 메시 아닌 라인워크 렌더 경로. */
 const UNDERLAY_TYPES: ReadonlySet<FederationSource['sourceType']> = new Set(['dwg', 'dxf']);
+/** 래스터 언더레이 sourceType — 이미지/PDF를 텍스처 평면으로 (iter-3 import 업그레이드). */
+const RASTER_TYPES: ReadonlySet<FederationSource['sourceType']> = new Set(['image', 'pdf']);
 
 /**
  * Federation reconciler — 동기화된 `federation` 채널을 ReferenceLayer(로컬 메시)에 반영.
@@ -26,7 +28,9 @@ interface LocalState {
   gen: number;
   /** 언더레이: 파싱 결과 캐시 — 배치/클립만 바뀌면 재페치·재파싱 없이 재렌더(addUnderlay만). */
   underlay?: DwgUnderlay;
-  /** 마지막 적용한 배치(origin/rotation/scale/clip) 시그 — 변경 감지용. */
+  /** 래스터(image/pdf): 디코드 결과 캐시 — 배치만 바뀌면 재페치·재디코드 없이 재렌더. */
+  raster?: { source: ImageBitmap | HTMLCanvasElement; wMm: number; hMm: number };
+  /** 마지막 적용한 배치(origin/rotation/scale/clip/opacity) 시그 — 변경 감지용. */
   placementSig?: string;
 }
 
@@ -94,9 +98,12 @@ export class FederationReconciler {
         // 신규 또는 ref/sourceType 변경 → (재)로드 (Codex #5)
         this.load(s);
       } else if (st.status === 'ready') {
-        // 언더레이 배치/클립만 변경 → 캐시에서 재렌더(재페치·재파싱 없이). 그 외엔 가시성만 동기화.
+        // 언더레이/래스터 배치만 변경 → 캐시에서 재렌더(재페치·재파싱 없이). 그 외엔 가시성만 동기화.
         if (st.underlay && st.placementSig !== placementSigOf(s)) {
           this.reapplyUnderlay(s, st);
+        } else if (st.raster && st.placementSig !== placementSigOf(s)) {
+          this.placeRaster(s, st.raster);
+          st.placementSig = placementSigOf(s);
         }
         this.ref.setVisible(s.id, s.visible);
       }
@@ -111,6 +118,11 @@ export class FederationReconciler {
     // 2D 언더레이(DWG/DXF) = 메시 아닌 라인워크 경로 — fetch+파싱 → 배치(레벨/origin/회전/스케일) → addUnderlay.
     if (UNDERLAY_TYPES.has(s.sourceType) && this.underlayExtractor) {
       this.loadUnderlay(s, myGen);
+      return;
+    }
+    // 래스터(image/pdf) = 텍스처 평면 경로 — fetch+디코드 → 배치 → addImageUnderlay.
+    if (RASTER_TYPES.has(s.sourceType)) {
+      this.loadRaster(s, myGen);
       return;
     }
 
@@ -170,6 +182,55 @@ export class FederationReconciler {
     if (!st.underlay) return;
     this.placeUnderlay(s, st.underlay);
     st.placementSig = placementSigOf(s);
+  }
+
+  /** 래스터(image/pdf) 배치 적용 — origin/rotation/scale/opacity + 레벨 elevation. */
+  private placeRaster(s: FederationSource, raster: NonNullable<LocalState['raster']>): void {
+    const pl = s.underlay;
+    const placement = pl
+      ? { origin: pl.origin, rotation: pl.rotation, scale: pl.scale }
+      : { origin: [0, 0] as [number, number], rotation: 0, scale: 1 };
+    const elev = pl ? this.store.getLevel(pl.levelId)?.elevation ?? 0 : 0;
+    const opacity = pl?.opacity ?? 0.85;
+    this.ref.addImageUnderlay(s.id, raster.source, raster.wMm, raster.hMm, placement, elev, opacity);
+  }
+
+  /** 래스터 로드 — blob 페치 → image=createImageBitmap / pdf=1페이지 렌더 → 캐시 + 배치 → ref.addImageUnderlay. */
+  private loadRaster(s: FederationSource, myGen: number): void {
+    const PT_TO_MM = 25.4 / 72;
+    (async (): Promise<NonNullable<LocalState['raster']>> => {
+      const res = await fetch(s.ref);
+      if (!res.ok) throw new Error(`래스터 페치 실패 (${res.status})`);
+      if (s.sourceType === 'pdf') {
+        const { renderPdfFirstPage } = await import('../interop/pdfClient');
+        const r = await renderPdfFirstPage(await res.arrayBuffer());
+        return { source: r.canvas, wMm: r.ptWidth * PT_TO_MM, hMm: r.ptHeight * PT_TO_MM };
+      }
+      const bmp = await createImageBitmap(await res.blob());
+      return { source: bmp, wMm: bmp.width, hMm: bmp.height }; // 이미지=px를 mm처럼(scale=mm/px가 실크기)
+    })()
+      .then((raster) => {
+        const cur = this.local.get(s.id);
+        if (!cur || cur.gen !== myGen) return; // stale
+        const live = this.store.getFederationSource(s.id);
+        if (!live) return;
+        this.placeRaster(live, raster);
+        this.ref.setVisible(s.id, live.visible);
+        this.local.set(s.id, {
+          status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen,
+          raster, placementSig: placementSigOf(live),
+        });
+        this.notify();
+      })
+      .catch((err: unknown) => {
+        const cur = this.local.get(s.id);
+        if (!cur || cur.gen !== myGen) return;
+        this.local.set(s.id, {
+          status: 'error', ref: s.ref, sourceType: s.sourceType,
+          error: err instanceof Error ? err.message : String(err), gen: myGen,
+        });
+        this.notify();
+      });
   }
 
   /** 언더레이(DWG/DXF) 로드 — blob 페치+파싱 → 캐시 + live.underlay 배치 적용 → ref.addUnderlay. */

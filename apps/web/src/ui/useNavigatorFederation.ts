@@ -11,7 +11,12 @@ export const SOURCE_BADGE: Record<FederationSource['sourceType'], string> = {
   '3dtiles': '3D Tiles',
   dxf: 'DXF',
   dwg: 'DWG',
+  image: '🖼 이미지',
+  pdf: 'PDF',
 };
+
+/** 대형 파일 가드 — 메시/CAD 파서는 브라우저 WASM 힙 한계로 대형서 OOM (interop.md). 래스터는 무관. */
+const LARGE_FILE_MB = 50;
 
 /**
  * M13 연동 모델(federation 오버레이) — 룸 id 추가 + glTF/IFC 파일 업로드 핸들러.
@@ -55,17 +60,32 @@ export function useNavigatorFederation(store: DocStore) {
   const uploadFederationFile = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.glb,.gltf,.ifc,.3dm,.dwg,.dxf';
+    input.accept = '.glb,.gltf,.ifc,.3dm,.dwg,.dxf,.png,.jpg,.jpeg,.pdf,.skp';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
       const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+      // SketchUp = 브라우저 파서 없음(대용량) → 플러그인 export 경로(라이노 커넥터 패턴, 후속).
+      if (ext === 'skp' || ext === 'skb') {
+        window.alert(
+          'SketchUp(.skp)는 브라우저에서 직접 못 엽니다.\nSketchUp 플러그인으로 glTF/OBJ export → "+연동 모델"로 올리세요 (Rhino 커넥터와 동일 패턴, 후속 지원).',
+        );
+        return;
+      }
       const sourceType: FederationSource['sourceType'] | null =
         ext === 'ifc' ? 'ifc' : ext === 'glb' || ext === 'gltf' ? 'gltf' : ext === '3dm' ? '3dm'
-          : ext === 'dwg' ? 'dwg' : ext === 'dxf' ? 'dxf' : null;
+          : ext === 'dwg' ? 'dwg' : ext === 'dxf' ? 'dxf'
+            : ext === 'png' || ext === 'jpg' || ext === 'jpeg' ? 'image'
+              : ext === 'pdf' ? 'pdf' : null;
       if (!sourceType) {
-        window.alert('glTF(.glb/.gltf)·IFC(.ifc)·Rhino(.3dm)·CAD(.dwg/.dxf) 파일만 지원');
+        window.alert('지원: glTF(.glb/.gltf)·IFC·Rhino(.3dm)·CAD(.dwg/.dxf)·이미지(png/jpg)·PDF');
         return;
+      }
+      // 대형 파일 가드 — 메시/CAD 파서는 OOM 위험(래스터는 다운스케일 안전).
+      const isRaster = sourceType === 'image' || sourceType === 'pdf';
+      if (!isRaster && file.size > LARGE_FILE_MB * 1024 * 1024) {
+        const mb = (file.size / 1048576).toFixed(0);
+        if (!window.confirm(`대형 파일 ${mb}MB — 브라우저 파싱이 실패(메모리 초과)할 수 있습니다. 커넥터/서브셋 권장. 그래도 시도할까요?`)) return;
       }
       const room = new URL(location.href).searchParams.get('p');
       if (!room) return;
@@ -73,12 +93,24 @@ export function useNavigatorFederation(store: DocStore) {
         const buf = await file.arrayBuffer();
         // CAD 언더레이(빽도면): 업로드 전 클라 파싱 1회 → 밀집 클러스터를 원점 근처로 센터링하는
         // 기본 배치(메가시트=측량좌표·xref 흩어짐 대비). 렌더는 reconciler가 blob 재페치로(협업자 공통).
+        // 래스터(image/pdf): 클라서 px 치수 디코드 → 기본 배치(중심=원점, scale=mm/px로 긴 변 ~10m).
         let underlay: FederationSource['underlay'];
         if (sourceType === 'dwg' || sourceType === 'dxf') {
           const u = await parseDwgUnderlay(buf.slice(0), sourceType);
           const [dx, dy] = underlayDenseCenter(u);
           const levelId = store.listLevels()[0]?.id ?? '';
           underlay = { levelId, origin: [-dx, -dy], rotation: 0, scale: 1 };
+        } else if (sourceType === 'image') {
+          // 이미지는 실척 없음 → px를 mm처럼 두고 scale=mm/px로 긴 변 ~10m 기본(중심=원점).
+          const bmp = await createImageBitmap(file);
+          const mmPerPx = 10000 / Math.max(bmp.width, bmp.height, 1);
+          bmp.close();
+          const levelId = store.listLevels()[0]?.id ?? '';
+          underlay = { levelId, origin: [0, 0], rotation: 0, scale: mmPerPx, opacity: 0.85 };
+        } else if (sourceType === 'pdf') {
+          // PDF는 실척 보유(pt→mm) → reconciler가 페이지 pt 크기로 쿼드 생성, scale=1(실척).
+          const levelId = store.listLevels()[0]?.id ?? '';
+          underlay = { levelId, origin: [0, 0], rotation: 0, scale: 1, opacity: 0.85 };
         }
         const roomKey = new URL(location.href).searchParams.get('key');
         const res = await fetch(

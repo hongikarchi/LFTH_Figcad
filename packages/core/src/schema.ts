@@ -500,7 +500,7 @@ export type DrawingView = z.infer<typeof DrawingViewSchema>;
 export const FederationSourceSchema = z.object({
   id: z.string(),
   name: z.string(),
-  sourceType: z.enum(['3dm', 'ifc', 'figcad-room', 'gltf', '3dtiles', 'dxf', 'dwg']),
+  sourceType: z.enum(['3dm', 'ifc', 'figcad-room', 'gltf', '3dtiles', 'dxf', 'dwg', 'image', 'pdf']),
   ref: z.string(), // room id / 업로드 URL / tileset URL — 절대 지오메트리 아님(불변①)
   visible: z.boolean(),
   addedBy: z.string(),
@@ -527,6 +527,11 @@ export const FederationSourceSchema = z.object({
        * 사용자가 Figcad에서 직접 그림(클립 툴 → 월드 사각형 inverse-placement → 이 mm AABB).
        */
       clip: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+      /**
+       * 래스터 언더레이(sourceType 'image'/'pdf') 불투명도 0..1 — 참조 도면을 흐리게 깔기.
+       * 라인워크(dwg/dxf)엔 무의미(부재). image는 scale = mm/px(쿼드 크기), origin/rotation 동일 의미.
+       */
+      opacity: z.number().min(0).max(1).optional(),
     })
     .optional(),
 });

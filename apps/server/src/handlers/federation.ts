@@ -22,6 +22,10 @@ const CONTENT_TYPE: Record<string, string> = {
   '3dm': 'application/octet-stream',
   dwg: 'image/vnd.dwg', // CAD 언더레이(빽도면) — 클라 libredwg WASM 파싱
   dxf: 'image/vnd.dxf',
+  png: 'image/png', // 래스터 언더레이 (참조 도면/이미지)
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  pdf: 'application/pdf', // 클라 pdf.js 1페이지 래스터
 };
 
 async function sha256HexBytes(buf: ArrayBuffer): Promise<string> {
