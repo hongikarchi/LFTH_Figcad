@@ -175,10 +175,12 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
   // 대화 재구성: 과거 턴은 텍스트만(도구 블록 재전송 없음 — 단순·캐시 친화),
   // 마지막 user 턴에 현재 문서 스냅샷을 동봉 (항상 최신 상태 기준으로 계획).
   const turns = body.transcript;
-  const messages: Anthropic.MessageParam[] = turns.slice(0, -1).map((t) => ({
-    role: t.role,
-    content: t.text,
-  }));
+  // 빈/공백-only 턴 제외 — 빈 content는 Anthropic API가 거부(빈 어시스턴트 턴이 다음 요청서 빈 메시지로
+  // 재생되던 버그). 도구만 쓴 어시스턴트 턴이 텍스트 없이 기록되면 여기서 걸러진다.
+  const messages: Anthropic.MessageParam[] = turns
+    .slice(0, -1)
+    .filter((t) => typeof t.text === 'string' && t.text.trim().length > 0)
+    .map((t) => ({ role: t.role, content: t.text }));
   const last = turns[turns.length - 1]!;
   const docBlock = `<현재_문서_상태>\n${JSON.stringify(body.snapshot)}\n</현재_문서_상태>`;
 
@@ -221,14 +223,18 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
     );
   }
 
+  // 마지막 블록에 prompt-cache breakpoint — 에이전트 도구 루프의 후속 반복이 이 큰 user 메시지
+  // (스냅샷 포함) 프리픽스를 캐시서 읽어 매 반복 재처리 안 함(비용·지연 절감). 반복마다 변하는
+  // assistant/tool_result는 이 뒤에 붙는다.
+  const cc = { type: 'ephemeral' } as const;
   if (imgBlocks.length) {
     const note = notes.length ? `${notes.join('\n\n')}\n\n` : '';
     messages.push({
       role: 'user',
-      content: [...imgBlocks, { type: 'text', text: `${docBlock}\n\n${note}${last.text}` }],
+      content: [...imgBlocks, { type: 'text', text: `${docBlock}\n\n${note}${last.text}`, cache_control: cc }],
     });
   } else {
-    messages.push({ role: 'user', content: `${docBlock}\n\n${last.text}` });
+    messages.push({ role: 'user', content: [{ type: 'text', text: `${docBlock}\n\n${last.text}`, cache_control: cc }] });
   }
 
   // strict:true 미사용 — 도구 16종 합산 시 "compiled grammar is too large" 400.
@@ -313,10 +319,16 @@ export async function handleAgentRequest(request: Request, env: AgentEnv): Promi
             messages.push({ role: 'user', content: criticPrompt(critique.errors) });
             continue; // 모델에 수정 기회 (end-of-loop 재프롬프트)
           }
+          // max_tokens = 응답이 잘림(마지막 메시지의 미완성 tool_use는 실행 안 됨) → 사용자 통지.
+          const truncNote =
+            msg.stop_reason === 'max_tokens'
+              ? 'AI 응답이 최대 길이에 도달해 잘렸습니다 — 다시 시도하거나 작업을 더 작게 나눠 주세요.'
+              : undefined;
           await send({
             type: 'done',
             opLog,
             stopReason: msg.stop_reason,
+            ...(truncNote ? { note: truncNote } : {}),
             lintFindings: [...critique.errors, ...critique.warnings].map(serializeFinding),
           });
           sentDone = true;
