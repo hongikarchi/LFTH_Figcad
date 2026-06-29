@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arcPolyline, deriveWall, wallFootprint, wallDeriveKey } from '../src/geometry';
+import { arcPolyline, deriveWall, wallFootprint, wallDeriveKey, curvedWallFootprint } from '../src/geometry';
 import { DocStore, seedDocument, SEED_IDS } from '../src/store';
 import { lint } from '../src/lint';
 import type { Level, WallElement, WallType, Pt } from '../src/schema';
@@ -176,6 +176,20 @@ describe('곡선 벽 개구부 차단 + lint (Codex #2)', () => {
     // 개구부 없으면 곡선화 OK
     const bare = s.createWall({ levelId: SEED_IDS.level, typeId: SEED_IDS.wall200, a: [0, 3000], b: [4000, 3000] });
     expect(() => s.updateElement(bare, { sagitta: 600 })).not.toThrow();
+  });
+
+  it('타이트 곡률 footprint = 자기교차 폴백(직선 butt 4점, 3D 가드와 일치)', () => {
+    // a=[0,0] b=[200,0] sagitta=100 thickness=200 → R=100 ≤ tw/2=100 → 직선 butt(자기교차 방지)
+    const fp = curvedWallFootprint([0, 0], [200, 0], 100, 200);
+    expect(fp).toHaveLength(4); // 호 레일(다정점) 아닌 단순 사각형
+    const xs = fp.map((p) => p[0]);
+    const ys = fp.map((p) => p[1]);
+    expect([Math.min(...xs), Math.max(...xs)]).toEqual([0, 200]);
+    expect([Math.min(...ys), Math.max(...ys)]).toEqual([-100, 100]);
+  });
+
+  it('완만 곡률 footprint = 호 레일(다정점)', () => {
+    expect(curvedWallFootprint([0, 0], [4000, 0], 300, 200).length).toBeGreaterThan(4);
   });
 
   it('lint arc-wall-opening: import/머지로 곡선 벽+개구부 유입 시 플래그(backstop)', () => {

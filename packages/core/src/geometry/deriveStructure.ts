@@ -1,4 +1,5 @@
 import { buildFaces, extrudeProfile, mergeMeshData, type FaceSpec, type MeshData, type Profile, type Ring } from './meshBuilder';
+import { polygonCentroid } from './deriveZone';
 import type { DerivedGeometry } from './deriveWall';
 import type {
   BeamDeriveInput,
@@ -319,8 +320,8 @@ export function deriveRoof(input: RoofDeriveInput): DerivedGeometry {
     return [x * MM, (zBottom(x, y) + thickness / 2 + w) * MM, y * MM];
   });
 
-  const cx = roof.boundary.reduce((acc, p) => acc + p[0], 0) / roof.boundary.length;
-  const cy = roof.boundary.reduce((acc, p) => acc + p[1], 0) / roof.boundary.length;
+  // 면적가중 무게중심(오목 폴리곤서도 내부) — zone/slab과 일관(broad review [15]).
+  const [cx, cy] = polygonCentroid(roof.boundary);
   const topMid = (zBottom(cx, cy) + thickness) * MM;
   return {
     ...mesh,

@@ -1,4 +1,5 @@
 import { buildFaces, extrudeProfile, type Profile } from './meshBuilder';
+import { polygonCentroid } from './deriveZone';
 import type { DerivedGeometry } from './deriveWall';
 import type { GridLine, OpeningDeriveInput, SlabDeriveInput } from '../schema';
 import { resolveOpening } from '../schema';
@@ -22,8 +23,8 @@ export function deriveSlab(input: SlabDeriveInput): DerivedGeometry {
   const mesh = extrudeProfile(profile, thickness, (u, v, w) => [u, centerY + w, -v]);
 
   const first = slab.boundary[0]!;
-  const cx = slab.boundary.reduce((acc, p) => acc + p[0], 0) / slab.boundary.length;
-  const cy = slab.boundary.reduce((acc, p) => acc + p[1], 0) / slab.boundary.length;
+  // 면적가중 무게중심(오목 폴리곤서도 내부) — zone/labelTargetCenter와 일관(broad review [15]).
+  const [cx, cy] = polygonCentroid(slab.boundary);
   return {
     ...mesh,
     anchors: {

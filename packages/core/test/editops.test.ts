@@ -99,6 +99,15 @@ describe('splitWall', () => {
     expect(store.splitWall(wall, [50, 0])).toBeNull();
     expect(store.splitWall(wall, [5950, 0])).toBeNull();
   });
+
+  it('분할 시 벽 타깃 라벨 재지정 — 고아 방지(원본 삭제)', () => {
+    const { store, seed, wall } = setup();
+    const lbl = store.createLabel({ levelId: seed.levelId, at: [1000, 500], template: 'custom', customText: 'W', targetId: wall });
+    const [w1] = store.splitWall(wall, [3000, 50])!;
+    const el = store.getElement(lbl) as { targetId?: string } | undefined;
+    expect(el).toBeDefined();
+    expect(el!.targetId).toBe(w1); // 원본(삭제됨) 아닌 새 절반으로 재지정
+  });
 });
 
 describe('trimExtendWall', () => {

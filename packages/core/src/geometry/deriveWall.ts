@@ -420,6 +420,27 @@ function arcWallFootprint(input: WallDeriveInput): Pt[] {
  * interop이 곡선 벽을 직선 chord로 내보내 곡률을 잃는 걸 방지(C5) — 메시 아님, 파라미터서 파생.
  */
 export function curvedWallFootprint(a: Pt, b: Pt, sagitta: number, thickness: number): Pt[] {
+  const chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (chord === 0) return [];
+  // 자기교차 가드 — 3D(deriveCurvedWall L360)와 동일: R ≤ tw/2면 내측레일이 중심선 넘어 자기교차 →
+  // 직선 butt 사각형 폴백(3D=직선 프리즘과 일치, 2D/export 발산 방지). 가드가 여기 없어 3D는 직선·
+  // footprint는 깨진 폴리곤이던 버그(broad review [4]).
+  const ss = Math.abs(sagitta);
+  if (ss > 0) {
+    const hh = chord / 2;
+    const R = (hh * hh + ss * ss) / (2 * ss);
+    if (R <= thickness / 2 + 1) {
+      const half = thickness / 2;
+      const nx = (-(b[1] - a[1]) / chord) * half;
+      const ny = ((b[0] - a[0]) / chord) * half;
+      return [
+        [Math.round(a[0] + nx), Math.round(a[1] + ny)],
+        [Math.round(b[0] + nx), Math.round(b[1] + ny)],
+        [Math.round(b[0] - nx), Math.round(b[1] - ny)],
+        [Math.round(a[0] - nx), Math.round(a[1] - ny)],
+      ];
+    }
+  }
   const poly = arcPolyline(a, b, sagitta);
   const vn = vertexNormals(poly);
   const half = thickness / 2;

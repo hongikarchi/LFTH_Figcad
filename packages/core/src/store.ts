@@ -1480,6 +1480,13 @@ export class DocStore {
         if (el.bindB?.id === id)
           ymap.set('bindB', el.bindB.anchor === 'a' ? { id: id1, anchor: 'a' } : { id: id2, anchor: 'b' });
       }
+      // 원본 벽을 타깃하던 라벨 재지정(id1) — 안 하면 원본 삭제로 라벨이 고아(타깃 사라짐, 자동텍스트 깨짐).
+      // (어느 절반인지 기하 판정은 v2 — 라벨은 보통 1개라 id1로 충분.) 개구부 분할 재호스트와 같은 사상.
+      for (const el of this.elements.values()) {
+        if (el.kind !== 'label' || el.targetId !== id) continue;
+        const lm = this.yElements.get(el.id);
+        if (lm instanceof Y.Map) lm.set('targetId', id1);
+      }
       this.yElements.delete(id);
     });
     return [id1, id2];
