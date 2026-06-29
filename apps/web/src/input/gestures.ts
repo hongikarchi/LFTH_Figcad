@@ -89,6 +89,9 @@ export class TouchGestures {
   reset(): void {
     this.pointers.clear();
     this.resetReference();
+    // 탭 세션 카운터도 리셋 — 안 하면 팜 리젝 후 스테일 pointerup(size 0)이 stale sessionMaxCount로
+    // 가짜 2/3손가락 탭(undo/redo)을 발사(펜 워크플로 중 조용한 파괴, 불변 4). down()이 size 0서 재초기화.
+    this.sessionMaxCount = 0;
   }
 
   get activeCount(): number {

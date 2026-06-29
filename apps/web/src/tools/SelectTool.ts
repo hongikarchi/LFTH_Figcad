@@ -32,8 +32,8 @@ const BOX_THRESHOLD_PX = 5; // 이 이상 끌어야 박스 선택 (미만은 클
 type DragMode =
   | { kind: 'none' }
   | { kind: 'wall'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
-  | { kind: 'endpoint'; id: string; which: 'a' | 'b' }
-  | { kind: 'opening'; id: string }
+  | { kind: 'endpoint'; id: string; which: 'a' | 'b'; orig: Pt }
+  | { kind: 'opening'; id: string; origOffset: number }
   | { kind: 'slab'; id: string; startDoc: Pt; origBoundary: Pt[] }
   | { kind: 'vertex'; id: string; vertexIndex: number; origBoundary: Pt[]; levelId: string }
   | { kind: 'grid'; id: string; startDoc: Pt; origA: Pt; origB: Pt }
@@ -91,7 +91,7 @@ export class SelectTool implements Tool {
       const dB = Math.hypot(doc[0] - seg.b[0], doc[1] - seg.b[1]);
       if (dA <= tolMm || dB <= tolMm) {
         if (this.refuseIfLocked(seg.id)) return;
-        this.drag = { kind: 'endpoint', id: seg.id, which: dA <= dB ? 'a' : 'b' };
+        this.drag = { kind: 'endpoint', id: seg.id, which: dA <= dB ? 'a' : 'b', orig: dA <= dB ? seg.a : seg.b };
         this.ctx.collab.setEditing(seg.id);
         return;
       }
@@ -131,7 +131,7 @@ export class SelectTool implements Tool {
     if (el.kind === 'wall') {
       this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
     } else if (el.kind === 'opening') {
-      this.drag = { kind: 'opening', id: hit };
+      this.drag = { kind: 'opening', id: hit, origOffset: el.offset };
     } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
       // 경계 폴리곤 mover (roof·zone은 slab과 동일 — boundary 평행이동). 정점 그립은 본체 픽 전에 처리됨.
       this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
@@ -336,12 +336,42 @@ export class SelectTool implements Tool {
       ui.setEditAction(null);
       return;
     }
-    this.flushWrite();
-    if (this.drag.kind !== 'none') this.ctx.collab.setEditing(null);
+    // Esc/pointercancel(팜·시스템제스처) = 드래그 되돌리기. 기존엔 flushWrite로 보류 쓰기를 *적용*해
+    // 이동된 채 남았다(onCancel "절대 커밋 안 함" 계약 위반). 이제 보류 버리고 원좌표 복원.
+    this.pendingWrite = null;
+    if (this.drag.kind !== 'none') {
+      this.revertDrag();
+      this.ctx.collab.setEditing(null);
+    }
     this.drag = { kind: 'none' };
     this.ctx.hud.hideDragBox();
     this.setSelection([]);
     this.ctx.hud.hideDimension();
+  }
+
+  /** 드래그 취소 시 원좌표 복원 (DragMode가 들고 있는 orig*). box/none은 좌표 없음 = no-op. */
+  private revertDrag(): void {
+    const d = this.drag;
+    switch (d.kind) {
+      case 'wall':
+      case 'grid':
+      case 'beam':
+        this.ctx.store.updateElement(d.id, { a: d.origA, b: d.origB });
+        break;
+      case 'slab':
+      case 'vertex':
+        this.ctx.store.updateElement(d.id, { boundary: d.origBoundary });
+        break;
+      case 'column':
+        this.ctx.store.updateElement(d.id, { at: d.origAt });
+        break;
+      case 'endpoint':
+        this.ctx.store.updateElement(d.id, { [d.which]: d.orig });
+        break;
+      case 'opening':
+        this.ctx.store.updateElement(d.id, { offset: d.origOffset });
+        break;
+    }
   }
 
   /** RMB 클릭 = Enter — 진행 중 액션 종료 (copy 반복 종료 등) */

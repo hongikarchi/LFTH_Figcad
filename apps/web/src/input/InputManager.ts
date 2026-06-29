@@ -125,7 +125,9 @@ export class InputManager {
 
   private onUp = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
-      this.touch.up(e);
+      // 펜 활성 중 터치 up 무시(팜 리젝션 — onDown/onMove와 대칭). reset()이 이미 터치를 비웠고,
+      // gestures.reset()의 sessionMaxCount=0가 스테일 탭도 차단하지만 여기서 한 번 더 방어.
+      if (!this.penActive) this.touch.up(e);
       return;
     }
     if (e.pointerType === 'pen') this.setPenActive(false);
