@@ -52,6 +52,27 @@ describe('커넥터 멱등화 — content key 매칭', () => {
     expect(seen.has(key!)).toBe(true);
   });
 
+  it('그리드 재푸시 = key 일치 (op id = create_grid_line, levelId/typeId 없음)', () => {
+    const { store } = setup();
+    store.createGridLine({ a: [200, 200], b: [200, 5200] });
+    const seen = new Set(store.listElements().map(elementContentKey));
+    const key = createOpContentKey('create_grid_line', { a: [200, 200], b: [200, 5200] });
+    expect(key).not.toBeNull(); // 예전 dead 키('create_grid')면 null → 회귀 가드
+    expect(seen.has(key!)).toBe(true);
+  });
+
+  it('존 재푸시 = key 일치 (typeId 없는 kind — 양쪽 빈 typeId 일치)', () => {
+    const { store, seed } = setup();
+    store.createZone({ levelId: seed.levelId, boundary: [[0, 0], [2000, 0], [2000, 2000], [0, 2000]], name: 'Z' });
+    const seen = new Set(store.listElements().map(elementContentKey));
+    const key = createOpContentKey('create_zone', {
+      levelId: seed.levelId,
+      boundary: [[0, 0], [2000, 0], [2000, 2000], [0, 2000]],
+    });
+    expect(key).not.toBeNull();
+    expect(seen.has(key!)).toBe(true);
+  });
+
   it('create 아닌 옵(update/delete) = null (항상 적용)', () => {
     expect(createOpContentKey('update_element', { id: 'x', a: [0, 0] })).toBeNull();
     expect(createOpContentKey('delete_elements', { ids: ['x'] })).toBeNull();

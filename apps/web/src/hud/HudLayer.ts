@@ -312,21 +312,25 @@ export class HudLayer {
   /** Engine 렌더 프레임마다 호출 — 카메라 변화에 칩/라벨/말풍선 추적 */
   reproject(camera: THREE.Camera): void {
     if (this.chipAnchor) this.placeChip(camera);
+    // 앵커가 절두체 밖(특히 카메라 뒤)이면 project()가 미러 좌표 반환 → 숨김(고스트 방지).
     for (const label of this.labels.values()) {
-      const { x, y } = worldToScreen(label.anchor, camera);
-      label.el.style.left = `${x}px`;
-      label.el.style.top = `${y}px`;
+      const { x, y, z } = worldToScreen(label.anchor, camera);
+      const vis = z >= -1 && z <= 1;
+      label.el.style.display = vis ? '' : 'none';
+      if (vis) { label.el.style.left = `${x}px`; label.el.style.top = `${y}px`; }
     }
     for (const bubble of this.bubbles.values()) {
-      const { x, y } = worldToScreen(bubble.anchor, camera);
-      bubble.el.style.left = `${x}px`;
-      bubble.el.style.top = `${y}px`;
+      const { x, y, z } = worldToScreen(bubble.anchor, camera);
+      const vis = z >= -1 && z <= 1;
+      bubble.el.style.display = vis ? '' : 'none';
+      if (vis) { bubble.el.style.left = `${x}px`; bubble.el.style.top = `${y}px`; }
     }
   }
 
   private placeChip(camera: THREE.Camera): void {
-    const { x, y } = worldToScreen(this.chipAnchor!, camera);
-    this.chip.style.left = `${x}px`;
-    this.chip.style.top = `${y}px`;
+    const { x, y, z } = worldToScreen(this.chipAnchor!, camera);
+    const vis = z >= -1 && z <= 1;
+    this.chip.style.display = vis ? '' : 'none';
+    if (vis) { this.chip.style.left = `${x}px`; this.chip.style.top = `${y}px`; }
   }
 }

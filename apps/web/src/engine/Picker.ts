@@ -61,14 +61,15 @@ export function screenToWorldPlane(
   return raycaster.ray.intersectPlane(plane, out) ? out : null;
 }
 
-/** 월드(m) → 화면 px (HUD 배치용) */
+/** 월드(m) → 화면 px (HUD 배치용). z = NDC 깊이 — |z|>1이면 절두체 밖(특히 카메라 뒤=미러 좌표). */
 export function worldToScreen(
   world: THREE.Vector3,
   camera: THREE.Camera,
-): { x: number; y: number } {
+): { x: number; y: number; z: number } {
   const v = world.clone().project(camera);
   return {
     x: ((v.x + 1) / 2) * window.innerWidth,
     y: ((1 - v.y) / 2) * window.innerHeight,
+    z: v.z,
   };
 }

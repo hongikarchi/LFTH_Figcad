@@ -98,7 +98,10 @@ export async function handleConnectorRequest(
     if (len > MAX_BODY) return json(413, { error: `요청 본문이 너무 큼 (최대 ${MAX_BODY}바이트)` });
     let body: { ops?: unknown };
     try {
-      body = (await request.json()) as { ops?: unknown };
+      // content-length 헤더는 chunked/누락 시 우회 가능 → 실제 바이트로 캡 강제(헤더는 빠른 1차 거부).
+      const buf = await request.arrayBuffer();
+      if (buf.byteLength > MAX_BODY) return json(413, { error: `요청 본문이 너무 큼 (최대 ${MAX_BODY}바이트)` });
+      body = JSON.parse(new TextDecoder().decode(buf)) as { ops?: unknown };
     } catch {
       return json(400, { error: '본문은 JSON {ops:[...]} 여야 함' });
     }
@@ -133,6 +136,18 @@ export async function handleConnectorRequest(
       for (const el of store.listElements()) seen.add(elementContentKey(el));
       const filtered: OpLogEntry[] = [];
       for (const entry of log) {
+        // 같은 배치 내 delete → 그 키를 seen서 제거(삭제-후-재생성이 멱등에 막히지 않게).
+        if (entry.op === 'delete_elements') {
+          const ids = (entry.args as { ids?: unknown }).ids;
+          if (Array.isArray(ids)) {
+            for (const id of ids) {
+              const el = typeof id === 'string' ? store.getElement(id) : null;
+              if (el) seen.delete(elementContentKey(el));
+            }
+          }
+          filtered.push(entry);
+          continue;
+        }
         const key = createOpContentKey(entry.op, entry.args as Record<string, unknown>);
         if (key !== null) {
           if (seen.has(key)) {

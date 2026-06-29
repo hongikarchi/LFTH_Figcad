@@ -14,7 +14,7 @@ const CREATE_KIND: Record<string, Element['kind']> = {
   create_slab: 'slab',
   create_column: 'column',
   create_beam: 'beam',
-  create_grid: 'grid',
+  create_grid_line: 'grid', // 실제 op id (capabilities/catalog) — 'create_grid'는 존재 안 함, 예전 키는 dead
   create_stair: 'stair',
   create_railing: 'railing',
   create_roof: 'roof',
