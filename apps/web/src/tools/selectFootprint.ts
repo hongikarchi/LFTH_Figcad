@@ -22,11 +22,15 @@ export function projectFootprint(
 ): Footprint {
   if (!fp) return null;
   const elevMm = elevationOf(el, store);
+  // 카메라 뒤(절두체 밖) 점은 project()가 미러 좌표 반환 → 박스선택 오판. 하나라도 |z|>1이면 비선택(null).
+  let behind = false;
   const toScreen = (p: Pt): Pt => {
     const s = worldToScreen(new THREE.Vector3(p[0] / 1000, elevMm / 1000, p[1] / 1000), camera);
+    if (s.z < -1 || s.z > 1) behind = true;
     return [s.x, s.y];
   };
-  if (fp.kind === 'point') return { kind: 'point', p: toScreen(fp.p) };
-  if (fp.kind === 'segment') return { kind: 'segment', a: toScreen(fp.a), b: toScreen(fp.b) };
-  return { kind: 'polygon', pts: fp.pts.map(toScreen) };
+  if (fp.kind === 'point') { const p = toScreen(fp.p); return behind ? null : { kind: 'point', p }; }
+  if (fp.kind === 'segment') { const a = toScreen(fp.a); const b = toScreen(fp.b); return behind ? null : { kind: 'segment', a, b }; }
+  const pts = fp.pts.map(toScreen);
+  return behind ? null : { kind: 'polygon', pts };
 }

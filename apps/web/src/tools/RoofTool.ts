@@ -108,7 +108,10 @@ export class RoofTool implements Tool {
     const elev = ((level?.elevation ?? 0) + (level?.height ?? 0)) / 1000; // 벽 위
     const ptsMm = current ? [...this.points, current] : this.points;
     const pts = ptsMm.map(([x, y]) => new THREE.Vector3(x / 1000, elev + 0.03, y / 1000));
-    this.preview.geometry.setFromPoints(pts);
+    // three 0.184 setFromPoints는 기존 attribute 재사용(첫 호출 정점수 고정) → 정점 늘면 잘림+경고. 재생성.
+    const prevGeo = this.preview.geometry;
+    this.preview.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    prevGeo.dispose();
     this.preview.visible = true;
 
     if (!current) {

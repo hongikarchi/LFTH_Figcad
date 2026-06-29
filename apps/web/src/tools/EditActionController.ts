@@ -39,7 +39,8 @@ export class EditActionController {
       this.finish();
       return;
     }
-    if (this.deps.refuseIfLocked(selId)) return;
+    // 선택 전체의 소프트락 확인(첫 id만 보면 잠긴 요소가 같이 이동/복사됨).
+    if (ids.some((id) => this.deps.refuseIfLocked(id))) return;
     const p = this.snap(info);
 
     switch (action) {
