@@ -418,6 +418,9 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
   };
   const pushSeg = (p0: [number, number], p1: [number, number], li: number) => {
     let x0 = p0[0], y0 = p0[1], x1 = p1[0], y1 = p1[1];
+    // 비유한값 가드 — NaN/Infinity 정점 하나가 bbox를 오염시켜 bounding sphere가 무한대 →
+    // 멀쩡한 도면 전체가 화면서 frustum-culled(언더레이 통째로 사라짐). 퇴화 세그는 버린다.
+    if (!Number.isFinite(x0) || !Number.isFinite(y0) || !Number.isFinite(x1) || !Number.isFinite(y1)) return;
     // XCLIP: 활성 클립 폴리곤 전부와 교차 — 하나라도 완전 바깥이면 버림(CAD 모델공간 XCLIP 그대로).
     for (let k = 0; k < clipStack.length; k++) {
       const c = clipSegmentPoly(x0, y0, x1, y1, clipStack[k]!);
