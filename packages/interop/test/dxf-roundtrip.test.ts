@@ -138,6 +138,18 @@ describe('DXF 라운드트립 (2D 지오메트리)', () => {
     expect(w!.a).toEqual([0, 0]);
     expect(w!.b).toEqual([5000, 0]); // 5m → 5000mm
   });
+
+  it('exportDxf — dimension/text 주석 포함 (조용한 누락 방지, review-3 [21])', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const L = SEED_IDS.level;
+    s.createText({ levelId: L, at: [1000, 1000], text: 'ROOMX' });
+    s.createDimension({ levelId: L, a: [0, 0], b: [3000, 0] });
+    const dxf = exportDxf(s.snapshot());
+    expect(dxf).toContain('ROOMX'); // text 엔티티
+    expect(dxf).toContain('Dimension'); // 치수 레이어
+    expect(dxf).toContain('3000'); // 측정값
+  });
 });
 
 /** Figcad 레이어가 없는 외부 DXF 모사 */

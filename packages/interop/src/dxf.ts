@@ -56,6 +56,9 @@ export function exportDxf(snap: DocSnapshot): string {
   d.addLayer('Zone', Drawing.ACI.GREEN, 'CONTINUOUS');
   d.addLayer('CurtainWall', Drawing.ACI.CYAN, 'CONTINUOUS');
   d.addLayer('Sketch', Drawing.ACI.YELLOW, 'CONTINUOUS'); // 마크업 스케치(iter-3) — line/zone 폴리라인
+  d.addLayer('Dimension', Drawing.ACI.RED, 'CONTINUOUS'); // 치수 — 측정선 + 값(주석류, 조용한 누락 방지)
+  d.addLayer('Text', Drawing.ACI.WHITE, 'CONTINUOUS');
+  d.addLayer('Label', Drawing.ACI.WHITE, 'CONTINUOUS');
 
   const wallTypes = new Map(
     snap.types.filter((t) => t.kind === 'wall').map((t) => [t.id, t as WallType]),
@@ -163,6 +166,21 @@ export function exportDxf(snap: DocSnapshot): string {
       // 마크업 스케치(iter-3) — line=열린/zone=닫힌 폴리라인. style·3D frame은 DXF 미보존(2D 평면 투영).
       d.setActiveLayer('Sketch');
       d.drawPolyline(el.boundary.map((p) => [p[0], p[1]] as [number, number]), el.mode === 'zone');
+    } else if (el.kind === 'dimension') {
+      // 치수 = 측정선 + 중점 값(주석류 — 안 그리면 export서 조용히 사라짐, review-3 [21]). 바인딩은 stored a/b.
+      d.setActiveLayer('Dimension');
+      d.drawLine(el.a[0], el.a[1], el.b[0], el.b[1]);
+      const dist = Math.round(Math.hypot(el.b[0] - el.a[0], el.b[1] - el.a[1]));
+      d.drawText((el.a[0] + el.b[0]) / 2, (el.a[1] + el.b[1]) / 2, 200, 0, String(dist));
+    } else if (el.kind === 'text') {
+      d.setActiveLayer('Text');
+      d.drawText(el.at[0], el.at[1], el.size ?? 200, 0, el.text);
+    } else if (el.kind === 'label') {
+      // 직접 입력(customText) 라벨만 — 자동(name/area) 라벨은 store 해석 필요 → 도면뷰 export(exportDrawingDxf) 경로.
+      if (el.customText) {
+        d.setActiveLayer('Label');
+        d.drawText(el.at[0], el.at[1], 300, 0, el.customText);
+      }
     }
   }
 
