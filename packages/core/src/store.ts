@@ -1864,11 +1864,22 @@ export class DocStore {
   }
 
   /** 사용자별 undo — 이 클라이언트(LOCAL_ORIGIN)의 변경만 되돌린다 (Figma 의미론) */
+  private undoManager?: Y.UndoManager;
   createUndoManager(): Y.UndoManager {
-    return new Y.UndoManager([this.yElements, this.yLevels, this.yTypes], {
+    this.undoManager = new Y.UndoManager([this.yElements, this.yLevels, this.yTypes], {
       trackedOrigins: new Set([LOCAL_ORIGIN]),
       captureTimeout: 350,
     });
+    return this.undoManager;
+  }
+
+  /**
+   * undo 히스토리 비우기 — 문서 전체 교체(importSnapshot) 후 호출. import는 comments/views/federation을
+   * 교체하는데 이 채널들은 undo 스코프 밖(yElements/Levels/Types만 추적) → import를 undo하면 요소만
+   * 부분복원돼 깨진다. 교체는 단일 편집이 아니므로 히스토리를 비워 부분 undo를 차단(fork와 동일 사상).
+   */
+  clearUndoHistory(): void {
+    this.undoManager?.clear();
   }
 
   // --- 구독 ---

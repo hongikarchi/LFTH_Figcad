@@ -7,6 +7,7 @@ import { backendHost, backendWsProtocol } from '../config/backend';
 export interface CollabSession {
   provider: YProvider;
   projectId: string;
+  persistence: IndexeddbPersistence;
 }
 
 /**
@@ -24,7 +25,9 @@ export function setupCollab(ydoc: Y.Doc): CollabSession {
   }
   const key = url.searchParams.get('key');
 
-  new IndexeddbPersistence(`figcad-${projectId}`, ydoc);
+  // IDB 리플레이는 이 클라 자신의 캐시(원격 피어 편집 아님) → main서 registerLocalOrigin(persistence)로
+  // 등록해야 '원격 머지' 배너 오탐 방지.
+  const persistence = new IndexeddbPersistence(`figcad-${projectId}`, ydoc);
 
   // 백엔드 = config/backend (VITE_BACKEND_URL > DEV 8787 > 동일 origin). LAN iPad = hostname 기반.
   const provider = new YProvider(backendHost(), projectId, ydoc, {
@@ -33,5 +36,5 @@ export function setupCollab(ydoc: Y.Doc): CollabSession {
     ...(key ? { params: { key } } : {}),
   });
 
-  return { provider, projectId };
+  return { provider, projectId, persistence };
 }

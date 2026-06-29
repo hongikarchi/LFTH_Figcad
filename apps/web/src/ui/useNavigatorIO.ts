@@ -47,11 +47,12 @@ export function useNavigatorIO(store: DocStore) {
           const n = store.listElements().length;
           if (
             !window.confirm(
-              `현재 문서(요소 ${n}개)를 '${file.name}' 내용으로 교체합니다.\n협업 중인 모든 사용자에게 즉시 적용됩니다 (Ctrl+Z로 되돌리기 가능). 계속할까요?`,
+              `현재 문서(요소 ${n}개)를 '${file.name}' 내용으로 교체합니다.\n협업 중인 모든 사용자에게 즉시 적용되며 되돌릴 수 없습니다(필요 시 버전 히스토리로 복원). 계속할까요?`,
             )
           )
             return;
           store.importSnapshot(snap);
+          store.clearUndoHistory(); // 전체 교체 = undo 부분복원 방지(comments/views/federation은 undo 밖)
         } catch (e) {
           window.alert(`가져오기 실패: ${e instanceof Error ? e.message : e}`);
         }
@@ -107,11 +108,12 @@ export function useNavigatorIO(store: DocStore) {
           const n = store.listElements().length;
           if (
             !window.confirm(
-              `'${file.name}'에서 요소 ${snapshot.elements.length}개를 가져와 현재 문서(요소 ${n}개)를 교체합니다.${skipNote}${lossNote}\n협업 중인 모든 사용자에게 적용됩니다 (Ctrl+Z 가능). 계속할까요?`,
+              `'${file.name}'에서 요소 ${snapshot.elements.length}개를 가져와 현재 문서(요소 ${n}개)를 교체합니다.${skipNote}${lossNote}\n협업 중인 모든 사용자에게 적용되며 되돌릴 수 없습니다(버전 히스토리로 복원). 계속할까요?`,
             )
           )
             return;
           store.importSnapshot(snapshot);
+          store.clearUndoHistory();
         } catch (e) {
           window.alert(`${f.label} 가져오기 실패: ${e instanceof Error ? e.message : e}`);
         } finally {

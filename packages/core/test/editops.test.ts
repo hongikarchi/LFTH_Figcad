@@ -75,6 +75,18 @@ describe('duplicateElements / arrayElements', () => {
   });
 });
 
+describe('clearUndoHistory', () => {
+  it('import 후 undo 부분복원 차단 — 히스토리 비움', () => {
+    const store = new DocStore();
+    const seed = seedDocument(store);
+    const um = store.createUndoManager();
+    const w = store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [3000, 0] });
+    store.clearUndoHistory();
+    um.undo(); // 히스토리 비었으니 no-op
+    expect(store.getElement(w)).toBeDefined(); // 벽 안 사라짐
+  });
+});
+
 describe('splitWall', () => {
   it('두 벽으로 분할 + 개구부 재호스트 (양쪽)', () => {
     const { store, seed, wall } = setup();
