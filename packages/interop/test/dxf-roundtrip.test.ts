@@ -124,6 +124,20 @@ describe('DXF 라운드트립 (2D 지오메트리)', () => {
     const { snapshot } = importDxf(dxf);
     expect(snapshot.elements.filter((e) => e.kind === 'wall')).toHaveLength(2);
   });
+
+  it('$INSUNITS 미터(6) DXF = mm로 정규화 (외부 비-mm 파일, review-3 [9])', () => {
+    // HEADER $INSUNITS=6(m) + 0~5m 열린 폴리라인 → 벽 [0,0]-[5000,0]mm (×1000)
+    const dxf = [
+      '0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '6', '0', 'ENDSEC',
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LWPOLYLINE', '8', '0', '90', '2', '70', '0', '10', '0', '20', '0', '10', '5', '20', '0',
+      '0', 'ENDSEC', '0', 'EOF', '',
+    ].join('\n');
+    const w = importDxf(dxf).snapshot.elements.find((e) => e.kind === 'wall') as { a: [number, number]; b: [number, number] } | undefined;
+    expect(w).toBeDefined();
+    expect(w!.a).toEqual([0, 0]);
+    expect(w!.b).toEqual([5000, 0]); // 5m → 5000mm
+  });
 });
 
 /** Figcad 레이어가 없는 외부 DXF 모사 */

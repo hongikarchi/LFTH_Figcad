@@ -220,9 +220,13 @@ interface DxfEntity {
   shape?: boolean; // LWPOLYLINE 닫힘
 }
 
+// $INSUNITS(DXF 단위 코드) → mm 환산. 부재/0(unitless) = mm 가정(Figcad-origin 라운드트립 보존).
+const DXF_UNIT_MM: Record<number, number> = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000, 8: 25.4 / 1000, 13: 1e6 };
+
 export function importDxf(text: string): DxfImportResult {
-  const parsed = new DxfParser().parseSync(text) as { entities?: DxfEntity[] } | null;
+  const parsed = new DxfParser().parseSync(text) as { entities?: DxfEntity[]; header?: Record<string, number> } | null;
   const entities = parsed?.entities ?? [];
+  const unit = DXF_UNIT_MM[parsed?.header?.['$INSUNITS'] ?? 0] ?? 1; // 외부 m/inch/ft DXF를 mm로 정규화
   const skipped: Record<string, number> = {};
   const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
 
@@ -235,7 +239,7 @@ export function importDxf(text: string): DxfImportResult {
 
   const hasFigcadLayers = entities.some((e) => e.layer === 'Wall Axis' || e.layer === 'Slab');
   const pts = (e: DxfEntity): [number, number][] =>
-    (e.vertices ?? []).map((v) => [Math.round(v.x), Math.round(v.y)] as [number, number]);
+    (e.vertices ?? []).map((v) => [Math.round(v.x * unit), Math.round(v.y * unit)] as [number, number]);
 
   for (const e of entities) {
     const isPolyline = e.type === 'LWPOLYLINE' || e.type === 'POLYLINE';
