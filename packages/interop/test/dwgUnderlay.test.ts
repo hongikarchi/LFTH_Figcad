@@ -368,3 +368,25 @@ describe('cleanMText', () => {
     expect(cleanMText('지상1층 평면도')).toBe('지상1층 평면도');
   });
 });
+
+describe('extractDwgUnderlay — 곡선 엔티티 (review-3 [26])', () => {
+  it('ELLIPSE → 타원 방정식 위 점 (axisRatio 적용)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'ELLIPSE', center: { x: 0, y: 0 }, majorAxisEndPoint: { x: 100, y: 0 }, axisRatio: 0.5 }]));
+    expect(u.segments.length).toBeGreaterThan(0);
+    for (let i = 0; i < u.segments.length; i += 2) {
+      const x = u.segments[i]!, y = u.segments[i + 1]!;
+      expect((x / 100) ** 2 + (y / 50) ** 2).toBeCloseTo(1, 1); // major=100(x), minor=50(y)
+    }
+  });
+
+  it('SPLINE de Boor — 일직선 control points → 곡선이 직선 위(y≈x)', () => {
+    const u = extractDwgUnderlay(db([{ type: 'SPLINE', degree: 3, controlPoints: [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 200 }, { x: 300, y: 300 }] }]));
+    expect(u.segments.length).toBeGreaterThan(0);
+    for (let i = 0; i < u.segments.length; i += 2) expect(u.segments[i + 1]).toBeCloseTo(u.segments[i]!, 1); // affine-invariant
+  });
+
+  it('SPLINE fitPoints → 점 잇는 세그', () => {
+    const u = extractDwgUnderlay(db([{ type: 'SPLINE', fitPoints: [{ x: 0, y: 0 }, { x: 50, y: 50 }, { x: 100, y: 0 }] }]));
+    expect(u.segments.length / 4).toBe(2); // 3 fit점 = 2 세그
+  });
+});
