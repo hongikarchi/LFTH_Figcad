@@ -3,7 +3,7 @@ import type { ColumnType, DrawingView, Pt, RoofType, Section, SlabType, WallType
 import { wallFootprint } from './deriveWall';
 import { polygonArea, polygonCentroid } from './deriveZone';
 import { labelText } from './deriveLabel';
-import { labelTargetCenter } from '../select';
+import { labelTargetCenter, resolveDimAnchor } from '../select';
 import { HATCH_CONCRETE, hatchPolygon, type Seg2D } from './hatch';
 
 /**
@@ -230,6 +230,17 @@ function derivePlan(view: DrawingView, store: DocStore): Drawing2D {
         const tc = labelTargetCenter(store, target);
         if (tc) res.proj.push({ pts: [el.at, tc], closed: false });
       }
+    } else if (el.kind === 'dimension') {
+      // 치수 = 측정선(바인딩 해석 좌표) + 중점 치수 텍스트 — 안 그리면 도면 export서 조용히 사라짐(review-3 [3]).
+      const a = resolveDimAnchor(store, el.bindA, el.a);
+      const b = resolveDimAnchor(store, el.bindB, el.b);
+      res.proj.push({ pts: [a, b], closed: false });
+      res.labels.push({ text: `${Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]))}`, pos: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+    } else if (el.kind === 'text') {
+      res.labels.push({ text: el.text, pos: el.at });
+    } else if (el.kind === 'sketch' && !el.frame) {
+      // 마크업 스케치(레벨 바닥, frame 없음)만 평면도에 — 자유 3D 평면 스케치는 평면도 대상 아님.
+      res.proj.push({ pts: el.boundary, closed: el.mode === 'zone' });
     }
     // roof = 평면도(floor plan)에 미표시. opening/beam/stair = 후속.
   }

@@ -293,3 +293,17 @@ describe('도면 뷰 채널 — ops + 스냅샷', () => {
     expect(store.listViews()).toHaveLength(0);
   });
 });
+
+describe('deriveDrawing — 주석 포함 (review-3 [3])', () => {
+  it('평면뷰 = text/dimension/sketch 포함 (DXF 도면 export 손실 방지)', () => {
+    const { store, seed } = setup();
+    const L = seed.levelId;
+    store.createText({ levelId: L, at: [1000, 1000], text: 'ROOM' });
+    store.createDimension({ levelId: L, a: [0, 0], b: [3000, 0] });
+    store.createSketch({ levelId: L, mode: 'line', boundary: [[0, 0], [500, 500]], style: { color: '#000', opacity: 1, width: 2, lineType: 'solid' } });
+    const dr = deriveDrawing(planView(L), store);
+    expect(dr.labels.some((l) => l.text === 'ROOM')).toBe(true); // text
+    expect(dr.labels.some((l) => l.text === '3000')).toBe(true); // dimension 측정값
+    expect(dr.proj.some((p) => p.pts.length === 2 && !p.closed)).toBe(true); // sketch line + dim line
+  });
+});
