@@ -442,6 +442,8 @@ function composeXf(a: Xf, b: Xf): Xf {
       for (let k = 0; k < 4; k++) o[r * 4 + c]! += a[r * 4 + k]! * b[k * 4 + c]!;
   return o;
 }
+/** Emscripten embind 핸들 해제 (누수 방지). 데이터 추출 후 일시 래퍼에만 호출. */
+const del = (o: unknown): void => (o as { delete?: () => void } | null | undefined)?.delete?.();
 
 export function import3dmRefs(
   bytes: Uint8Array,
@@ -527,7 +529,9 @@ export function import3dmRefs(
           if (d && tris < MAX_TRIS) { meshPos.push(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!); tris++; }
         }
       }
-      if (transient) mesh?.delete?.(); // 일시 핸들만 해제 (영속 객체/정의 멤버 메시는 유지 — 멀티 인스턴스 안전)
+      // 일시(transient) 메시만 vl/fl/mesh 핸들 해제. 영속(멀티 인스턴스 재사용)은 vl/fl 캐시가
+      // 다음 인스턴스에 필요할 수 있어 유지(doc.delete가 회수).
+      if (transient) { del(vl); del(fl); mesh?.delete?.(); }
       return added;
     };
 
@@ -539,15 +543,23 @@ export function import3dmRefs(
         // 면별 캐시 렌더메시 = 솔리드(import_3dm 방식). 없으면 edge 폴백. getMesh 핸들=일시(transient).
         const faces = (geo as { faces?: () => { count: number; get: (i: number) => { getMesh?: (mt: unknown) => RMesh } } }).faces?.();
         let got = false;
-        if (faces) for (let fi = 0; fi < faces.count; fi++) {
-          if (capped) break; // 상한 도달 시 남은 면 getMesh 낭비 방지
-          let fm: RMesh | undefined;
-          try { fm = faces.get(fi)?.getMesh?.(meshType); } catch { fm = undefined; }
-          if (emitMeshObj(fm, xf, true)) got = true;
+        if (faces) {
+          for (let fi = 0; fi < faces.count; fi++) {
+            if (capped) break; // 상한 도달 시 남은 면 getMesh 낭비 방지
+            const bf = faces.get(fi);
+            let fm: RMesh | undefined;
+            try { fm = bf?.getMesh?.(meshType); } catch { fm = undefined; }
+            if (emitMeshObj(fm, xf, true)) got = true;
+            del(bf); // BrepFace 래퍼 해제(면당)
+          }
+          del(faces);
         }
         if (!got) { // 렌더메시 없는 Brep → edge 와이어프레임 폴백
           const edges = (geo as { edges?: () => { count: number; get: (i: number) => unknown } }).edges?.();
-          if (edges) for (let e = 0; e < edges.count; e++) tessCurve(edges.get(e) as never, xf);
+          if (edges) {
+            for (let e = 0; e < edges.count; e++) { const ec = edges.get(e); tessCurve(ec as never, xf); del(ec); }
+            del(edges);
+          }
         }
         return;
       }
