@@ -50,9 +50,11 @@ function makeTextSprite(text: string, worldH: number): THREE.Sprite {
   g.textBaseline = 'middle';
   g.fillStyle = '#5b6b7a';
   g.fillText(text, 3, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(
     // side: DoubleSide 필수 — plan 직교뷰는 X-반사 투영(음수폭 frustum)이라 front-side 스프라이트는 back-face 컬링돼 안 보임.
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: false, opacity: 0.92, side: THREE.DoubleSide }),
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, opacity: 0.92, side: THREE.DoubleSide }),
   );
   sprite.scale.set((worldH * canvas.width) / canvas.height, worldH, 1);
   sprite.renderOrder = 3;

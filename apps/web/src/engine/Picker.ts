@@ -5,6 +5,7 @@ const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 const plane = new THREE.Plane();
 const hit = new THREE.Vector3();
+const wtsScratch = new THREE.Vector3(); // worldToScreen 재사용(프레임 루프 할당 0 — HUD 재투영 핫패스)
 
 /** 화면 좌표 → 지면 평면(레벨 elevation, m) 교차점 → 문서 mm 좌표 */
 export function screenToDoc(
@@ -66,7 +67,7 @@ export function worldToScreen(
   world: THREE.Vector3,
   camera: THREE.Camera,
 ): { x: number; y: number; z: number } {
-  const v = world.clone().project(camera);
+  const v = wtsScratch.copy(world).project(camera); // 결과는 즉시 숫자로 복사 → 스크래치 재사용 안전
   return {
     x: ((v.x + 1) / 2) * window.innerWidth,
     y: ((1 - v.y) / 2) * window.innerHeight,

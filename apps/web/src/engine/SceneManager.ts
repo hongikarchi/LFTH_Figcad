@@ -76,9 +76,11 @@ function makeLabelSprite(text: string, style: LabelStyle = 'grid'): THREE.Sprite
   }
   g.fillStyle = '#1d1d1f';
   g.fillText(text, W / 2, H / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace; // 캔버스 텍스처 sRGB — 색 정확(미설정 시 선형 취급=칙칙)
   const sprite = new THREE.Sprite(
     // side: DoubleSide — plan 직교뷰 X-반사 투영서 front-side 스프라이트는 back-face 컬링됨
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, side: THREE.DoubleSide }),
+    new THREE.SpriteMaterial({ map: tex, depthTest: false, side: THREE.DoubleSide }),
   );
   // 높이 0.5m 고정, 폭은 캔버스 비율 유지
   const scaleH = grid ? 0.5 : 0.4;
@@ -105,8 +107,10 @@ function makeCommentPin(resolved: boolean, replyCount: number): THREE.Sprite {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText(resolved ? '✓' : replyCount > 0 ? String(replyCount + 1) : '💬', S / 2, S / 2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, side: THREE.DoubleSide }),
+    new THREE.SpriteMaterial({ map: tex, depthTest: false, side: THREE.DoubleSide }),
   );
   sprite.scale.setScalar(0.6);
   sprite.renderOrder = 6;
@@ -208,10 +212,11 @@ export class SceneManager {
           this.engine.scene.add(leader);
           this.commentLeaders.set(c.id, leader);
         }
-        leader.geometry.setFromPoints([
-          new THREE.Vector3(anchor[0] / 1000, elev, anchor[1] / 1000),
-          new THREE.Vector3(bubblePt[0] / 1000, elev, bubblePt[1] / 1000),
-        ]);
+        // setLineGeometry = computeBoundingSphere 포함(고정 6-float) → 스테일 bbox로 화면서 frustum-culled 방지.
+        setLineGeometry(
+          leader.geometry,
+          new Float32Array([anchor[0] / 1000, elev, anchor[1] / 1000, bubblePt[0] / 1000, elev, bubblePt[1] / 1000]),
+        );
         leader.visible = true;
       } else if (leader) {
         leader.visible = false;
