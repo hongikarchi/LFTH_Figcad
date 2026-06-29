@@ -460,18 +460,23 @@ export function import3dmRefs(
     let capped = false;
 
     // uuid → File3dmObject geometry (블록 재귀용). objects 1회 인덱싱.
+    // ⚠️ doc.objects()는 **인스턴스 정의 멤버 지오메트리도 포함**(isInstanceDefinitionObject) — byId엔 넣되
+    // top엔 넣지 않는다. 넣으면 (a) 변환 없이 원점에 중복 렌더 + (b) Mesh 멤버면 top emit이 delete →
+    // InstanceReference 재귀가 삭제된 객체 재사용 = use-after-delete 크래시(블록 많은 .3dm = 타깃 파일).
     const objs = doc.objects();
+    const OM = (rhino as { ObjectMode?: { Hidden?: number } }).ObjectMode;
     const byId = new Map<string, unknown>();
     const top: unknown[] = [];
     for (let i = 0; i < objs.count; i++) {
       const o = objs.get(i);
-      const at = (o as { attributes?: () => { id?: string } } | undefined)?.attributes?.();
-      const id = (at as { id?: string } | undefined)?.id;
+      const at = (o as { attributes?: () => { id?: string; isInstanceDefinitionObject?: boolean; mode?: number } } | undefined)?.attributes?.();
+      const id = at?.id;
       const geo = (o as { geometry?: () => unknown } | undefined)?.geometry?.();
-      if (geo) {
-        if (id) byId.set(id, geo);
-        top.push(geo);
-      }
+      if (!geo) continue;
+      if (id) byId.set(id, geo);
+      const isDefMember = at?.isInstanceDefinitionObject === true; // InstanceReference 통해서만 렌더
+      const hidden = OM?.Hidden !== undefined && at?.mode === OM.Hidden; // 작성자가 숨긴 객체 제외
+      if (!isDefMember && !hidden) top.push(geo);
     }
     const idefs = (doc as { instanceDefinitions?: () => { count: number; get: (i: number) => unknown } }).instanceDefinitions?.();
     const idefById = new Map<string, { count: number; get: (i: number) => string } | unknown>();
@@ -504,7 +509,9 @@ export function import3dmRefs(
     };
     // 임의 rhino 메시(렌더메시 포함) → meshPos 누적(world m). 추가했으면 true. 끝나면 메시 dispose.
     type RMesh = { vertices?: () => { count: number; get: (i: number) => number[] }; faces?: () => { count: number; get: (i: number) => number[] }; delete?: () => void };
-    const emitMeshObj = (mesh: RMesh | undefined | null, xf: Xf): boolean => {
+    // transient=true → getMesh()로 새로 받은 일시 핸들(Brep face·Extrusion)이라 delete로 해제.
+    // transient=false → doc 소유 영속 지오(T.Mesh 객체·정의 멤버) — delete 금지(멀티 인스턴스 재사용/doc.delete가 회수).
+    const emitMeshObj = (mesh: RMesh | undefined | null, xf: Xf, transient: boolean): boolean => {
       const vl = mesh?.vertices?.(); const fl = mesh?.faces?.();
       if (!vl || !fl) return false;
       const wv: number[][] = [];
@@ -520,22 +527,23 @@ export function import3dmRefs(
           if (d && tris < MAX_TRIS) { meshPos.push(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!); tris++; }
         }
       }
-      mesh?.delete?.(); // Emscripten 힙 해제 (면별 렌더메시 대량 — 누수 방지)
+      if (transient) mesh?.delete?.(); // 일시 핸들만 해제 (영속 객체/정의 멤버 메시는 유지 — 멀티 인스턴스 안전)
       return added;
     };
 
     const emit = (geo: unknown, xf: Xf, depth: number): void => {
       if (!geo || depth > 8 || capped) return;
       const t = (geo as { objectType?: number }).objectType;
-      if (t === T.Mesh) { emitMeshObj(geo as RMesh, xf); return; }
+      if (t === T.Mesh) { emitMeshObj(geo as RMesh, xf, false); return; } // 영속 객체 — delete 금지(멀티 인스턴스)
       if (t === T.Brep) {
-        // 면별 캐시 렌더메시 = 솔리드(import_3dm 방식). 없으면 edge 폴백.
+        // 면별 캐시 렌더메시 = 솔리드(import_3dm 방식). 없으면 edge 폴백. getMesh 핸들=일시(transient).
         const faces = (geo as { faces?: () => { count: number; get: (i: number) => { getMesh?: (mt: unknown) => RMesh } } }).faces?.();
         let got = false;
         if (faces) for (let fi = 0; fi < faces.count; fi++) {
+          if (capped) break; // 상한 도달 시 남은 면 getMesh 낭비 방지
           let fm: RMesh | undefined;
           try { fm = faces.get(fi)?.getMesh?.(meshType); } catch { fm = undefined; }
-          if (emitMeshObj(fm, xf)) got = true;
+          if (emitMeshObj(fm, xf, true)) got = true;
         }
         if (!got) { // 렌더메시 없는 Brep → edge 와이어프레임 폴백
           const edges = (geo as { edges?: () => { count: number; get: (i: number) => unknown } }).edges?.();
@@ -547,7 +555,7 @@ export function import3dmRefs(
       if (t === T.Extrusion) {
         let em: RMesh | undefined;
         try { em = (geo as { getMesh?: (mt: unknown) => RMesh }).getMesh?.(meshType); } catch { em = undefined; }
-        if (emitMeshObj(em, xf)) return;
+        if (emitMeshObj(em, xf, true)) return;
         const br = (geo as { toBrep?: (split: boolean) => unknown }).toBrep?.(true) ?? (geo as { toBrep?: () => unknown }).toBrep?.();
         if (br) { emit(br, xf, depth + 1); (br as { delete?: () => void }).delete?.(); } else skipped++;
         return;
