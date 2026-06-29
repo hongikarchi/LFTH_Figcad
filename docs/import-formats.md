@@ -14,7 +14,7 @@
 | **.3dm** | `3dm` | 3D **와이어프레임** + 메시 오버레이 | `rhino3dm` WASM — Mesh=삼각망, Brep/Curve/Extrusion/블록=**edge 와이어프레임** | ✅ iter-3 "있는 그대로". rhino3dm는 Brep 면 테셀(커널)·렌더메시 캐시 미노출(실측) → edge로 모델 그대로 표시(Rhino 와이어프레임 모드급). solid 채움은 불가 → 필요시 glTF export. |
 | **glTF/GLB** | `gltf` | 3D 메시 오버레이 | GLTFLoader | ✅ 기존. |
 | **IFC** | `ifc` | 3D 메시 오버레이 | `web-ifc` WASM | ✅ 기존(후순위). |
-| **SKP** | — | — | **브라우저 파서 없음** | ❌ → 플러그인 경로(아래). |
+| **SKP** | `gltf`(변환후) | 3D 솔리드 메시 오버레이 | **SketchUp SDK 변환기**(skp→glb, `tools/skp2gltf`) → glTF 업로드 | ✅ iter-3 로컬 변환 경로. 브라우저 파서는 없으나 SDK가 면 테셀→솔리드. 실파일(218·264MB) 검증. |
 | **RVT** | — | — | — | ⏳ 후순위(IFC 경유 권장). |
 
 ## 한계 (정직)
@@ -24,17 +24,17 @@
 - **PDF/이미지 = 래스터**: 참조용(벡터 선택 불가). 이미지 실척 없음 → 배치 수동.
 - **래스터는 크기 무관 안전**: 디코드 시 다운스케일(PDF 긴 변 ~2000px) — 대형 PDF/이미지도 OK.
 
-## SketchUp(.skp) — 플러그인 export 경로 (Rhino 커넥터 패턴)
+## SketchUp(.skp) — SDK 변환기 경로 (구현됨, `tools/skp2gltf`)
 
-브라우저용 .skp WASM 파서가 없고(포맷 독점, SDK=C++) 실파일은 수백 MB라 in-browser 불가. **외부 export → fed-upload**가 정답(라이노 `FigcadPushBreps`와 동일 사상).
+브라우저용 .skp WASM 파서는 없다(포맷 독점). 그러나 **공식 SketchUp C SDK**(`SketchUpAPI.dll`) +
+CPython 바인딩(`sketchup.cpXXX.pyd`)이 .skp를 읽고 면을 **테셀레이션**한다(rhino3dm과 달리 솔리드 메시 산출).
+→ `tools/skp2gltf/skp2glb.py`(Python 3.11/3.13)로 **skp→glb 변환** → Figcad "+연동 모델"에 glTF 업로드 →
+솔리드 read-only 오버레이. 라이노 커넥터와 동일한 "외부툴→glTF→Figcad" 사상의 구체 구현.
 
-**설계 (후속 구현):**
-1. SketchUp Ruby 플러그인(`.rbz`) — `Sketchup.active_model` → glTF/OBJ export.
-   - SketchUp Ruby API에 native glTF export 없음 → (a) OBJ exporter(내장) + 클라 OBJLoader, 또는 (b) 메시 순회(`entities.grep(Sketchup::Face)`)→정점/면 추출→glTF 직접 작성(작은 헬퍼), 또는 (c) 무료 glTF exporter 플러그인 의존.
-2. export 파일을 Figcad `?op=fed-upload`로 POST(룸 id + key) → `sourceType:'gltf'` federation source 추가. = 라이노 커넥터의 HTTP 패턴 재사용.
-3. 또는 단순히: 사용자가 SketchUp서 glTF/OBJ로 export → Figcad "+연동 모델"로 드래그(수동, 지금도 glTF 됨).
-
-즉 **지금도 SketchUp→glTF export→업로드는 동작**(수동). 플러그인 = 그 왕복 자동화(후속, 커넥터 우선순위에 편입).
+- **검증**: 견본주택 입면 스터디 218MB(1.45M tri→49.8MB glb·16.7s)·264MB(1.69M tri→57.9MB glb) → Figcad import ready, 솔리드 렌더 확인.
+- **로컬 변환 전용**: SDK가 Windows 네이티브 DLL → 브라우저/Railway(Linux) 직접 실행 불가. 사용자가 로컬서 변환 후 업로드.
+- 한계: 머티리얼 미보존(단색 오버레이)·대형 max_tris 절단(기본 2M). 설정/사용법 = `tools/skp2gltf/README.md`.
+- 후속: 머티리얼 보존 · 서버측 자동변환(SDK Linux) · 업로드 시 UI 변환 안내.
 
 ## 구현 위치 (iter-3 신규/변경)
 - `packages/core/src/schema.ts` — FederationSourceSchema sourceType `image`/`pdf` + underlay `opacity`.
