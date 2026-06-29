@@ -51,6 +51,16 @@ describe('extractDwgUnderlay — 기본 엔티티', () => {
     expect(u.fills[0]!.loops[0]!.length).toBe(4); // 4코너 루프
   });
 
+  it('호 edge solid hatch → 채움 루프가 호 샘플 다수 (둥근 기둥 poché 소실 방지, review-3 [5])', () => {
+    // 반원 호(type 2) + 지름 직선으로 닫은 경계 + solidFill. 예전엔 호가 시작점 1개만 → 루프 2점 퇴화 → fills=0.
+    const u = extractDwgUnderlay(db([{ type: 'HATCH', solidFill: 1, boundaryPaths: [{ boundaryPathTypeFlag: 0, edges: [
+      { type: 2, center: { x: 0, y: 0 }, radius: 100, startAngle: 0, endAngle: Math.PI, isCounterClockwise: 1 },
+      { type: 1, start: { x: -100, y: 0 }, end: { x: 100, y: 0 } },
+    ] }] }]));
+    expect(u.fills.length).toBe(1); // 퇴화 전엔 0
+    expect(u.fills[0]!.loops[0]!.length).toBeGreaterThan(5); // 호 테셀 샘플 다수
+  });
+
   it('패턴 HATCH(solidFill 없음) → 채움 안 함(경계만)', () => {
     const u = extractDwgUnderlay(db([{ type: 'HATCH', boundaryPaths: [{ boundaryPathTypeFlag: 2, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }] }]));
     expect(u.fills.length).toBe(0);

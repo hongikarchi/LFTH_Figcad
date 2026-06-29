@@ -456,6 +456,18 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
       prev = p;
     }
   };
+  /** tessArc(A→B)와 동일 샘플점 반환 — solid hatch 채움 루프용(호 edge가 시작점 1개로 퇴화하지 않게). */
+  const arcPts = (cx: number, cy: number, r: number, A: number, B: number, M: Mat): [number, number][] => {
+    let span = B - A;
+    while (span <= 0) span += Math.PI * 2;
+    const n = Math.max(2, Math.ceil(span / arcStep));
+    const out: [number, number][] = [];
+    for (let i = 0; i <= n; i++) {
+      const a = A + (span * i) / n;
+      out.push(apply(M, cx + r * Math.cos(a), cy + r * Math.sin(a)));
+    }
+    return out;
+  };
 
   function walk(ents: DwgEntity[], M: Mat, depth: number, seen: Set<string>) {
     for (const e of ents) {
@@ -530,9 +542,11 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
                   loop.push(wa);
                 } else if (ed.type === 2 && ed.center && ed.radius != null) {
                   const a0 = ed.startAngle ?? 0, a1 = ed.endAngle ?? Math.PI * 2;
-                  if (ed.isCounterClockwise === 0) tessArc(ed.center.x, ed.center.y, ed.radius, a1, a0, M, li);
-                  else tessArc(ed.center.x, ed.center.y, ed.radius, a0, a1, M, li);
-                  loop.push(apply(M, ed.center.x + ed.radius * Math.cos(a0), ed.center.y + ed.radius * Math.sin(a0)));
+                  const A = ed.isCounterClockwise === 0 ? a1 : a0;
+                  const B = ed.isCounterClockwise === 0 ? a0 : a1;
+                  tessArc(ed.center.x, ed.center.y, ed.radius, A, B, M, li); // 경계선(기존과 동일)
+                  // 채움 루프 = 호 시작점 1개가 아니라 테셀 샘플 전부(둥근 기둥 poché 퇴화·소실 방지, review-3 [5])
+                  for (const p of arcPts(ed.center.x, ed.center.y, ed.radius, A, B, M)) loop.push(p);
                 } else if (ed.type === 4 && ed.controlPoints && ed.controlPoints.length >= 2) {
                   const pts = splinePoints(ed.controlPoints, ed.degree ?? 3, ed.knots); // B-spline 테셀(de Boor)
                   for (let i = 0; i + 1 < pts.length; i++) pushSeg(apply(M, pts[i]![0], pts[i]![1]), apply(M, pts[i + 1]![0], pts[i + 1]![1]), li);
