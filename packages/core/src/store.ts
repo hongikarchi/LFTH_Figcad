@@ -1228,6 +1228,30 @@ export class DocStore {
    * 복사용 positional 필드 override (`POSITIONAL` 카테고리 단일소스 — transformCopy 기계부).
    * 특수훅(grid 라벨 재발급·dimension 언바인딩·roof slope·opening 재호스트)은 호출부에서 base에 덧씌움.
    */
+  /**
+   * 자유 3D 평면(frame) 스케치 변환 — boundary(평면-로컬 uv)는 불변, frame을 변환.
+   * doc 변환 xform을 frame.o의 [x,z]에 적용(원점 이동/회전), basis는 xform 선형부(f(o+b)-f(o))로
+   * 회전/반사 — 이동=basis 불변, 회전=XZ 회전(height Y 보존), 반사=XZ 반사. translate·rotate·mirror 일관.
+   */
+  private transformSketchFrame(
+    f0: NonNullable<SketchElement['frame']>,
+    xform: (p: Pt) => [number, number],
+  ): NonNullable<SketchElement['frame']> {
+    const o = f0.o;
+    const nO = xform([o[0], o[2]]);
+    const lin = (vx: number, vz: number): [number, number] => {
+      const p = xform([o[0] + vx, o[2] + vz]);
+      return [p[0] - nO[0], p[1] - nO[1]];
+    };
+    const nx = lin(f0.x[0], f0.x[2]);
+    const ny = lin(f0.y[0], f0.y[2]);
+    return {
+      o: [Math.round(nO[0]), o[1], Math.round(nO[1])],
+      x: [nx[0], f0.x[1], nx[1]],
+      y: [ny[0], f0.y[1], ny[1]],
+    };
+  }
+
   private positionalOverride(el: Element, xform: (p: Pt) => [number, number]): Record<string, unknown> {
     switch (POSITIONAL[el.kind]) {
       case 'segment': {
@@ -1235,6 +1259,7 @@ export class DocStore {
         return { a: q2(xform(s.a)), b: q2(xform(s.b)) };
       }
       case 'polygon': {
+        if (el.kind === 'sketch' && el.frame) return { frame: this.transformSketchFrame(el.frame, xform) };
         const p = el as Extract<Element, { boundary: Pt[] }>;
         return { boundary: p.boundary.map((q) => q2(xform(q))) };
       }
@@ -1330,6 +1355,11 @@ export class DocStore {
         break;
       }
       case 'polygon': {
+        // 자유 3D 평면 스케치 = boundary(uv) 불변, frame 변환(원점·basis). 일반 폴리곤 = boundary 변환.
+        if (el.kind === 'sketch' && el.frame) {
+          ymap.set('frame', this.transformSketchFrame(el.frame, f));
+          break;
+        }
         const p = el as Extract<Element, { boundary: Pt[] }>;
         ymap.set(
           'boundary',

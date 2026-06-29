@@ -14,15 +14,26 @@ export interface SketchDeriveInput {
 /** 평면-로컬 uv(mm) → 월드(m) 매퍼. frame 부재=레벨 바닥(수평), 존재=자유 3D 평면(Stage4). */
 type Mapper = (u: number, v: number) => [number, number, number];
 
+/**
+ * 자유 3D 평면(frame) uv(mm) → 월드 mm [x,y,z]. world = o + u·x + v·y (o=mm, x/y=단위 basis).
+ * derive·select(footprint)·store(move/rotate)가 공유 — 좌표 일관성 단일 소스.
+ * 문서 [x,y]/footprint = [worldMm.x, worldMm.z] (doc y=북=world Z).
+ */
+export function sketchFrameWorldMm(
+  f: NonNullable<SketchElement['frame']>,
+  u: number,
+  v: number,
+): [number, number, number] {
+  return [f.o[0] + u * f.x[0] + v * f.y[0], f.o[1] + u * f.x[1] + v * f.y[1], f.o[2] + u * f.x[2] + v * f.y[2]];
+}
+
 function makeMapper(sketch: SketchElement, level: Level): Mapper {
   const f = sketch.frame;
   if (f) {
-    // world_mm = o + u·x + v·y (x,y=단위 basis), → meters
-    return (u, v) => [
-      (f.o[0] + u * f.x[0] + v * f.y[0]) * MM,
-      (f.o[1] + u * f.x[1] + v * f.y[1]) * MM,
-      (f.o[2] + u * f.x[2] + v * f.y[2]) * MM,
-    ];
+    return (u, v) => {
+      const w = sketchFrameWorldMm(f, u, v);
+      return [w[0] * MM, w[1] * MM, w[2] * MM];
+    };
   }
   const y = level.elevation * MM + Y_LIFT;
   return (u, v) => [u * MM, y, v * MM]; // 레벨 바닥 (uv = 문서 평면 mm)

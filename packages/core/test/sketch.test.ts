@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument } from '../src/store';
 import { DeriveCache, buildDeriveIndex } from '../src/geometry';
+import { elementFootprint } from '../src/select';
 import type { SketchElement } from '../src/schema';
 
 const STYLE = { color: '#0a84ff', opacity: 1, width: 2, lineType: 'solid' as const };
@@ -67,6 +68,23 @@ describe('스케치 — derive (DeriveCache 디스패치)', () => {
     // 3정점 zone은 zone 유지
     const id2 = store.createSketch({ levelId: seed.levelId, mode: 'zone', boundary: [[0, 0], [1000, 0], [1000, 1000]], style: STYLE });
     expect((store.getElement(id2) as SketchElement).mode).toBe('zone');
+  });
+
+  it('framed sketch — footprint = world XY 투영(uv 아님) + move = frame.o 이동(boundary 불변)', () => {
+    const { store, seed } = setup();
+    // 수직 평면: o=[5000,0,2000]mm world, x=동, y=상. boundary=평면-로컬 uv.
+    const id = store.createSketch({
+      levelId: seed.levelId, mode: 'line', boundary: [[0, 0], [1000, 0]], style: STYLE,
+      frame: { o: [5000, 0, 2000], x: [1, 0, 0], y: [0, 1, 0] },
+    });
+    // footprint = world [x,z]mm (uv 아님): uv(0,0)→[5000,2000], uv(1000,0)→[6000,2000]
+    expect(elementFootprint(store.getElement(id)!, store)).toEqual({ kind: 'polygon', pts: [[5000, 2000], [6000, 2000]] });
+    // move(doc dx=1000,dy=500) → frame.o += [1000,0,500], basis·boundary 불변
+    store.moveElements([id], [1000, 500]);
+    const el = store.getElement(id) as SketchElement;
+    expect(el.frame!.o).toEqual([6000, 0, 2500]);
+    expect(el.frame!.x).toEqual([1, 0, 0]);
+    expect(el.boundary).toEqual([[0, 0], [1000, 0]]);
   });
 
   it('frame = 자유 3D 평면에 매핑 (수직 벽면 — S4)', () => {

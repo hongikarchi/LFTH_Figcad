@@ -1,6 +1,7 @@
 import type { DocStore } from './store';
 import { POSITIONAL, resolveOpening } from './schema';
 import { polygonCentroid } from './geometry/deriveZone';
+import { sketchFrameWorldMm } from './geometry/deriveSketch';
 import type {
   Comment,
   DimBind,
@@ -169,8 +170,20 @@ export function elementFootprint(el: Element, store: DocStore): Footprint {
         const s = el as Extract<Element, { a: Pt; b: Pt }>;
         return { kind: 'segment', a: s.a, b: s.b };
       }
-    case 'polygon':
+    case 'polygon': {
+      // 자유 3D 평면(frame) 스케치 = boundary가 평면-로컬 uv → 문서 XY[world x,z]로 투영(박스선택·하이라이트 정합).
+      if (el.kind === 'sketch' && el.frame) {
+        const f = el.frame;
+        return {
+          kind: 'polygon',
+          pts: el.boundary.map(([u, v]) => {
+            const w = sketchFrameWorldMm(f, u, v);
+            return [Math.round(w[0]), Math.round(w[2])] as Pt;
+          }),
+        };
+      }
       return { kind: 'polygon', pts: (el as Extract<Element, { boundary: Pt[] }>).boundary };
+    }
     case 'point':
       return { kind: 'point', p: (el as Extract<Element, { at: Pt }>).at };
     case 'hosted': {
