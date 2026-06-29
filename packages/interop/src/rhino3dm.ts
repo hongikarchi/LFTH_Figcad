@@ -417,12 +417,14 @@ export function import3dmMeshes(
   });
 }
 
-// ===== .3dm 와이어프레임(있는 그대로) 추출 — Brep edge·Curve·Extrusion·블록 =====================
-// rhino3dm는 렌더메시 캐시·Brep 테셀(커널)을 노출 안 함(실측 확인) → 면(solid) 불가.
-// 그러나 Brep **edge**(경계 커브)·standalone Curve·Extrusion(toBrep)·블록(InstanceReference 재귀)은
-// pointAt 샘플로 폴리라인화 가능 → 3D 와이어프레임 오버레이(Rhino 와이어프레임 표시 모드와 동급).
+// ===== .3dm "있는 그대로" 추출 — Brep/Extrusion=솔리드 렌더메시·Curve=와이어프레임·블록 재귀 ======
+// rhino3dm는 Brep 면 테셀(커널)은 못 하지만, .3dm에 캐시된 **렌더메시**는 노출한다(import_3dm 방식,
+// 실측 확인): Brep = `brep.faces.get(f).getMesh(MeshType.Any)` 면별 메시 · Extrusion = `ex.getMesh()`.
+// → 솔리드 삼각망(Rhino 셰이드 표시 모드 동급). 렌더메시 없는 Brep만 edge 폴리라인 폴백.
+// standalone Curve = pointAt 폴리라인. 블록(InstanceReference) = 정의 재귀 + xform 합성.
 // 좌표: rhino Z-up mm → Figcad Y-up m [x,z,y]*.001. 블록 xform 적용 후 변환.
-const MAX_WIRE_SEG = 900_000; // 세그먼트 상한(메모리 가드 — 6 float/seg). 초과 시 중단+flag.
+const MAX_TRIS = 2_000_000; // 솔리드 삼각형 상한(메모리 — 9 float/tri).
+const MAX_WIRE_SEG = 900_000; // 커브 세그먼트 상한(6 float/seg).
 
 type Xf = number[]; // 4x4 row-dominant 16
 const IDENT_XF: Xf = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -450,8 +452,10 @@ export function import3dmRefs(
     if (!doc) throw new Error('.3dm 파싱 실패');
     const MM = 0.001;
     const T = rhino.ObjectType;
-    const meshes: { positions: Float32Array }[] = [];
-    const seg: number[] = []; // [x0,y0,z0,x1,y1,z1] world m
+    const meshType = (rhino as { MeshType?: { Any?: number } }).MeshType?.Any; // 보통 undefined → getMesh 기본=렌더메시(실측)
+    const meshPos: number[] = []; // 솔리드 삼각형 정점 (world m, 단일 버퍼)
+    const seg: number[] = []; // [x0,y0,z0,x1,y1,z1] world m (커브 와이어프레임)
+    let tris = 0;
     let skipped = 0;
     let capped = false;
 
@@ -498,31 +502,52 @@ export function import3dmRefs(
         prev = w;
       }
     };
-    const emitMesh = (mesh: { vertices: () => { count: number; get: (i: number) => number[] }; faces: () => { count: number; get: (i: number) => number[] } }, xf: Xf): void => {
-      const vl = mesh.vertices(); const fl = mesh.faces();
+    // 임의 rhino 메시(렌더메시 포함) → meshPos 누적(world m). 추가했으면 true. 끝나면 메시 dispose.
+    type RMesh = { vertices?: () => { count: number; get: (i: number) => number[] }; faces?: () => { count: number; get: (i: number) => number[] }; delete?: () => void };
+    const emitMeshObj = (mesh: RMesh | undefined | null, xf: Xf): boolean => {
+      const vl = mesh?.vertices?.(); const fl = mesh?.faces?.();
+      if (!vl || !fl) return false;
       const wv: number[][] = [];
       for (let v = 0; v < vl.count; v++) { const p = vl.get(v); const w = p && p.length >= 3 ? applyXf(xf, p[0]!, p[1]!, p[2]!) : [0, 0, 0]; wv[v] = [w[0]! * MM, w[2]! * MM, w[1]! * MM]; }
-      const pos: number[] = [];
+      let added = false;
       for (let f = 0; f < fl.count; f++) {
+        if (tris >= MAX_TRIS) { capped = true; break; }
         const face = fl.get(f); if (!face || face.length < 3) continue;
         const a = wv[face[0]!], b = wv[face[1]!], c = wv[face[2]!]; if (!a || !b || !c) continue;
-        pos.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!);
-        if (face.length >= 4 && face[3] !== undefined && face[3] !== face[2]) { const d = wv[face[3]!]; if (d) pos.push(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!); }
+        meshPos.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!); tris++; added = true;
+        if (face.length >= 4 && face[3] !== undefined && face[3] !== face[2]) {
+          const d = wv[face[3]!];
+          if (d && tris < MAX_TRIS) { meshPos.push(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!); tris++; }
+        }
       }
-      if (pos.length) meshes.push({ positions: new Float32Array(pos) });
+      mesh?.delete?.(); // Emscripten 힙 해제 (면별 렌더메시 대량 — 누수 방지)
+      return added;
     };
 
     const emit = (geo: unknown, xf: Xf, depth: number): void => {
       if (!geo || depth > 8 || capped) return;
       const t = (geo as { objectType?: number }).objectType;
-      if (t === T.Mesh) { emitMesh(geo as never, xf); return; }
+      if (t === T.Mesh) { emitMeshObj(geo as RMesh, xf); return; }
       if (t === T.Brep) {
-        const edges = (geo as { edges?: () => { count: number; get: (i: number) => unknown } }).edges?.();
-        if (edges) for (let e = 0; e < edges.count; e++) tessCurve(edges.get(e) as never, xf);
+        // 면별 캐시 렌더메시 = 솔리드(import_3dm 방식). 없으면 edge 폴백.
+        const faces = (geo as { faces?: () => { count: number; get: (i: number) => { getMesh?: (mt: unknown) => RMesh } } }).faces?.();
+        let got = false;
+        if (faces) for (let fi = 0; fi < faces.count; fi++) {
+          let fm: RMesh | undefined;
+          try { fm = faces.get(fi)?.getMesh?.(meshType); } catch { fm = undefined; }
+          if (emitMeshObj(fm, xf)) got = true;
+        }
+        if (!got) { // 렌더메시 없는 Brep → edge 와이어프레임 폴백
+          const edges = (geo as { edges?: () => { count: number; get: (i: number) => unknown } }).edges?.();
+          if (edges) for (let e = 0; e < edges.count; e++) tessCurve(edges.get(e) as never, xf);
+        }
         return;
       }
       if (t === T.Curve) { tessCurve(geo as never, xf); return; }
       if (t === T.Extrusion) {
+        let em: RMesh | undefined;
+        try { em = (geo as { getMesh?: (mt: unknown) => RMesh }).getMesh?.(meshType); } catch { em = undefined; }
+        if (emitMeshObj(em, xf)) return;
         const br = (geo as { toBrep?: (split: boolean) => unknown }).toBrep?.(true) ?? (geo as { toBrep?: () => unknown }).toBrep?.();
         if (br) { emit(br, xf, depth + 1); (br as { delete?: () => void }).delete?.(); } else skipped++;
         return;
@@ -541,6 +566,7 @@ export function import3dmRefs(
 
     for (const geo of top) emit(geo, IDENT_XF, 0);
     (doc as { delete?: () => void }).delete?.();
+    const meshes = meshPos.length ? [{ positions: new Float32Array(meshPos) }] : [];
     return { meshes, edges: new Float32Array(seg), skipped, capped };
   });
 }

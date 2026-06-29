@@ -11,7 +11,7 @@
 | **PDF** | `pdf` | 1페이지 래스터 텍스처 평면 | `pdf.js`(코드스플릿) 1페이지 렌더→텍스처 평면. pt→mm 실척. | ✅ iter-3 신규. 다중페이지·벡터추출=후속. |
 | **DWG** | `dwg` | 2D 라인워크 언더레이 | `libredwg-web` WASM→`addUnderlay` | ✅ 기존(iter 직전). 레이어/bulge/블록/XCLIP. |
 | **DXF** | `dxf` | 2D 라인워크 언더레이 | `libredwg-web`(dwg와 동일) | ✅ 기존. |
-| **.3dm** | `3dm` | 3D **와이어프레임** + 메시 오버레이 | `rhino3dm` WASM — Mesh=삼각망, Brep/Curve/Extrusion/블록=**edge 와이어프레임** | ✅ iter-3 "있는 그대로". rhino3dm는 Brep 면 테셀(커널)·렌더메시 캐시 미노출(실측) → edge로 모델 그대로 표시(Rhino 와이어프레임 모드급). solid 채움은 불가 → 필요시 glTF export. |
+| **.3dm** | `3dm` | 3D **솔리드** 메시 오버레이 | `rhino3dm` WASM — Brep/Extrusion = 캐시 **렌더메시**(`face.getMesh`, import_3dm 방식)·Mesh=삼각망·Curve=edge·블록 재귀 | ✅ iter-3 "있는 그대로" 솔리드. .3dm에 렌더메시 캐시 있으면 Brep도 솔리드(Rhino 셰이드 모드급). 캐시 없는 Brep만 edge 폴백. (커널 테셀은 여전히 불가 — 렌더메시 의존.) |
 | **glTF/GLB** | `gltf` | 3D 메시 오버레이 | GLTFLoader | ✅ 기존. |
 | **IFC** | `ifc` | 3D 메시 오버레이 | `web-ifc` WASM | ✅ 기존(후순위). |
 | **SKP** | `gltf`(변환후) | 3D 솔리드 메시 오버레이 | **SketchUp SDK 변환기**(skp→glb, `tools/skp2gltf`) → glTF 업로드 | ✅ iter-3 로컬 변환 경로. 브라우저 파서는 없으나 SDK가 면 테셀→솔리드. 실파일(218·264MB) 검증. |
@@ -20,7 +20,7 @@
 ## 한계 (정직)
 
 - **대형 메시/CAD OOM**: 3dm 100MB+·dwg/dxf 50MB+ = 브라우저 WASM 힙 한계(탭 ~200-300MB, interop.md). 업로드 시 >50MB 경고 가드. 대형 = 커넥터/서브셋/glTF 경로.
-- **.3dm = 와이어프레임(있는 그대로)**: rhino3dm은 브라우저서 Brep 면 테셀·렌더메시 캐시 미노출(실측) → **solid 면 불가**. 대신 Brep edge·Curve·Extrusion·블록을 edge로 추출해 모델을 그대로 표시(Rhino 와이어프레임 모드급). 채워진 면이 필요하면 glTF export 또는 `FigcadPushBreps` 커넥터. 측량/분산 좌표 모델은 원점서 멀어 fit이 넓게 잡힘(denseCenter 재중심은 후속).
+- **.3dm = 솔리드(있는 그대로, import_3dm 방식)**: rhino3dm은 Brep 커널 테셀은 못 하지만 .3dm에 **캐시된 렌더메시**(`brep.faces.get(f).getMesh()`)는 노출 — Rhino가 저장 시 렌더메시 포함했으면 Brep도 솔리드로 표시(실파일 견본주택 모델 전부 렌더메시 보유 확인). 렌더메시 없는 Brep만 edge 폴백. 커널 테셀 필요(렌더메시 0) 시 glTF export/`FigcadPushBreps`. 측량/분산 좌표 모델은 fit 넓게(denseCenter 재중심=후속).
 - **PDF/이미지 = 래스터**: 참조용(벡터 선택 불가). 이미지 실척 없음 → 배치 수동.
 - **래스터는 크기 무관 안전**: 디코드 시 다운스케일(PDF 긴 변 ~2000px) — 대형 PDF/이미지도 OK.
 

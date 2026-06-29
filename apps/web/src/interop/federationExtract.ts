@@ -151,10 +151,10 @@ export async function extract3dm(ref: string): Promise<ReferenceResult> {
     import('@figcad/interop/rhino'),
     import('rhino3dm/rhino3dm.wasm?url').then((m) => m.default),
   ]);
-  // "있는 그대로": Mesh=삼각망(solid), Brep/Curve/Extrusion/블록=edge 와이어프레임(rhino3dm는 Brep 면
-  // 테셀 불가 → edge가 한계지만 모델을 그대로 보여줌). normals 생략 → ReferenceLayer 계산.
+  // "있는 그대로": Brep/Extrusion/Mesh = 캐시 렌더메시 솔리드(import_3dm 방식 face.getMesh),
+  // standalone Curve = edge 와이어프레임, 블록 재귀. normals 생략 → ReferenceLayer 계산.
   const { meshes, edges, skipped, capped } = await import3dmRefs(bytes, { wasmUrl });
-  if (capped) console.warn('[federation .3dm] 와이어프레임 세그먼트 상한 도달 — 대형 모델 일부만 표시');
+  if (capped) console.warn('[federation .3dm] 지오메트리 상한 도달 — 대형 모델 일부만 표시');
   if (meshes.length === 0 && edges.length === 0)
     throw new Error(`.3dm에서 표시할 지오메트리 없음 (객체 ${skipped}개 — 텍스트/포인트뿐?)`);
   return { meshes: meshes.map((m) => ({ positions: m.positions })), edges };
