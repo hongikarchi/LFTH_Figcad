@@ -274,13 +274,16 @@ export function importDxf(text: string): DxfImportResult {
         bump('grid(퇴화)');
       }
     } else if (isWall) {
-      const a = v[0]!;
-      const b = v[v.length - 1]!;
-      if (a[0] === b[0] && a[1] === b[1]) {
-        bump('wall(길이0)');
-        continue;
+      // 다정점 열린 폴리라인 = 연속 정점쌍마다 벽 1개(체인) — 첫·끝만 쓰면 중간 정점 손실(직선 1개로 붕괴).
+      let made = 0;
+      for (let i = 0; i < v.length - 1; i++) {
+        const a = v[i]!;
+        const b = v[i + 1]!;
+        if (a[0] === b[0] && a[1] === b[1]) continue; // 길이0 세그 스킵
+        store.createWall({ levelId, typeId: wallTypeId, a, b });
+        made++;
       }
-      store.createWall({ levelId, typeId: wallTypeId, a, b });
+      if (!made) bump('wall(길이0)');
     } else if (isSlab) {
       const ring = [...v];
       if (ring.length > 1) {

@@ -232,6 +232,7 @@ export interface RhinoImportResult {
 export async function importRhino(bytes: Uint8Array, opts?: RhinoOpts): Promise<RhinoImportResult> {
   const rhino = await getRhino(opts);
   const doc = rhino.File3dm.fromByteArray(bytes);
+  if (!doc) throw new Error('.3dm 파싱 실패'); // 형제 함수(import3dmMeshes/Refs)와 일관 — 손상 파일 명확한 에러
   const skipped: Record<string, number> = {};
   const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
 
@@ -325,14 +326,17 @@ export async function importRhino(bytes: Uint8Array, opts?: RhinoOpts): Promise<
         bump('grid(퇴화)');
       }
     } else if (isWall) {
-      const a = c.pts[0]!;
-      const b = c.pts[c.pts.length - 1]!;
-      if (a[0] === b[0] && a[1] === b[1]) {
-        bump('wall(길이0)');
-        continue;
-      }
+      // 다정점 폴리라인 = 연속 정점쌍마다 벽(체인) — 첫·끝만 쓰면 중간 정점 손실(DXF import와 동일 수정).
       const levelId = levelByZ.get(c.z) ?? levelByZ.get(sortedZ[0]!)!;
-      store.createWall({ levelId, typeId: wallTypeId, a, b });
+      let made = 0;
+      for (let i = 0; i < c.pts.length - 1; i++) {
+        const a = c.pts[i]!;
+        const b = c.pts[i + 1]!;
+        if (a[0] === b[0] && a[1] === b[1]) continue;
+        store.createWall({ levelId, typeId: wallTypeId, a, b });
+        made++;
+      }
+      if (!made) bump('wall(길이0)');
     } else if (isSlab) {
       const ring = [...c.pts];
       if (ring.length > 1) {

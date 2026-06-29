@@ -112,6 +112,18 @@ describe('DXF 라운드트립 (2D 지오메트리)', () => {
     expect(walls.length).toBe(1);
     expect(slabs.length).toBe(1);
   });
+
+  it('다정점 열린 폴리라인 = 벽 체인 (중간 정점 보존, review-3 [8])', () => {
+    // 레이어 0, 열린(70=0) 3정점 LWPOLYLINE → 2 세그먼트 벽(예전엔 첫·끝만 = 1개로 붕괴)
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LWPOLYLINE', '8', '0', '90', '3', '70', '0',
+      '10', '0', '20', '0', '10', '3000', '20', '0', '10', '3000', '20', '2000',
+      '0', 'ENDSEC', '0', 'EOF', '',
+    ].join('\n');
+    const { snapshot } = importDxf(dxf);
+    expect(snapshot.elements.filter((e) => e.kind === 'wall')).toHaveLength(2);
+  });
 });
 
 /** Figcad 레이어가 없는 외부 DXF 모사 */
