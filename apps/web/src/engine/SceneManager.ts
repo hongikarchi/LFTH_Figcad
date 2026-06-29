@@ -354,13 +354,19 @@ export class SceneManager {
       mat.transparent = true;
       mat.opacity = 0.04;
       mat.depthWrite = false;
+      mat.side = THREE.FrontSide;
     } else {
       mat.color.set(s.color);
       mat.transparent = s.opacity < 1;
       mat.opacity = s.opacity;
       mat.depthWrite = true;
+      // zone 채움 = buildFaces 단면(deriveZone u,-v 플립) → 그린 쪽서 back-face. DoubleSide로 양면 표시.
+      mat.side = THREE.DoubleSide;
     }
     mat.needsUpdate = true;
+    // 픽 우선(annotation) = line 모드만 — 투명 프록시 리본이라 아래 솔리드 안 가림. zone은 보이는 채움이라
+    // 우선픽이면 밑의 모든 솔리드 픽을 가로챔 → mode 따라 갱신(모드 변경 시 동기).
+    entry.mesh.userData['annotation'] = el.mode === 'line';
     // owned 에지 머티리얼 — lineType별 클래스(solid=Basic / dashed·dotted=Dashed). 변경 시 재생성.
     // edges.material 자체는 applyHighlight(upsert 끝)가 선택상태대로 설정 → 여기선 안 건드림.
     const wantDashed = s.lineType !== 'solid';
@@ -460,8 +466,9 @@ export class SceneManager {
       }
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.userData['elementId'] = id;
-      // 주석·스케치 프록시 = Picker 우선 픽(솔리드에 가려도 선택되게 — iter-2 3)
-      if (isAnnotationKind || el.kind === 'sketch') mesh.userData['annotation'] = true;
+      // 주석·스케치(line만) 프록시 = Picker 우선 픽(솔리드에 가려도 선택되게 — iter-2 3).
+      // sketch zone은 보이는 채움이라 우선픽 제외(applySketchStyle가 mode별 갱신).
+      if (isAnnotationKind || (el.kind === 'sketch' && el.mode === 'line')) mesh.userData['annotation'] = true;
       // 스케치 = 스타일색 owned 에지 머티리얼(공유 edgeMat 아님 — remove서 dispose)
       const ownedEdgeMat = el.kind === 'sketch' ? new THREE.LineBasicMaterial({ color: el.style.color }) : null;
       const edges = new THREE.LineSegments(

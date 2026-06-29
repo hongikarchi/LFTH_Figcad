@@ -786,12 +786,14 @@ export class DocStore {
     frame?: SketchElement['frame'];
   }): Id {
     const boundary = params.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
+    // zone은 채움에 ≥3 정점 필요(deriveSketch). <3이면 line으로 강등 — 저장 mode가 실제 렌더와 일치(존인데 폴리라인 렌더 방지).
+    const mode = params.mode === 'zone' && boundary.length < 3 ? 'line' : params.mode;
     const id = nanoid(12);
     const el = ElementSchema.parse({
       id,
       kind: 'sketch',
       levelId: params.levelId,
-      mode: params.mode,
+      mode,
       boundary,
       style: params.style,
       ...(params.frame !== undefined

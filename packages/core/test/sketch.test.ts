@@ -60,6 +60,15 @@ describe('스케치 — derive (DeriveCache 디스패치)', () => {
     expect(g2!.edges.length).toBe(2 * 6); // 3점 = 2 세그
   });
 
+  it('zone <3 정점 = line으로 강등 (저장 mode가 실제 렌더와 일치)', () => {
+    const { store, seed } = setup();
+    const id = store.createSketch({ levelId: seed.levelId, mode: 'zone', boundary: [[0, 0], [1000, 0]], style: STYLE });
+    expect((store.getElement(id) as SketchElement).mode).toBe('line');
+    // 3정점 zone은 zone 유지
+    const id2 = store.createSketch({ levelId: seed.levelId, mode: 'zone', boundary: [[0, 0], [1000, 0], [1000, 1000]], style: STYLE });
+    expect((store.getElement(id2) as SketchElement).mode).toBe('zone');
+  });
+
   it('frame = 자유 3D 평면에 매핑 (수직 벽면 — S4)', () => {
     const { store, seed } = setup();
     const id = store.createSketch({
