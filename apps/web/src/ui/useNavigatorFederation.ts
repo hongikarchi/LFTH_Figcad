@@ -81,7 +81,8 @@ export function useNavigatorFederation(store: DocStore) {
         window.alert('지원: glTF(.glb/.gltf)·IFC·Rhino(.3dm)·CAD(.dwg/.dxf)·이미지(png/jpg)·PDF');
         return;
       }
-      // 대형 파일 가드 — 메시/CAD 파서는 OOM 위험(래스터는 다운스케일 안전).
+      // 대형 파일 가드 — 메시/CAD 파서는 통짜 디코드라 OOM 위험. 래스터는 reconciler가 텍스처를
+      // 긴 변 ≤4096으로 다운스케일하므로 대형이어도 안전(가드 제외).
       const isRaster = sourceType === 'image' || sourceType === 'pdf';
       if (!isRaster && file.size > LARGE_FILE_MB * 1024 * 1024) {
         const mb = (file.size / 1048576).toFixed(0);

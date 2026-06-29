@@ -206,8 +206,19 @@ export class FederationReconciler {
         const r = await renderPdfFirstPage(await res.arrayBuffer());
         return { source: r.canvas, wMm: r.ptWidth * PT_TO_MM, hMm: r.ptHeight * PT_TO_MM };
       }
-      const bmp = await createImageBitmap(await res.blob());
-      return { source: bmp, wMm: bmp.width, hMm: bmp.height }; // 이미지=px를 mm처럼(scale=mm/px가 실크기)
+      // ImageBitmap을 그대로 THREE.Texture에 넣으면 three가 flipY를 무시(r0.184 isImageBitmap 분기) →
+      // 이미지가 상하반전(북남 뒤집힘, PDF=canvas 경로와 불일치). canvas로 변환하면 flipY 정상 = 정위치.
+      // 동시에 디코드 상한(긴 변 ≤4096) 다운스케일 = OOM 가드(iPad). EXIF는 imageOrientation으로 보정.
+      const MAX_SIDE = 4096;
+      const bmp = await createImageBitmap(await res.blob(), { imageOrientation: 'from-image' });
+      const ow = bmp.width, oh = bmp.height;
+      const sc = Math.min(1, MAX_SIDE / Math.max(ow, oh, 1));
+      const cw = Math.max(1, Math.round(ow * sc)), ch = Math.max(1, Math.round(oh * sc));
+      const canvas = document.createElement('canvas');
+      canvas.width = cw; canvas.height = ch;
+      canvas.getContext('2d')?.drawImage(bmp, 0, 0, cw, ch);
+      bmp.close(); // 디코드 비트맵 즉시 해제(누수 방지) — 캐시는 canvas
+      return { source: canvas, wMm: ow, hMm: oh }; // wMm/hMm = 원본 px(scale=mm/px가 실크기 유지, 텍스처만 저해상)
     })()
       .then((raster) => {
         const cur = this.local.get(s.id);
