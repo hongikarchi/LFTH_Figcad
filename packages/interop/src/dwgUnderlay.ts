@@ -394,6 +394,7 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
   const segLayerIdx: number[] = [];
   const labels: DwgLabel[] = [];
   const fills: DwgFill[] = [];
+  let budgetHit = false; // 전역 세그 예산 — diamond-DAG/고-fanout 블록이 maxDepth 안에서 폭발해 OOM/행 방지
   const skipped: Record<string, number> = {};
   const layerIndex = new Map<string, number>();
   const layers: string[] = [];
@@ -421,6 +422,8 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
     // 비유한값 가드 — NaN/Infinity 정점 하나가 bbox를 오염시켜 bounding sphere가 무한대 →
     // 멀쩡한 도면 전체가 화면서 frustum-culled(언더레이 통째로 사라짐). 퇴화 세그는 버린다.
     if (!Number.isFinite(x0) || !Number.isFinite(y0) || !Number.isFinite(x1) || !Number.isFinite(y1)) return;
+    // 전역 예산(2M 세그 = 8M float, ~32MB) 초과 시 우아하게 중단 — 병적 파일이 브라우저를 OOM/행 안 시키게.
+    if (seg.length >= 8_000_000) { if (!budgetHit) { budgetHit = true; skip('budget'); } return; }
     // XCLIP: 활성 클립 폴리곤 전부와 교차 — 하나라도 완전 바깥이면 버림(CAD 모델공간 XCLIP 그대로).
     for (let k = 0; k < clipStack.length; k++) {
       const c = clipSegmentPoly(x0, y0, x1, y1, clipStack[k]!);
@@ -471,6 +474,7 @@ export function extractDwgUnderlay(db: DwgDatabaseLike, opts: DwgUnderlayOptions
 
   function walk(ents: DwgEntity[], M: Mat, depth: number, seen: Set<string>) {
     for (const e of ents) {
+      if (budgetHit) return; // 예산 초과 — 추가 순회 중단(CPU/메모리)
       const layer = e.layer ?? '0';
       const li = layerOf(layer);
       switch (e.type) {

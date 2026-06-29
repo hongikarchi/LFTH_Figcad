@@ -241,6 +241,11 @@ describe('hatchPolygon — even-odd 평행선 채움', () => {
     expect(covered).toBeCloseTo(3000, 3); // [0..1500]+[1500..3000] = 전 폭
   });
 
+  it('비유한 경계점 → 무한루프 없이 [] (review-3 [32])', () => {
+    const poly: [number, number][] = [[0, 0], [100, 0], [Infinity, 100]];
+    expect(hatchPolygon(poly, { angle: 0, spacing: 10 })).toEqual([]); // tMax=Infinity 가드 — 안 걸면 행
+  });
+
   it('45° 콘크리트 패턴 → 폴리곤 bbox 내 선분', () => {
     const sq: [number, number][] = [
       [0, 0],

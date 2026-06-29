@@ -37,7 +37,8 @@ export function hatchPolygon(boundary: Pt[], pattern: HatchPattern): Seg2D[] {
     if (t < tMin) tMin = t;
     if (t > tMax) tMax = t;
   }
-  if (!isFinite(tMin) || tMax - tMin < sp) return [];
+  // tMax도 유한 검사 — 비유한 경계점 하나면 tMax=Infinity가 가드를 통과해 `t < tMax` 무한 루프(review-3 [32]).
+  if (!isFinite(tMin) || !isFinite(tMax) || tMax - tMin < sp) return [];
 
   const out: Seg2D[] = [];
   let start = Math.ceil(tMin / sp) * sp;
