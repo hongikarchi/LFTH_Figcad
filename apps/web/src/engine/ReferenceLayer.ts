@@ -23,6 +23,13 @@ export interface ReferenceMesh {
   normals?: Float32Array;
 }
 
+/** 추출기 결과 — solid 메시 + (선택) 3D 와이어프레임 에지(.3dm Brep edge 등 = "있는 그대로"). */
+export interface ReferenceResult {
+  meshes: ReferenceMesh[];
+  /** 3D 라인 세그먼트 [x0,y0,z0,x1,y1,z1...] 월드 미터 — Brep/커브 와이어프레임. */
+  edges?: Float32Array;
+}
+
 const REF_COLOR = 0x6a8caf;
 const REF_OPACITY = 0.5;
 const UNDERLAY_COLOR = 0x49545e; // 빽도면 라인 — 진한 청회색(PDF 흑백 대비, 네이티브 요소와 구분)
@@ -85,7 +92,7 @@ export class ReferenceLayer {
    * offset(월드 미터) = projectOrigin recenter 보정 — 네이티브 프레임이 recenter됐으면
    * 원좌표 glTF/IFC 오버레이를 -origin만큼 옮겨 정합(M13 projectOrigin).
    */
-  add(name: string, meshes: ReferenceMesh[], offset?: [number, number, number]): void {
+  add(name: string, result: ReferenceResult, offset?: [number, number, number]): void {
     this.remove(name);
     const g = new THREE.Group();
     g.name = `reference:${name}`;
@@ -97,7 +104,7 @@ export class ReferenceLayer {
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    for (const m of meshes) {
+    for (const m of result.meshes) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
       if (m.normals) geo.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3));
@@ -107,6 +114,14 @@ export class ReferenceLayer {
       // v1.5 픽킹(읽기전용 정보표시) 때 레퍼런스 메시 식별용 마커 — federation-design §4d.
       mesh.userData['figcadReference'] = true;
       g.add(mesh);
+    }
+    // 3D 와이어프레임 에지(.3dm Brep edge·커브 = "있는 그대로") — 1 LineSegments draw call.
+    if (result.edges && result.edges.length) {
+      const egeo = new THREE.BufferGeometry();
+      egeo.setAttribute('position', new THREE.BufferAttribute(result.edges, 3));
+      const emesh = new THREE.LineSegments(egeo, new THREE.LineBasicMaterial({ color: REF_COLOR }));
+      emesh.userData['figcadReference'] = true;
+      g.add(emesh);
     }
     this.sources.set(name, g);
     this.group.add(g);
@@ -354,6 +369,6 @@ export class ReferenceLayer {
       geo.dispose();
       return { positions: out };
     };
-    this.add('demo', [box(8, 0, 4, 3, 6), box(14, 2, 3, 5, 3)]);
+    this.add('demo', { meshes: [box(8, 0, 4, 3, 6), box(14, 2, 3, 5, 3)] });
   }
 }

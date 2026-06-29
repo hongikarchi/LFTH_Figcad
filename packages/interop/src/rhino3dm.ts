@@ -416,3 +416,131 @@ export function import3dmMeshes(
     return { meshes, skipped };
   });
 }
+
+// ===== .3dm 와이어프레임(있는 그대로) 추출 — Brep edge·Curve·Extrusion·블록 =====================
+// rhino3dm는 렌더메시 캐시·Brep 테셀(커널)을 노출 안 함(실측 확인) → 면(solid) 불가.
+// 그러나 Brep **edge**(경계 커브)·standalone Curve·Extrusion(toBrep)·블록(InstanceReference 재귀)은
+// pointAt 샘플로 폴리라인화 가능 → 3D 와이어프레임 오버레이(Rhino 와이어프레임 표시 모드와 동급).
+// 좌표: rhino Z-up mm → Figcad Y-up m [x,z,y]*.001. 블록 xform 적용 후 변환.
+const MAX_WIRE_SEG = 900_000; // 세그먼트 상한(메모리 가드 — 6 float/seg). 초과 시 중단+flag.
+
+type Xf = number[]; // 4x4 row-dominant 16
+const IDENT_XF: Xf = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+function applyXf(m: Xf, x: number, y: number, z: number): [number, number, number] {
+  return [
+    m[0]! * x + m[1]! * y + m[2]! * z + m[3]!,
+    m[4]! * x + m[5]! * y + m[6]! * z + m[7]!,
+    m[8]! * x + m[9]! * y + m[10]! * z + m[11]!,
+  ];
+}
+function composeXf(a: Xf, b: Xf): Xf {
+  const o: number[] = new Array(16).fill(0);
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < 4; c++)
+      for (let k = 0; k < 4; k++) o[r * 4 + c]! += a[r * 4 + k]! * b[k * 4 + c]!;
+  return o;
+}
+
+export function import3dmRefs(
+  bytes: Uint8Array,
+  opts?: RhinoOpts,
+): Promise<{ meshes: { positions: Float32Array }[]; edges: Float32Array; skipped: number; capped: boolean }> {
+  return getRhino(opts).then((rhino) => {
+    const doc = rhino.File3dm.fromByteArray(bytes);
+    if (!doc) throw new Error('.3dm 파싱 실패');
+    const MM = 0.001;
+    const T = rhino.ObjectType;
+    const meshes: { positions: Float32Array }[] = [];
+    const seg: number[] = []; // [x0,y0,z0,x1,y1,z1] world m
+    let skipped = 0;
+    let capped = false;
+
+    // uuid → File3dmObject geometry (블록 재귀용). objects 1회 인덱싱.
+    const objs = doc.objects();
+    const byId = new Map<string, unknown>();
+    const top: unknown[] = [];
+    for (let i = 0; i < objs.count; i++) {
+      const o = objs.get(i);
+      const at = (o as { attributes?: () => { id?: string } } | undefined)?.attributes?.();
+      const id = (at as { id?: string } | undefined)?.id;
+      const geo = (o as { geometry?: () => unknown } | undefined)?.geometry?.();
+      if (geo) {
+        if (id) byId.set(id, geo);
+        top.push(geo);
+      }
+    }
+    const idefs = (doc as { instanceDefinitions?: () => { count: number; get: (i: number) => unknown } }).instanceDefinitions?.();
+    const idefById = new Map<string, { count: number; get: (i: number) => string } | unknown>();
+    if (idefs) {
+      for (let i = 0; i < idefs.count; i++) {
+        const d = idefs.get(i) as { id?: string };
+        if (d?.id) idefById.set(d.id, d);
+      }
+    }
+
+    const pushSeg = (a: [number, number, number], b: [number, number, number]): void => {
+      if (seg.length / 6 >= MAX_WIRE_SEG) { capped = true; return; }
+      seg.push(a[0] * MM, a[2] * MM, a[1] * MM, b[0] * MM, b[2] * MM, b[1] * MM); // Z-up→Y-up
+    };
+    // 커브(에지 포함) → 폴리라인 세그먼트(xform 적용 후, 변환 전 rhino 좌표).
+    const tessCurve = (crv: { domain?: number[]; pointAt?: (t: number) => number[]; isLinear?: (tol: number) => boolean } | undefined, xf: Xf): void => {
+      if (!crv?.pointAt || !crv.domain) return;
+      const [t0, t1] = crv.domain;
+      if (t0 === undefined || t1 === undefined || t1 <= t0) return;
+      const linear = typeof crv.isLinear === 'function' ? crv.isLinear(0.001) : false;
+      const N = linear ? 1 : 24;
+      let prev: [number, number, number] | null = null;
+      for (let k = 0; k <= N; k++) {
+        const p = crv.pointAt(t0 + ((t1 - t0) * k) / N);
+        if (!p || p.length < 3) continue;
+        const w = applyXf(xf, p[0]!, p[1]!, p[2]!);
+        if (prev) pushSeg(prev, w);
+        prev = w;
+      }
+    };
+    const emitMesh = (mesh: { vertices: () => { count: number; get: (i: number) => number[] }; faces: () => { count: number; get: (i: number) => number[] } }, xf: Xf): void => {
+      const vl = mesh.vertices(); const fl = mesh.faces();
+      const wv: number[][] = [];
+      for (let v = 0; v < vl.count; v++) { const p = vl.get(v); const w = p && p.length >= 3 ? applyXf(xf, p[0]!, p[1]!, p[2]!) : [0, 0, 0]; wv[v] = [w[0]! * MM, w[2]! * MM, w[1]! * MM]; }
+      const pos: number[] = [];
+      for (let f = 0; f < fl.count; f++) {
+        const face = fl.get(f); if (!face || face.length < 3) continue;
+        const a = wv[face[0]!], b = wv[face[1]!], c = wv[face[2]!]; if (!a || !b || !c) continue;
+        pos.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!);
+        if (face.length >= 4 && face[3] !== undefined && face[3] !== face[2]) { const d = wv[face[3]!]; if (d) pos.push(a[0]!, a[1]!, a[2]!, c[0]!, c[1]!, c[2]!, d[0]!, d[1]!, d[2]!); }
+      }
+      if (pos.length) meshes.push({ positions: new Float32Array(pos) });
+    };
+
+    const emit = (geo: unknown, xf: Xf, depth: number): void => {
+      if (!geo || depth > 8 || capped) return;
+      const t = (geo as { objectType?: number }).objectType;
+      if (t === T.Mesh) { emitMesh(geo as never, xf); return; }
+      if (t === T.Brep) {
+        const edges = (geo as { edges?: () => { count: number; get: (i: number) => unknown } }).edges?.();
+        if (edges) for (let e = 0; e < edges.count; e++) tessCurve(edges.get(e) as never, xf);
+        return;
+      }
+      if (t === T.Curve) { tessCurve(geo as never, xf); return; }
+      if (t === T.Extrusion) {
+        const br = (geo as { toBrep?: (split: boolean) => unknown }).toBrep?.(true) ?? (geo as { toBrep?: () => unknown }).toBrep?.();
+        if (br) { emit(br, xf, depth + 1); (br as { delete?: () => void }).delete?.(); } else skipped++;
+        return;
+      }
+      if (t === T.InstanceReference) {
+        const ir = geo as { parentIdefId?: string; xform?: { toFloatArray?: (rowDominant: boolean) => number[] } };
+        const def = ir.parentIdefId ? (idefById.get(ir.parentIdefId) as { getObjectIds?: () => string[] } | undefined) : undefined;
+        const childXf = ir.xform?.toFloatArray ? composeXf(xf, ir.xform.toFloatArray(true)) : xf;
+        const ids = def?.getObjectIds?.() ?? [];
+        if (!ids.length) { skipped++; return; }
+        for (const cid of ids) { const cg = byId.get(cid); if (cg) emit(cg, childXf, depth + 1); }
+        return;
+      }
+      skipped++; // annotation·point 등
+    };
+
+    for (const geo of top) emit(geo, IDENT_XF, 0);
+    (doc as { delete?: () => void }).delete?.();
+    return { meshes, edges: new Float32Array(seg), skipped, capped };
+  });
+}

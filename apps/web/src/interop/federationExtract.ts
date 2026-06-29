@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot, type FederationSource } from '@figcad/core';
 import { gltfPositionsToFigcad } from '@figcad/interop/coords';
-import type { ReferenceMesh } from '../engine/ReferenceLayer';
+import type { ReferenceMesh, ReferenceResult } from '../engine/ReferenceLayer';
 import { getIfcApi, parseIfc } from './ifcClient';
 import { parseDwgUnderlay } from './dwgClient';
 import type { DwgUnderlay } from '@figcad/interop/dwg-underlay';
@@ -17,7 +17,7 @@ import { backendOrigin } from '../config/backend';
  *
  * glTF·IFC·.3dm·3D-Tiles 추출기는 A5/v1.5 — 미등록 sourceType은 reconciler가 error 표시.
  */
-export type Extractor = (ref: string) => Promise<ReferenceMesh[]>;
+export type Extractor = (ref: string) => Promise<ReferenceResult>;
 
 /** ?op=pull HTTP base — config/backend 단일 소스. */
 function pullBase(): string {
@@ -63,7 +63,7 @@ export async function acquireMergeSnapshot(source: FederationSource): Promise<Do
 }
 
 /** A4 — 다른 Figcad 룸을 읽기전용 오버레이로. 라이브 스냅샷 → derive → 메시. */
-export async function extractFigcadRoom(ref: string): Promise<ReferenceMesh[]> {
+export async function extractFigcadRoom(ref: string): Promise<ReferenceResult> {
   const snap = await fetchFigcadRoomSnapshot(ref);
   // throwaway 스토어: derive 후 참조 버림 → GC (provider 미부착, observer 누수 무관).
   const store = DocStore.fromSnapshot(snap);
@@ -78,7 +78,7 @@ export async function extractFigcadRoom(ref: string): Promise<ReferenceMesh[]> {
     if (geo.panels && geo.panels.positions.length)
       out.push({ positions: geo.panels.positions, normals: geo.panels.normals });
   }
-  return out;
+  return { meshes: out };
 }
 
 /**
@@ -87,7 +87,7 @@ export async function extractFigcadRoom(ref: string): Promise<ReferenceMesh[]> {
  * 유일한 변환 = 노드 계층의 matrixWorld(노드별 변환·인스턴싱) 적용. correct-by-construction.
  * GLTFLoader는 무거우니 동적 import (interop WASM과 동급 — iPad 핫패스 밖).
  */
-export async function extractGltf(ref: string): Promise<ReferenceMesh[]> {
+export async function extractGltf(ref: string): Promise<ReferenceResult> {
   const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
   const gltf = await new GLTFLoader().loadAsync(ref);
   gltf.scene.updateMatrixWorld(true);
@@ -113,7 +113,7 @@ export async function extractGltf(ref: string): Promise<ReferenceMesh[]> {
     geo.dispose();
     out.push({ positions });
   });
-  return out;
+  return { meshes: out };
 }
 
 /**
@@ -122,7 +122,7 @@ export async function extractGltf(ref: string): Promise<ReferenceMesh[]> {
  * 격리·테스트됨(ifc-meshes.test.ts): web-ifc가 미터·Y-up으로 굽고, north 부호만 +로 돌려
  * Figcad world 규약(extractFigcadRoom)과 일치. 여기선 fetch + WASM 로딩만.
  */
-export async function extractIfc(ref: string): Promise<ReferenceMesh[]> {
+export async function extractIfc(ref: string): Promise<ReferenceResult> {
   const url = ref.trim();
   if (!url) throw new Error('빈 IFC ref');
   const res = await fetch(url);
@@ -132,7 +132,7 @@ export async function extractIfc(ref: string): Promise<ReferenceMesh[]> {
   // importIfcMeshes는 노멀을 빈 배열로 둔다(축교환 반사로 winding 뒤집힘) → normals 생략해
   // ReferenceLayer가 computeVertexNormals 하게. (빈 Float32Array는 truthy라 그냥 넘기면
   // position 수와 안 맞아 지오메트리가 깨진다.)
-  return importIfcMeshes(api, bytes).map((m) => ({ positions: m.positions }));
+  return { meshes: importIfcMeshes(api, bytes).map((m) => ({ positions: m.positions })) };
 }
 
 /**
@@ -141,23 +141,23 @@ export async function extractIfc(ref: string): Promise<ReferenceMesh[]> {
  * Figcad world m·Y-up [x,z,y]*.001. WASM 로더는 ifcClient.rhinoWasmUrl 패턴(vite ?url).
  * glTF가 Rhino7+ 이미 커버 → 한계적(Mesh 없는 .3dm은 빈 오버레이 + skip 카운트).
  */
-export async function extract3dm(ref: string): Promise<ReferenceMesh[]> {
+export async function extract3dm(ref: string): Promise<ReferenceResult> {
   const url = ref.trim();
   if (!url) throw new Error('빈 .3dm ref');
   const res = await fetch(url);
   if (!res.ok) throw new Error(`.3dm 페치 실패 "${url}" (${res.status})`);
   const bytes = new Uint8Array(await res.arrayBuffer());
-  const [{ import3dmMeshes }, wasmUrl] = await Promise.all([
+  const [{ import3dmRefs }, wasmUrl] = await Promise.all([
     import('@figcad/interop/rhino'),
     import('rhino3dm/rhino3dm.wasm?url').then((m) => m.default),
   ]);
-  const { meshes, skipped } = await import3dmMeshes(bytes, { wasmUrl });
-  // Mesh 없는 .3dm(pure-Brep/블록 = 260617류)은 빈 오버레이 — "ready·0메시"가 성공처럼 보이는
-  // 착시 방지(Codex risk). 콘솔 경고 + 전부 스킵이면 throw(reconciler가 error 표시 → 사용자 인지).
-  if (skipped > 0) console.warn(`[federation .3dm] Mesh 아닌 객체 ${skipped}개 스킵 (raw Brep/블록 = glTF 경로 권장)`);
-  if (meshes.length === 0)
-    throw new Error(`.3dm에 표시 가능한 Mesh 없음 (객체 ${skipped}개 전부 Brep/블록) — Rhino7+ glTF export 권장`);
-  return meshes.map((m) => ({ positions: m.positions })); // normals 생략 → ReferenceLayer 계산
+  // "있는 그대로": Mesh=삼각망(solid), Brep/Curve/Extrusion/블록=edge 와이어프레임(rhino3dm는 Brep 면
+  // 테셀 불가 → edge가 한계지만 모델을 그대로 보여줌). normals 생략 → ReferenceLayer 계산.
+  const { meshes, edges, skipped, capped } = await import3dmRefs(bytes, { wasmUrl });
+  if (capped) console.warn('[federation .3dm] 와이어프레임 세그먼트 상한 도달 — 대형 모델 일부만 표시');
+  if (meshes.length === 0 && edges.length === 0)
+    throw new Error(`.3dm에서 표시할 지오메트리 없음 (객체 ${skipped}개 — 텍스트/포인트뿐?)`);
+  return { meshes: meshes.map((m) => ({ positions: m.positions })), edges };
 }
 
 /**
