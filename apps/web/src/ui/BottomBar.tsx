@@ -27,13 +27,8 @@ export function BottomBar() {
       >
         💬 코멘트
       </button>
-      <button
-        className={`bottom-bar-btn ${activeTool === 'sketch-pen' ? 'active' : ''}`}
-        title="마크업 — 손그림 표시"
-        onClick={() => { setTool('sketch-pen'); setPhoneSheet(null); }}
-      >
-        ✎ 마크업
-      </button>
+      {/* 마크업(sketch-pen)=프리핸드 드래그 도구 — 폰 터치선 1지 드래그=카메라라 stroke 입력 불가(리뷰어 P0).
+          탭=점 1개라 stroke 안 됨 → 폰선 미노출. 폰 마크업은 1지-드래그-stroke 입력(불변4 스코프) 후속. */}
       <button
         className={`bottom-bar-btn ${phoneSheet === 'models' ? 'active' : ''}`}
         onClick={() => setPhoneSheet(phoneSheet === 'models' ? null : 'models')}

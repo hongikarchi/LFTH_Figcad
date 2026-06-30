@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { snapPoint, type Element, type Pt, type SnapResult } from '@figcad/core';
 import { pickElement, raycastPoint } from '../engine/Picker';
+import { useUiStore } from '../state/uiStore';
 import type { EditorContext } from './context';
 import type { ToolPointerInfo } from './ToolController';
 
@@ -59,8 +60,14 @@ export class LeaderCapture {
   }
 
   up(info: ToolPointerInfo): void {
-    if (!info.doc) return;
-    const pt = this.snap(info).point;
+    // 3D 모드면 메시 표면 히트 우선(z 포함), 평면은 지면 스냅만(perf: 평면선 60MB 레이캐스트 스킵).
+    const is3d = useUiStore.getState().viewMode === '3d';
+    const roots = this.ctx.overlayRoot ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables] : this.ctx.scene.pickables;
+    const p3d = is3d ? raycastPoint(info.clientX, info.clientY, this.ctx.rig.active, roots) : null;
+    const ground = info.doc ? this.snap(info).point : null;
+    // 배치점 = 메시 히트(3D점) 우선 > 지면 스냅. 둘 다 없으면(수평선 위·지면 밖 탭) 취소.
+    const pt: Pt | null = p3d ? [Math.round(p3d.x * 1000), Math.round(p3d.z * 1000)] : ground;
+    if (!pt) return;
     if (!this.anchor) {
       // 클릭1 = 지시선 시작점 (요소 위면 그 요소를 앵커로)
       const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
@@ -72,18 +79,11 @@ export class LeaderCapture {
       this.ctx.engine.requestRender();
       return;
     }
-    // 클릭2 = 텍스트/핀 위치 → 완료. 오버레이·메시 표면을 맞히면 그 3D점(높이 z 포함) = 3D 코멘트.
+    // 클릭2 = 텍스트/핀 위치 → 완료. 메시 표면이면 그 3D 높이(textZ) = 모델 위 3D 코멘트.
     const a = this.anchor;
-    let textAt = pt;
-    let textZ: number | undefined;
-    const roots = this.ctx.overlayRoot ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables] : this.ctx.scene.pickables;
-    const p3d = raycastPoint(info.clientX, info.clientY, this.ctx.rig.active, roots);
-    if (p3d) {
-      textAt = [Math.round(p3d.x * 1000), Math.round(p3d.z * 1000)];
-      textZ = p3d.y * 1000;
-    }
+    const textZ = p3d ? p3d.y * 1000 : undefined;
     this.reset();
-    this.onComplete({ anchor: a.pt, anchorEl: a.el, anchorLevelId: a.levelId, textAt, ...(textZ !== undefined ? { textZ } : {}) });
+    this.onComplete({ anchor: a.pt, anchorEl: a.el, anchorLevelId: a.levelId, textAt: pt, ...(textZ !== undefined ? { textZ } : {}) });
   }
 
   cancel(): void {

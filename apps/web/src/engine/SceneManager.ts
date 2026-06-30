@@ -186,8 +186,8 @@ export class SceneManager {
       const anchor = resolveCommentPoint(store, c); // 핀 = 앵커(요소 추종)
       const bubblePt = c.at; // 말풍선·지시선 끝 = 텍스트 위치
       const elev = (store.getLevel(c.levelId)?.elevation ?? 0) / 1000 + 0.05;
-      // 3D 코멘트(오버레이/메시 위 — c.z 있으면 그 높이). 없으면 레벨 elevation(레벨바닥 핀).
-      const pinY = c.z !== undefined ? c.z / 1000 + 0.05 : elev;
+      // 3D 코멘트(c.z) = 3D 뷰서만 그 높이. 평면뷰선 레벨바닥(elev) — 높은 z핀이 직교 near평면에 컬링되는 것 방지(리뷰어 P0).
+      const pinY = c.z !== undefined && this.viewMode === '3d' ? c.z / 1000 + 0.05 : elev;
       const n = replyCount.get(c.id) ?? 0;
       const key = `${c.resolved ? 'r' : 'o'}:${n}`;
       let sprite = this.commentPins.get(c.id);
@@ -330,6 +330,7 @@ export class SceneManager {
       for (const s of entry.sprites) this.flipSprite(s);
     }
     for (const s of this.commentPins.values()) this.flipSprite(s);
+    this.syncComments(this.store); // 핀 높이 재계산(3D↔평면 토글 시 pinY가 c.z/바닥 전환 반영, 컬링 방지)
     this.engine.requestRender();
   }
 

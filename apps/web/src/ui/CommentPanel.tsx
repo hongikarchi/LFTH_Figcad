@@ -32,9 +32,10 @@ export function CommentPanel({
 
   const focus = (c: Comment) => {
     const pt = resolveCommentPoint(store, c);
-    const elev = (store.getLevel(c.levelId)?.elevation ?? 0) / 1000;
+    // 3D 코멘트(c.z)면 핀 높이로, 아니면 레벨 바닥 — SceneManager pinY와 일치(안 그러면 핀 안 보이는 바닥으로 점프).
+    const y = c.z !== undefined ? c.z / 1000 : (store.getLevel(c.levelId)?.elevation ?? 0) / 1000;
     if (store.getLevel(c.levelId)) useUiStore.getState().setActiveLevel(c.levelId);
-    actions.focusWorld(pt[0] / 1000, elev, pt[1] / 1000);
+    actions.focusWorld(pt[0] / 1000, y, pt[1] / 1000);
   };
   const sendReply = (rootId: string) => {
     const t = (reply[rootId] ?? '').trim();

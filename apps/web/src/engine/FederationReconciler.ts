@@ -43,6 +43,7 @@ export class FederationReconciler {
   private local = new Map<Id, LocalState>();
   private gen = 0;
   private lastSig = '';
+  private lastOrigin = ''; // projectOrigin 변경 감지 — 메시 오버레이 baked offset 재적용용
   private listeners = new Set<() => void>();
 
   constructor(
@@ -91,13 +92,20 @@ export class FederationReconciler {
     const sources = this.store.listFederationSources();
     // 시그니처 early-out: federation 채널의 id·ref·visible만 의미. 요소 편집(드래그 20-30Hz)엔
     // 불변 → 매 틱 재할당·notify 낭비를 차단. 가시성 토글/추가/제거는 sig를 바꿔 통과시킨다.
-    const sig = sources
-      // 언더레이 배치(placementSig)도 포함 — 클립/이동/회전/스케일 변경 시 reconcile 통과(재렌더).
-      .map((s) => `${s.id}:${s.sourceType}:${s.ref}:${s.visible ? 1 : 0}:${placementSigOf(s)}`)
-      .sort()
-      .join('|');
+    // projectOrigin도 시그에 — 메시 오버레이 로드 후 origin이 바뀌면 baked offset이 스테일(미정합) → 재로드 강제.
+    const origin = this.store.getProjectOrigin();
+    const sig =
+      `O:${origin ? `${origin[0]},${origin[1]}` : '0'}||` +
+      sources
+        // 언더레이 배치(placementSig)도 포함 — 클립/이동/회전/스케일 변경 시 reconcile 통과(재렌더).
+        .map((s) => `${s.id}:${s.sourceType}:${s.ref}:${s.visible ? 1 : 0}:${placementSigOf(s)}`)
+        .sort()
+        .join('|');
     if (sig === this.lastSig) return;
     this.lastSig = sig;
+    const originStr = origin ? `${origin[0]},${origin[1]}` : '0';
+    const originChanged = originStr !== this.lastOrigin;
+    this.lastOrigin = originStr;
 
     const ids = new Set(sources.map((s) => s.id));
 
@@ -112,6 +120,12 @@ export class FederationReconciler {
         // 신규 또는 ref/sourceType 변경 → (재)로드 (Codex #5)
         this.load(s);
       } else if (st.status === 'ready') {
+        const isMesh = !UNDERLAY_TYPES.has(s.sourceType) && !RASTER_TYPES.has(s.sourceType);
+        // origin 변경 + 메시 오버레이 = baked offset 스테일 → 재로드(재offset). 언더레이/래스터는 placement서 elevation만 써 무관.
+        if (originChanged && isMesh) {
+          this.load(s);
+          continue;
+        }
         // 언더레이/래스터 배치만 변경 → 캐시에서 재렌더(재페치·재파싱 없이). 그 외엔 가시성만 동기화.
         if (st.underlay && st.placementSig !== placementSigOf(s)) {
           this.reapplyUnderlay(s, st);

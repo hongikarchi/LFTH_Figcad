@@ -145,8 +145,10 @@ window.addEventListener('keydown', (e) => {
 let didFitFed = false;
 federation.onChange(() => {
   if (currentClip) setTimeout(applyClip, 120); // 모델이 clip 켠 뒤 로드되면 평면 위치 재계산
-  if (didFitFed) return;
-  if (referenceLayer.list().length > 0) { didFitFed = true; setTimeout(fitView, 100); }
+  // 첫 ready 시 1회 자동 맞춤 — latch는 fitView 성공 후에만(스케줄 창서 reload로 소스 사라지면 fit 유실 방지).
+  if (!didFitFed && referenceLayer.list().length > 0) {
+    setTimeout(() => { if (!didFitFed && fitView()) didFitFed = true; }, 100);
+  }
 });
 engine.addTicker(() => {
   hud.reproject(rig.active);

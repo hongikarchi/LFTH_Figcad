@@ -44,7 +44,10 @@ export function pickElement(
   return firstId;
 }
 
-/** 화면 좌표 → 주어진 루트들(오버레이 그룹·요소 메시) 최근접 3D 교차점(월드 m). 없으면 null. 3D 코멘트용. */
+/**
+ * 화면 좌표 → 주어진 루트들(오버레이 그룹·요소 메시) 최근접 **솔리드 면** 3D 교차점(월드 m). 없으면 null. 3D 코멘트용.
+ * Mesh만 채택 — 와이어 edge(Line, 기본 threshold 1m)·라벨 스프라이트 히트가 코멘트 z를 오염시키는 것 방지.
+ */
 export function raycastPoint(
   clientX: number,
   clientY: number,
@@ -53,8 +56,12 @@ export function raycastPoint(
 ): THREE.Vector3 | null {
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
+  const savedLine = raycaster.params.Line?.threshold;
+  if (raycaster.params.Line) raycaster.params.Line.threshold = 0; // 와이어 굵은 히트 차단
   const hits = raycaster.intersectObjects(roots, true); // recursive — 그룹 순회
-  return hits.length ? hits[0]!.point.clone() : null;
+  if (raycaster.params.Line && savedLine !== undefined) raycaster.params.Line.threshold = savedLine;
+  const hit = hits.find((h) => (h.object as THREE.Mesh).isMesh); // 솔리드 면만(Line/Sprite 제외)
+  return hit ? hit.point.clone() : null;
 }
 
 /**
