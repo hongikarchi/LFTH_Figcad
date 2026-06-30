@@ -60,7 +60,12 @@ export function raycastPoint(
   if (raycaster.params.Line) raycaster.params.Line.threshold = 0; // 와이어 굵은 히트 차단
   const hits = raycaster.intersectObjects(roots, true); // recursive — 그룹 순회
   if (raycaster.params.Line && savedLine !== undefined) raycaster.params.Line.threshold = savedLine;
-  const hit = hits.find((h) => (h.object as THREE.Mesh).isMesh); // 솔리드 면만(Line/Sprite 제외)
+  // three intersect는 .visible 무시 → 숨긴 오버레이를 뚫고 맞히면 틀린 점. 조상 체인 가시성으로 거른다(Codex 리뷰).
+  const isVisible = (o: THREE.Object3D): boolean => {
+    for (let n: THREE.Object3D | null = o; n; n = n.parent) if (!n.visible) return false;
+    return true;
+  };
+  const hit = hits.find((h) => (h.object as THREE.Mesh).isMesh && isVisible(h.object)); // 솔리드·보이는 면만
   return hit ? hit.point.clone() : null;
 }
 

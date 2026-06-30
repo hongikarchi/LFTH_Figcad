@@ -5,6 +5,7 @@ import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 
 const DRAG_COMMIT_PX = 8;
+const MIN_LEN_MM = 5; // 이보다 짧으면 퇴화(더블클릭/제자리 두 번) — 무시하고 도구 유지
 
 /**
  * 줄자(measure) — 리뷰 허브용 일회성 거리 측정. 두 점(클릭-클릭 또는 펜 드래그) 사이 거리를 mm로 표시.
@@ -27,6 +28,8 @@ export class MeasureTool implements Tool {
       new THREE.LineDashedMaterial({ color: 0x0a84ff, dashSize: 0.25, gapSize: 0.15 }),
     );
     this.line.frustumCulled = false;
+    // 대시 거리 attribute 미리 확보 → drawLine서 in-place 갱신(computeLineDistances 매 프레임 attribute 교체 누수 방지).
+    this.line.geometry.setAttribute('lineDistance', new THREE.Float32BufferAttribute([0, 0], 1));
     this.markerA = this.makeMarker(0x0a84ff);
     this.markerB = this.makeMarker(0xffffff);
     this.line.visible = this.markerA.visible = this.markerB.visible = false;
@@ -73,15 +76,14 @@ export class MeasureTool implements Tool {
   }
 
   move(info: ToolPointerInfo): void {
+    if (!this.a || this.finalized) return; // 측정 진행 중에만 — idle/완료 hover서 전체 씬 레이캐스트 낭비 방지(Codex 리뷰)
     const w = this.worldAt(info);
     if (!w) return;
-    if (this.a && !this.finalized) {
-      this.markerB.position.copy(w);
-      this.markerB.scale.setScalar(this.markerScale(info.mmPerPixel));
-      this.markerB.visible = true;
-      this.drawLine(this.a, w);
-      this.showChip(this.a, w);
-    }
+    this.markerB.position.copy(w);
+    this.markerB.scale.setScalar(this.markerScale(info.mmPerPixel));
+    this.markerB.visible = true;
+    this.drawLine(this.a, w);
+    this.showChip(this.a, w);
     this.ctx.engine.requestRender();
   }
 
@@ -99,18 +101,17 @@ export class MeasureTool implements Tool {
   }
 
   cancel(): void {
-    this.reset();
-    this.ctx.engine.requestRender();
+    this.reset(); // reset()이 requestRender 포함
   }
 
   /** RMB(Enter) = 측정 초기화 — 다음 측정 준비 */
   enter(): void {
     this.reset();
-    this.ctx.engine.requestRender();
   }
 
   private finalize(b: THREE.Vector3, mmPerPixel: number): void {
     if (!this.a) return;
+    if (this.a.distanceTo(b) * 1000 < MIN_LEN_MM) return; // 0mm 퇴화 측정 무시 — 도구는 B 대기 유지
     this.markerB.position.copy(b);
     this.markerB.scale.setScalar(this.markerScale(mmPerPixel));
     this.markerB.visible = true;
@@ -121,8 +122,11 @@ export class MeasureTool implements Tool {
   }
 
   private drawLine(a: THREE.Vector3, b: THREE.Vector3): void {
-    this.line.geometry.setFromPoints([a, b]);
-    this.line.computeLineDistances(); // 대시 머티리얼
+    this.line.geometry.setFromPoints([a, b]); // position만 in-place 갱신(2정점)
+    const ld = this.line.geometry.getAttribute('lineDistance') as THREE.BufferAttribute;
+    ld.setX(0, 0);
+    ld.setX(1, a.distanceTo(b));
+    ld.needsUpdate = true; // 대시 거리 in-place(computeLineDistances의 attribute 교체 누수 회피)
     this.line.visible = true;
   }
 
@@ -138,5 +142,6 @@ export class MeasureTool implements Tool {
     this.downClient = null;
     this.line.visible = this.markerA.visible = this.markerB.visible = false;
     this.ctx.hud.hideDimension();
+    this.ctx.engine.requestRender(); // 비주얼 정리 단일소스(cancel/enter/down-while-finalized 고스트 방지)
   }
 }

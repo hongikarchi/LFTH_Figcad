@@ -330,6 +330,8 @@ useUiStore.subscribe((state, prev) => {
     rig.setMode(state.viewMode);
     sceneManager.setViewContext(state.viewMode, state.activeLevelId);
     referenceLayer.setPlanFlipped(state.viewMode === 'plan'); // 언더레이 텍스트 미러 상쇄
+    // 측정 중/완료 상태에서 모드·층 전환 = 3D 표면점과 지면점이 섞여 잘못된 거리 → 리셋(Codex 리뷰).
+    if (tools.active instanceof MeasureTool) tools.active.cancel();
     engine.requestRender();
   }
   if (state.selection !== prev.selection) {
