@@ -39,6 +39,10 @@ export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror' | 'rotate';
 /** 정체성 순 작업 모드 (UI/UX 재구성 iter-2). AI = 탭 아닌 앰비언트 dock(전 모드 토글, aiOpen). 도면=mode 아닌 view. */
 export type WorkspaceMode = 'review' | 'model' | 'hub';
+/** 디바이스 클래스 — 폰(모바일 네이티브 셸) vs 데스크톱/아이패드(현행 사이드 레일). useDeviceClass가 matchMedia로 셋. */
+export type DeviceClass = 'phone' | 'desktop';
+/** 폰 바텀시트 콘텐츠 (모바일 전용) — null=닫힘. 사이드 레일 내용을 시트로 호스팅. */
+export type PhoneSheet = 'layers' | 'inspect' | 'hub' | 'version' | 'comment' | null;
 
 /**
  * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기,
@@ -116,6 +120,12 @@ interface UiState {
   /** 마크업 펜 스타일·모드 (iter-3 스케치 업그레이드) — MarkupTool이 createSketch에 사용 */
   sketchStyle: SketchStyle;
   sketchMode: 'line' | 'zone';
+  /** 디바이스 클래스 (모바일 반응형) — 폰이면 모바일 셸(바텀바·시트), 아니면 현행 레일 */
+  device: DeviceClass;
+  /** 폰 바텀시트 콘텐츠 (폰 전용) */
+  phoneSheet: PhoneSheet;
+  setDevice: (d: DeviceClass) => void;
+  setPhoneSheet: (s: PhoneSheet) => void;
   setTool: (t: ToolName) => void;
   setSketchStyle: (patch: Partial<SketchStyle>) => void;
   setSketchMode: (m: 'line' | 'zone') => void;
@@ -176,6 +186,10 @@ export const useUiStore = create<UiState>((set) => ({
   aiOpen: false,
   sketchStyle: { ...DEFAULT_SKETCH_STYLE },
   sketchMode: 'line',
+  device: 'desktop', // useDeviceClass가 mount 전 matchMedia로 교정(폰이면 'phone')
+  phoneSheet: null,
+  setDevice: (device) => set({ device }),
+  setPhoneSheet: (phoneSheet) => set({ phoneSheet }),
   // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
   setTool: (activeTool) =>
     set(

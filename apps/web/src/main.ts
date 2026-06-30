@@ -36,6 +36,7 @@ import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
 import { useUiStore } from './state/uiStore';
 import { App } from './ui/App';
+import { initDeviceClass } from './ui/useDeviceClass';
 import type { EditorContext } from './tools/context';
 
 // --- 문서: Y.Doc 하나 = 프로젝트 하나 (URL ?p=) ---
@@ -351,6 +352,7 @@ const collab = {
     useUiStore.getState().setUserName(name);
   },
 };
+initDeviceClass(); // mount 전 body.device-phone + store.device 교정(첫 페인트부터 모바일 셸 정확)
 createRoot(document.getElementById('ui-root')!).render(
   createElement(App, { store, actions: viewActions, federation, collab }),
 );

@@ -35,7 +35,9 @@ export class InputManager {
     private onChange: () => void,
     private opts: InputOptions = {},
   ) {
-    this.touch = new TouchGestures(rig, onChange, opts);
+    // 1지 탭 = 활성 도구 클릭(선택/코멘트/배치) — 폰(펜 없음) 뷰·리뷰용. 드래그는 그대로 카메라(불변 4 유지).
+    // 마우스 클릭과 동일 경로(down+up) → SelectTool 픽/CommentTool 리더와 무충돌. 2/3지 탭(undo/redo)은 opts에서.
+    this.touch = new TouchGestures(rig, onChange, { ...opts, onTap: (x, y) => this.tapTool(x, y) });
 
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -55,6 +57,19 @@ export class InputManager {
       clientY: e.clientY,
       mmPerPixel: Math.max(this.rig.worldPerPixel() * 1000, 0.001),
     };
+  }
+
+  /** 터치 1지 탭 → 활성 도구에 합성 클릭(down+up, 마우스 클릭과 동일 경로). 폰 선택/코멘트/배치. */
+  private tapTool(x: number, y: number): void {
+    if (this.penActive) return; // 펜 워크플로 중엔 무시(팜 리젝션 대칭)
+    const info: ToolPointerInfo = {
+      doc: screenToDoc(x, y, this.rig.active, this.getElevationM()),
+      clientX: x,
+      clientY: y,
+      mmPerPixel: Math.max(this.rig.worldPerPixel() * 1000, 0.001),
+    };
+    this.tools.active?.down(info);
+    this.tools.active?.up(info);
   }
 
   private setPenActive(on: boolean): void {

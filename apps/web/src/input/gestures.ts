@@ -10,6 +10,8 @@ interface TrackedPointer {
  * 도구(펜) 입력과 분리된 카메라 전용 상태머신.
  */
 export interface TapCallbacks {
+  /** 1지 탭 = 활성 도구 클릭(선택/코멘트/배치) — 모바일 반응형(폰=펜 없음). 드래그는 카메라(불변 유지). */
+  onTap?: (x: number, y: number) => void;
   /** 2지 탭 = undo, 3지 탭 = redo (Procreate/iPad 관례) */
   onTwoFingerTap?: () => void;
   onThreeFingerTap?: () => void;
@@ -75,11 +77,12 @@ export class TouchGestures {
   up(e: PointerEvent): void {
     this.pointers.delete(e.pointerId);
     this.resetReference();
-    // 모든 손가락이 떨어졌을 때 탭 판정 (<300ms, 이동 <10px)
-    if (this.pointers.size === 0 && this.sessionMaxCount >= 2) {
+    // 모든 손가락이 떨어졌을 때 탭 판정 (<300ms, 이동 <10px). 1지=도구클릭, 2/3지=undo/redo.
+    if (this.pointers.size === 0 && this.sessionMaxCount >= 1) {
       const dur = performance.now() - this.sessionStart;
       if (dur < 300 && this.sessionMoved < 10) {
-        if (this.sessionMaxCount === 2) this.taps.onTwoFingerTap?.();
+        if (this.sessionMaxCount === 1) this.taps.onTap?.(e.clientX, e.clientY);
+        else if (this.sessionMaxCount === 2) this.taps.onTwoFingerTap?.();
         else if (this.sessionMaxCount === 3) this.taps.onThreeFingerTap?.();
       }
     }

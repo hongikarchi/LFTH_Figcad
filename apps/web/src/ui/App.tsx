@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DocStore } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
+import { useUiStore } from '../state/uiStore';
 import { TopBar } from './TopBar';
 import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
@@ -8,6 +9,8 @@ import { ViewportCluster } from './ViewportCluster';
 import { CommandPalette } from './CommandPalette';
 import { AiPanel } from './AiPanel';
 import { DrawingPanel } from './DrawingPanel';
+import { BottomBar } from './BottomBar';
+import { BottomSheet } from './BottomSheet';
 
 /** 협업 명령형 핸들 (presence) — React 패널에 노출되는 부분만. peers/connection은 uiStore. */
 export interface CollabHandle {
@@ -47,11 +50,22 @@ export function App({
   federation: FederationReconciler;
   collab: CollabHandle;
 }) {
+  // 모바일 반응형: 폰 = 바텀바+시트(사이드 레일은 시트가 호스팅), 데스크톱/아이패드 = 현행 좌우 레일.
+  const phone = useUiStore((s) => s.device === 'phone');
   return (
     <>
       <TopBar store={store} federation={federation} collab={collab} />
-      <WorkRail store={store} actions={actions} federation={federation} />
-      <Inspector store={store} />
+      {phone ? (
+        <>
+          <BottomBar />
+          <BottomSheet store={store} actions={actions} federation={federation} />
+        </>
+      ) : (
+        <>
+          <WorkRail store={store} actions={actions} federation={federation} />
+          <Inspector store={store} />
+        </>
+      )}
       <ViewportCluster store={store} actions={actions} />
       <AiPanel store={store} />
       <DrawingPanel store={store} />
