@@ -1,26 +1,50 @@
-import { useUiStore, type PhoneSheet } from '../state/uiStore';
+import { useUiStore } from '../state/uiStore';
 
 /**
- * 폰 전용 하단 바 (모바일 리뷰/뷰어 — 엄지존). 기능 버튼: 모델·코멘트·AI + 선택 시 검사.
- * 모드 탭 없음(폰=리뷰/뷰어 고정). 각 버튼 = 집중 컴팩트 시트. undo/redo·fit·3D·층은 우하 ViewportCluster.
+ * 폰 전용 하단 바 (모바일 리뷰/뷰어 — 엄지존). 리뷰 동사 도구 토글(선택·코멘트·마크업) + 패널(모델·AI) + 검사.
+ * 도구 버튼 = setTool → 캔버스 탭(InputManager tapTool 합성클릭)이 그 도구로 라우팅 = 폰서 코멘트/마크업 "새로" 가능.
+ * 폰=review 고정(useDeviceClass) — 모델링 도구는 절대 안 띄움.
  */
 export function BottomBar() {
+  const activeTool = useUiStore((s) => s.activeTool);
   const phoneSheet = useUiStore((s) => s.phoneSheet);
-  const setPhoneSheet = useUiStore((s) => s.setPhoneSheet);
   const aiOpen = useUiStore((s) => s.aiOpen);
-  const setAiOpen = useUiStore((s) => s.setAiOpen);
   const hasSelection = useUiStore((s) => s.selection.length > 0);
-  const toggle = (sheet: PhoneSheet): void => setPhoneSheet(phoneSheet === sheet ? null : sheet);
+  const { setTool, setPhoneSheet, setAiOpen } = useUiStore.getState();
+
   return (
     <div className="bottom-bar">
-      <button className={`bottom-bar-btn ${phoneSheet === 'models' ? 'active' : ''}`} onClick={() => toggle('models')}>
-        📦 모델
+      <button
+        className={`bottom-bar-btn ${activeTool === 'select' ? 'active' : ''}`}
+        onClick={() => { setTool('select'); setPhoneSheet(null); }}
+      >
+        👆 선택
       </button>
-      <button className={`bottom-bar-btn ${phoneSheet === 'comment' ? 'active' : ''}`} onClick={() => toggle('comment')}>
+      <button
+        className={`bottom-bar-btn ${activeTool === 'comment' ? 'active' : ''}`}
+        title="코멘트 — 탭해서 핀 달기"
+        onClick={() => { setTool('comment'); setPhoneSheet('comment'); }}
+      >
         💬 코멘트
       </button>
+      <button
+        className={`bottom-bar-btn ${activeTool === 'sketch-pen' ? 'active' : ''}`}
+        title="마크업 — 손그림 표시"
+        onClick={() => { setTool('sketch-pen'); setPhoneSheet(null); }}
+      >
+        ✎ 마크업
+      </button>
+      <button
+        className={`bottom-bar-btn ${phoneSheet === 'models' ? 'active' : ''}`}
+        onClick={() => setPhoneSheet(phoneSheet === 'models' ? null : 'models')}
+      >
+        📦 모델
+      </button>
       {hasSelection && (
-        <button className={`bottom-bar-btn ${phoneSheet === 'inspect' ? 'active' : ''}`} onClick={() => toggle('inspect')}>
+        <button
+          className={`bottom-bar-btn ${phoneSheet === 'inspect' ? 'active' : ''}`}
+          onClick={() => setPhoneSheet(phoneSheet === 'inspect' ? null : 'inspect')}
+        >
           ⓘ 검사
         </button>
       )}
