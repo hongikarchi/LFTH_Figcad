@@ -9,7 +9,8 @@
   - **사용자 남은 일**: AI 키 + **리전 US**(Anthropic 403 회피) · 커넥터 BASE = 이 Railway URL.
 - **M16 ✅ (2026-06-27~07-01, 상세 HISTORY ▶M16)**: 멀티포맷 ingest(image/PDF 래스터·**DWG/DXF 클라 WASM 언더레이**·.3dm SOLID) + sketch→markup + UI/UX iter-2(ModeTabs·HubStrip·AI dock) + AI 사진/음성 + **모바일 리뷰/뷰어 셸** + 클레이 렌더·단면(클립) + pull-latest + **야간 멀티에이전트 보안/품질 하드닝**(미인증 WS-DoS·body cap·.mjs MIME 등). **interop "DWG 배제" 규칙 뒤집힘** → 클라 WASM DWG 채택(아래 영역별 규칙 갱신요).
 - **M14 실사용 검증 🔄**: 갭 4개 해결. 남은 = 사용자 조율 세션(2기기 동시편집·glTF 정합). 갭 캡처 = `docs/realuse-validation.md`.
-- **진행중(feat/prd-loop, 미배포)**: 기획자-개발자 자율 루프 — 폰 리뷰 동사·pull-latest 완료, 오버레이 3D 코멘트·섹션라인 등 진행.
+- **진행중(feat/prd-loop, 미배포 — 사용자 아침검토 대기)**: 기획자→개발자→리뷰어 자율 루프(야간 Phase 9). 완료(브랜치 11커밋): 폰 리뷰 동사·pull-latest·오버레이 3D 코멘트(P0 배치) → **실시간 단면**(클립 라이브 + CPU 메시∩평면 절단선, 열린 매싱서 동작, ~31ms 실측 디바운스, **굵은 LineSegments2 라인**) + **줄자 측정**(오버레이 메시 3D 거리, 폰 포함) + fork 버튼 정리. 각 기능 = 어드버서리얼 리뷰→검증→수정.
+  - **아침 결정 대기**: ① 배포 여부(검토 후) ② `create_text` AI 노출 컷(UI선 제거됐는데 AI는 생성 가능 — 일관성상 노출 끄기 권장) ③ **공유 단면/뷰포인트**(presence awareness, 콜라보·실시간 해자 정수 — greenlight 시 구현) ④ 단면 **해치/poché**(닫힌 솔리드만 가능, 열린 매싱은 보류).
 
 ### 다음 작업 (재계획 대상 — eyes-open)
 - **G Brep 리프트 튜닝**: 로컬 end-to-end 실증 완료, **보 과분류 튜닝** 남음 (`docs/brep-lifting-2026.md`). G 잔여: L-PARKING(78=매칭 kind 없음)·logo/glass = Lane-2 유지. stair/railing 곡선 = bbox 근사(v1.5 파라).
