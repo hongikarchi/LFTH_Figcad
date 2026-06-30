@@ -3,6 +3,18 @@
 > 완료된 마일스톤의 상세·검증·배포 기록 보관소. **현재 상태·다음 작업·백로그는 `ROADMAP.md`** (lean SoT).
 > 여기는 "어떻게 여기까지 왔나"(완료 마일스톤 + Version ID). compact 생존 불필요 — 참조용.
 
+## M16 — 멀티포맷 ingest + 리뷰/뷰어 + 모바일 + 보안 하드닝 (2026-06-27~07-01)
+> M15 이후 master 병합·라이브 배포분 일괄(라이브 `index-BIHtcVP9.js`, master `c8670cf` 시점). 정체성 = 중립 허브 마무리(더 많은 포맷 ingest·오버레이 리뷰)+폰을 리뷰 기기로. 세부 메모리: `figcad-import-formats`·`figcad-dwg-underlay`·`figcad-sketch-markup`·`figcad-mobile-responsive`·`figcad-overnight-review-loop`.
+- **멀티포맷 ingest**: image/PDF 래스터 언더레이(pdfjs v6 코드스플릿, ImageBitmap→canvas flipY 정위치+4096 다운스케일) · **DWG/DXF 클라 WASM 언더레이**(`@mlightcad/libredwg-web` — bulge/블록전개/HATCH/SPLINE/XCLIP, ODA 불필요) · .3dm SOLID(Brep face 캐시 렌더메시 `getMesh`, import3dmRefs). federation `extract3dm`=render-mesh 솔리드/없으면 edge 와이어.
+- **sketch → 영속 markup 도구**: 신규 `sketch` kind(boundary+POSITIONAL polygon), style float 렌더힌트, frame=3D 자유평면. MarkupTool(sketch-pen).
+- **UI/UX iter-2**: ModeTabs(협업·리뷰/모델/허브) + WorkRail/Inspector mode별 재구성 + HubStrip(상단 멀티모델) + AI 앰비언트 dock(전 모드 토글) + comment 2클릭 leader(데이터 분리). default 랜딩=협업·리뷰(해자 먼저).
+- **AI mode 강화**: 사진/음성 입력 · 모델선택(정확/균형/빠름) · auto-apply · thinking 가시화.
+- **야간 멀티에이전트 adversarial 리뷰 3패스(127 에이전트) → 21+ fix**: .3dm 블록 use-after-delete 크래시 · 이미지 상하반전 · **서버 미인증 WS-upgrade 크래시 DoS** · 본문 OOM 캡 · auth-before-room · static traversal · 폴리라인→벽체인 · DXF $INSUNITS 단위 · 도면 text/dim/sketch · dwg 비유한/호-poché/예산 가드 · .mjs MIME(PDF worker). 통합 스모크 `apps/server/scripts/security-smoke.mjs`. 상세 = 메모리 `figcad-overnight-review-loop`.
+- **모바일 반응형**: 폰=리뷰/뷰어 셸(device-class matchMedia coarse+540px → body.device-phone) — 컴팩트 상단바 + 풀블리드 캔버스 + 엄지존 하단바(리뷰 동사 도구) + 바텀시트(모델·코멘트·검사). 탭=도구클릭(InputManager tapTool, 드래그=카메라 불변 유지). 아이패드/데스크톱 무변경.
+- **클레이 렌더 + 단면**: 오버레이 메시 불투명 흰색(클레이, 투명 고스트 아님) + 전역 renderer.clippingPlanes 단면 툴(수평/X/Z + 위치 슬라이더 + flip, ClipControl). (스텐실 섹션-캡은 열린 매싱서 누수 → 보류, 섹션-라인 CPU 윤곽이 후속.)
+- **pull-latest**: federation.reload(id) 강제 재추출 + ↻ 버튼(HubManage·PhoneModelsSheet) — 오버레이 페치-시점 동결 해소.
+- **뒤집힌 결정 2개(명문화)**: ① interop "DWG 배제(ODA 유료)" → **클라 WASM DWG/DXF 언더레이 채택**(libredwg-web, 무료, 실파일 검증). ② 서버 보안 포스처 = **auth(ROOM_KEY)-before-room-alloc · 미인증 WS-upgrade 크래시 차단(roomFromPath try/catch + process uncaughtException) · 읽는중 body-size cap(413) · static path.sep 경계 · .mjs MIME**.
+
 ## M15 — Cloudflare → Railway 이주 (Node 백엔드) ✅ 배포완료 (2026-06-22)
 > 라이브: **https://lfthfigcad-production.up.railway.app**. CF DO 무료 duration 한도 초과(지속 WS=룸 24h 과금, 실시간 허브엔 구조적) → 내부툴은 Railway 정액이 적합. 플랜 `~/.claude/plans/docs-fuzzy-micali.md` ▶M15 · 메모리 `figcad-railway-migration` · 배포가이드 `docs/RAILWAY_DEPLOY.md`. **core/geometry/interop/UI 0변경**(전송+저장+배포만).
 - **빌더 = Dockerfile**(node:22): nixpacks 4연속 실패(Node/pnpm 버전지옥·.NET 오판) → Dockerfile 결정적. 배포 검증 전부 green(빌드·서빙·라우트·**WSS 실시간**·**볼륨 /data 영속**·numReplicas=1).

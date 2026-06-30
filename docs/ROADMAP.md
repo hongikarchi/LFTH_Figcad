@@ -5,11 +5,13 @@
 
 ## 현재 상태 (Current)
 
-- **Primary = Railway (M15 ✅ 배포완료, 2026-06-22)**: 라이브 **https://lfthfigcad-production.up.railway.app** (Node 백엔드, Dockerfile 빌드). M12~M14.1 미배포분 전부 포함. CF(`figcad.archivibe.workers.dev`)는 rollback용 유지. 상세 = `docs/HISTORY.md` ▶M15 · 배포가이드 `docs/RAILWAY_DEPLOY.md`.
-  - **사용자 남은 일**: AI 키 `railway variables --set ANTHROPIC_API_KEY=`(시크릿) + **리전 US 확인**(Anthropic 403 회피) · 커넥터 BASE = 이 Railway URL.
-- **M14 실사용 검증 🔄**: 배포·실모델 갭 4개 해결 완료(상세 HISTORY ▶M14). 남은 활성 작업 = 사용자 조율 세션(`figcad-push.cs`/새 .rhp push + glTF 오버레이 정합 + 2기기 동시편집). 갭 캡처 = `docs/realuse-validation.md`.
+- **Primary = Railway (라이브 배포중)**: **https://lfthfigcad-production.up.railway.app** (Node 백엔드, Dockerfile). 최신 배포 = **M16**(라이브 `index-BIHtcVP9.js`, master `c8670cf`). CF(`figcad.archivibe.workers.dev`)는 rollback용. 배포가이드 `docs/RAILWAY_DEPLOY.md`.
+  - **사용자 남은 일**: AI 키 + **리전 US**(Anthropic 403 회피) · 커넥터 BASE = 이 Railway URL.
+- **M16 ✅ (2026-06-27~07-01, 상세 HISTORY ▶M16)**: 멀티포맷 ingest(image/PDF 래스터·**DWG/DXF 클라 WASM 언더레이**·.3dm SOLID) + sketch→markup + UI/UX iter-2(ModeTabs·HubStrip·AI dock) + AI 사진/음성 + **모바일 리뷰/뷰어 셸** + 클레이 렌더·단면(클립) + pull-latest + **야간 멀티에이전트 보안/품질 하드닝**(미인증 WS-DoS·body cap·.mjs MIME 등). **interop "DWG 배제" 규칙 뒤집힘** → 클라 WASM DWG 채택(아래 영역별 규칙 갱신요).
+- **M14 실사용 검증 🔄**: 갭 4개 해결. 남은 = 사용자 조율 세션(2기기 동시편집·glTF 정합). 갭 캡처 = `docs/realuse-validation.md`.
+- **진행중(feat/prd-loop, 미배포)**: 기획자-개발자 자율 루프 — 폰 리뷰 동사·pull-latest 완료, 오버레이 3D 코멘트·섹션라인 등 진행.
 
-### 다음 작업 (M13 잔여 + 재계획 대상 — eyes-open)
+### 다음 작업 (재계획 대상 — eyes-open)
 - **G Brep 리프트 튜닝**: 로컬 end-to-end 실증 완료, **보 과분류 튜닝** 남음 (`docs/brep-lifting-2026.md`). G 잔여: L-PARKING(78=매칭 kind 없음)·logo/glass = Lane-2 유지. stair/railing 곡선 = bbox 근사(v1.5 파라).
 - **D .3dm 네이티브 한계**: Mesh 객체 .3dm만 지원. pure-Brep/블록 Rhino(예 260617=Instance687·Mesh0)=빈오버레이 → glTF 경로.
 - **E 3D-Tiles HLOD**: 대형 신규 뷰어 서브시스템(436MB 스트리밍). 재계획서 결정. F6 전체 federation과 페어.

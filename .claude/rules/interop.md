@@ -26,5 +26,6 @@ description: interop WASM 로딩·포맷별 손실·import 한계
 - **곡선(arc) 벽 export = C5에서 닫음 ✅:** `wall.sagitta`(곡선 중심선)를 IFC/.3dm/DXF가 **호 테셀 dense 폴리라인**(`arcPolyline`+`curvedWallFootprint`)으로 내보냄 — 직선 현 손실 없음, 곡률 보존. (IFC=로컬좌표 IfcPolyline axis + IfcArbitraryClosedProfileDef body, .3dm=PolylineCurve, DXF=다정점 LWPOLYLINE.) 잔여(후속): 진짜 파라메트릭 arc 엔티티(IfcArcIndex/ArcCurve/bulge) + re-import 시 sagitta 복원(현재 재import는 폴리라인→직선 벽 = import 일반 한계).
 - 대형 .3dm(수백 MB)은 브라우저 WASM 메모리 캡(탭 ~200-300MB) 초과 → 통짜 import 불가. subset 또는 connector 경로.
 
-## 배제 확정
-DWG(ODA 유료)·.skp(WASM 불가+경쟁조항)·.rvt 네이티브 쓰기 불가 → IFC 경유.
+## 배제 / 채택 (M16 갱신)
+- **DWG/DXF = 채택**(이전 "ODA 유료 배제" 뒤집힘): `@mlightcad/libredwg-web` 클라 WASM로 **read-only 2D 언더레이**(빽도면) 파싱 — ODA 불필요, 무료, 실파일 검증. 메시 아닌 라인워크(`fetchDwgUnderlay`→`ReferenceLayer.addUnderlay`). 네이티브 쓰기(편집가능 요소화)는 여전히 IFC/커넥터 경유.
+- **여전히 배제**: .skp(WASM 파서 없음+경쟁조항 → 플러그인 glTF export 경로)·.rvt 네이티브 쓰기 → IFC 경유.
