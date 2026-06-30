@@ -41,8 +41,8 @@ export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror'
 export type WorkspaceMode = 'review' | 'model' | 'hub';
 /** 디바이스 클래스 — 폰(모바일 네이티브 셸) vs 데스크톱/아이패드(현행 사이드 레일). useDeviceClass가 matchMedia로 셋. */
 export type DeviceClass = 'phone' | 'desktop';
-/** 폰 바텀시트 콘텐츠 (모바일 전용) — null=닫힘. 사이드 레일 내용을 시트로 호스팅. */
-export type PhoneSheet = 'layers' | 'inspect' | 'hub' | 'version' | 'comment' | null;
+/** 폰 바텀시트 콘텐츠 (모바일 리뷰/뷰어 전용) — null=닫힘. 집중형 컴팩트 시트. */
+export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
 
 /**
  * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기,

@@ -1,8 +1,8 @@
 /**
- * 모바일 반응형 스모크 — 아이폰 에뮬레이션(390×844, touch)으로 폰 셸 검증. 사전: vite dev.
+ * 모바일 리뷰/뷰어 스모크 (v2) — 아이폰 에뮬(390×844, touch). 사전: vite dev.
  * 사용: node apps/web/scripts/mobile-smoke.mjs [vite 포트=5173]
- * 검증: device-phone 분기 · 사이드레일 숨김 · 풀블리드 캔버스 · InfoBox 음수폭 없음 · 바텀바 ·
- *       탭=선택 · 바텀시트 open/close · 드래그=카메라 · AI 풀스크린 · 콘솔 에러 0.
+ * 검증: device-phone + review 고정 · 모드탭 없음 · 기능버튼 · 사이드레일 숨김 · 풀블리드 ·
+ *       시트가 화면 안 가림(≤60vh대) · 모델/코멘트/검사 컴팩트 시트 · 탭=선택 · 드래그=카메라 · 콘솔0.
  */
 import puppeteer from 'puppeteer-core';
 import { KnownDevices } from 'puppeteer-core';
@@ -17,24 +17,20 @@ const ok = (c, m) => (c ? pass : fail).push(m);
 const errs = [];
 try {
   const page = await browser.newPage();
-  await page.emulate(KnownDevices['iPhone 13']); // 390×844, isMobile, hasTouch → pointer:coarse
+  await page.emulate(KnownDevices['iPhone 13']); // 390×844, touch → pointer:coarse
   page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text().slice(0, 140)); });
   page.on('pageerror', (e) => errs.push('PE:' + e.message.slice(0, 140)));
   page.on('dialog', (d) => d.accept('모바일'));
   await page.goto(`http://localhost:${port}/?p=${room}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__figcad?.ui, { timeout: 12000 });
-
-  // device-phone 판정
   await wait(400);
-  const dev = await page.evaluate(() => ({
-    body: document.body.classList.contains('device-phone'),
-    store: window.__figcad.ui.getState().device,
-    coarse: window.matchMedia('(pointer: coarse)').matches,
-    w: window.innerWidth,
-  }));
-  ok(dev.body && dev.store === 'phone', `device-phone 판정 (body=${dev.body} store=${dev.store} coarse=${dev.coarse} w=${dev.w})`);
 
-  // 원점 방(벽4) + 평면 뷰
+  // device-phone + review 고정
+  const dev = await page.evaluate(() => ({ body: document.body.classList.contains('device-phone'), store: window.__figcad.ui.getState().device, mode: window.__figcad.ui.getState().activeMode }));
+  ok(dev.body && dev.store === 'phone', `device-phone 판정 (store=${dev.store})`);
+  ok(dev.mode === 'review', `리뷰/뷰어 모드 고정 (mode=${dev.mode})`);
+
+  // 방(벽4) — store API(모드 무관)
   await page.evaluate(() => {
     const { store, seed, ui } = window.__figcad;
     const L = seed.levelId, T = seed.wallTypeIds[0];
@@ -42,80 +38,78 @@ try {
     store.createWall({ levelId: L, typeId: T, a: [2000, -1500], b: [2000, 1500] });
     store.createWall({ levelId: L, typeId: T, a: [2000, 1500], b: [-2000, 1500] });
     store.createWall({ levelId: L, typeId: T, a: [-2000, 1500], b: [-2000, -1500] });
-    ui.getState().setMode('model');
     ui.getState().setViewMode('plan');
-    ui.getState().setTool('select');
   });
   await wait(600);
 
-  // 레이아웃: 사이드 레일 숨김 + 바텀바 존재 + InfoBox 폭
+  // 레이아웃: 모드탭 없음 + 기능버튼 ≥3 + 사이드레일 숨김
   const layout = await page.evaluate(() => {
-    const vis = (sel) => { const e = document.querySelector(sel); if (!e) return 'absent'; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return cs.display === 'none' || r.width === 0 ? 'hidden' : `${Math.round(r.width)}px`; };
-    const ib = document.querySelector('.infobox');
+    const railGone = (s) => { const e = document.querySelector(s); return !e || getComputedStyle(e).display === 'none' || e.getBoundingClientRect().width === 0; };
     return {
-      workRail: vis('.work-rail'),
-      inspector: vis('.inspector'),
-      bottomBar: !!document.querySelector('.bottom-bar'),
-      bottomBarBottom: document.querySelector('.bottom-bar')?.getBoundingClientRect().bottom ?? 0,
-      infoboxW: ib ? Math.round(ib.getBoundingClientRect().width) : -1,
-      vw: window.innerWidth,
+      modeTabsInBar: !!document.querySelector('.bottom-bar .mode-tabs'),
+      btnCount: document.querySelectorAll('.bottom-bar .bottom-bar-btn').length,
+      rail: railGone('.work-rail'), insp: railGone('.inspector'),
     };
   });
-  // 폰선 사이드 레일을 standalone 렌더 안 함(시트가 유일 마운트) → 'absent' 또는 'hidden' 둘 다 OK(캔버스 안 가림)
-  const railGone = (v) => v === 'hidden' || v === 'absent';
-  ok(railGone(layout.workRail) && railGone(layout.inspector), `사이드 레일 비표시 (workRail=${layout.workRail} inspector=${layout.inspector})`);
-  ok(layout.bottomBar && layout.bottomBarBottom >= layout.vw * 0 && layout.bottomBarBottom <= 844 + 1, `바텀바 존재 + 하단(bottom=${Math.round(layout.bottomBarBottom)})`);
-  ok(layout.infoboxW <= layout.vw, `InfoBox 폭 ≤ 뷰포트 (${layout.infoboxW} ≤ ${layout.vw}, 음수폭 버그 없음)`);
+  ok(!layout.modeTabsInBar, `모드탭 없음 (하단바)`);
+  ok(layout.btnCount >= 3, `기능버튼 ${layout.btnCount}개 (모델·코멘트·AI)`);
+  ok(layout.rail && layout.insp, `사이드 레일 비표시`);
 
-  // 탭 = 선택 (방 중앙 = 벽 부근; 북벽 중앙 탭). 화면 중앙 근처 탭 후 selection
-  // 방 중앙(0,0)은 빈 공간 → 탭하면 deselect. 벽 위를 탭해야. 북벽 중점 doc[0,-1500] → 화면px 계산.
+  // 모델 시트 — 컴팩트 + 화면 안 가림(높이 ≤ 62vh) + 층 행
+  await page.evaluate(() => window.__figcad.ui.getState().setPhoneSheet('models'));
+  await wait(400);
+  const models = await page.evaluate(() => {
+    const sh = document.querySelector('.bottom-sheet'); if (!sh) return null;
+    const r = sh.getBoundingClientRect();
+    return { h: Math.round(r.height), vh: window.innerHeight, content: !!document.querySelector('.phone-sheet-content'), rows: document.querySelectorAll('.phone-row-main').length, title: document.querySelector('.bottom-sheet-title')?.textContent };
+  });
+  ok(models && models.content, `모델 시트 = 컴팩트 콘텐츠 (title=${models?.title})`);
+  ok(models && models.h <= models.vh * 0.62, `시트가 화면 안 가림 (h=${models?.h} ≤ ${Math.round((models?.vh ?? 0) * 0.62)})`);
+  ok(models && models.rows >= 1, `모델 시트 행(층/도면) ${models?.rows}개`);
+
+  // 코멘트 시트
+  await page.evaluate(() => window.__figcad.ui.getState().setPhoneSheet('comment'));
+  await wait(300);
+  ok(await page.evaluate(() => { const t = document.querySelector('.bottom-sheet-title')?.textContent; return t === '코멘트' && !!document.querySelector('.bottom-sheet-body .cmt-list, .bottom-sheet-body .rail-section'); }), '코멘트 시트 렌더');
+  await page.evaluate(() => document.querySelector('.bottom-sheet-backdrop')?.click());
+  await wait(250);
+
+  // 탭 = 선택 (북벽 중점)
   const wallPx = await page.evaluate(() => {
-    const { rig } = window.__figcad; const cam = rig.active;
+    const cam = window.__figcad.rig.active;
     const V = cam.matrixWorldInverse.elements, P = cam.projectionMatrix.elements;
     const mul = (M, v) => [0, 1, 2, 3].map((r) => M[r] * v[0] + M[r + 4] * v[1] + M[r + 8] * v[2] + M[r + 12] * v[3]);
-    const c = mul(P, mul(V, [0, 0, -1.5, 1])); // 북벽 중점 world[0,0,-1.5]
-    return { x: Math.round(((c[0] / c[3] + 1) / 2) * window.innerWidth), y: Math.round(((1 - c[1] / c[3]) / 2) * window.innerHeight) };
+    const c = mul(P, mul(V, [0, 0, -1.5, 1]));
+    return { x: Math.round(((c[0] / c[3] + 1) / 2) * innerWidth), y: Math.round(((1 - c[1] / c[3]) / 2) * innerHeight) };
   });
   await page.touchscreen.tap(wallPx.x, wallPx.y);
   await wait(250);
-  const selAfterTap = await page.evaluate(() => window.__figcad.ui.getState().selection.length);
-  ok(selAfterTap > 0, `탭=선택 (벽px ${wallPx.x},${wallPx.y} → selection=${selAfterTap})`);
+  const sel = await page.evaluate(() => window.__figcad.ui.getState().selection.length);
+  ok(sel > 0, `탭=선택 (selection=${sel})`);
 
-  // 드래그 = 카메라 (선택 안 바뀌고 요소 안 늘어남). 빈 영역 드래그.
-  const elemBefore = await page.evaluate(() => window.__figcad.store.listElements().length);
+  // 선택 시 검사 버튼 등장 + 검사 시트
+  ok(await page.evaluate(() => [...document.querySelectorAll('.bottom-bar-btn')].some((b) => b.textContent.includes('검사'))), '선택 시 검사 버튼 등장');
+  await page.evaluate(() => window.__figcad.ui.getState().setPhoneSheet('inspect'));
+  await wait(300);
+  ok(await page.evaluate(() => document.querySelector('.bottom-sheet-title')?.textContent === '검사'), '검사 시트 렌더');
+  await page.evaluate(() => document.querySelector('.bottom-sheet-backdrop')?.click());
+  await wait(250);
+
+  // 드래그 = 카메라 (요소 안 늘어남)
+  const before = await page.evaluate(() => window.__figcad.store.listElements().length);
   await page.touchscreen.touchStart(120, 300);
   await page.touchscreen.touchMove(240, 420);
   await page.touchscreen.touchMove(300, 500);
   await page.touchscreen.touchEnd();
   await wait(250);
-  const elemAfter = await page.evaluate(() => window.__figcad.store.listElements().length);
-  ok(elemAfter === elemBefore, `드래그=카메라 (요소 ${elemBefore}→${elemAfter}, 드로잉 안 됨)`);
-
-  // 바텀시트 open/close
-  await page.evaluate(() => window.__figcad.ui.getState().setPhoneSheet('layers'));
-  await wait(300);
-  const sheetOpen = await page.evaluate(() => !!document.querySelector('.bottom-sheet') && !!document.querySelector('.bottom-sheet .work-rail'));
-  ok(sheetOpen, '바텀시트 open + WorkRail 시트내 렌더');
-  await page.evaluate(() => { document.querySelector('.bottom-sheet-backdrop')?.click(); });
-  await wait(300);
-  const sheetClosed = await page.evaluate(() => !document.querySelector('.bottom-sheet'));
-  ok(sheetClosed, '바텀시트 close (백드롭 탭)');
-
-  // AI 풀스크린
-  await page.evaluate(() => window.__figcad.ui.getState().setAiOpen(true));
-  await wait(300);
-  const ai = await page.evaluate(() => {
-    const p = document.querySelector('.ai-panel:not(.ai-hidden)'); if (!p) return null;
-    const r = p.getBoundingClientRect(); return { left: Math.round(r.left), width: Math.round(r.width), vw: window.innerWidth };
-  });
-  ok(ai && ai.left <= 1 && ai.width >= ai.vw - 1, `AI 풀스크린 시트 (${ai ? `left=${ai.left} w=${ai.width}/${ai.vw}` : 'absent'})`);
+  ok(await page.evaluate(() => window.__figcad.store.listElements().length) === before, `드래그=카메라 (요소 ${before} 불변)`);
 
   ok(errs.length === 0, `콘솔 에러 0 (${errs.length}${errs.length ? ' :: ' + errs.join(' | ') : ''})`);
 
   console.log('\n=== PASS (' + pass.length + ') ===');
   pass.forEach((p) => console.log('  ✓ ' + p));
   if (fail.length) { console.log('=== FAIL (' + fail.length + ') ==='); fail.forEach((f) => console.log('  ✗ ' + f)); process.exitCode = 1; }
-  else console.log('\nALL PASS — mobile responsive smoke');
+  else console.log('\nALL PASS — mobile review/viewer smoke (v2)');
 } catch (e) {
   console.error('THREW: ' + e.message);
   process.exitCode = 1;

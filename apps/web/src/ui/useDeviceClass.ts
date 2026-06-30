@@ -16,6 +16,8 @@ export function initDeviceClass(): void {
     const st = useUiStore.getState();
     const next = phone ? 'phone' : 'desktop';
     if (st.device !== next) st.setDevice(next);
+    // 폰 = 리뷰/뷰어 고정 — 모델링 모드/도구 미노출(select·comment만). 데스크톱 전환 시엔 모드 안 건드림.
+    if (phone && st.activeMode !== 'review') st.setMode('review');
   };
   apply(mql.matches);
   mql.addEventListener('change', (e) => apply(e.matches));
