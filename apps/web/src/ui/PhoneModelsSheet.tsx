@@ -56,6 +56,9 @@ export function PhoneModelsSheet({
                 <span className="phone-name">{s.name}</span>
                 <span className="phone-meta">{SOURCE_BADGE[s.sourceType]}</span>
               </button>
+              <button className="phone-row-x" onClick={() => federation.reload(s.id)} title="최신 다시 가져오기" disabled={status === 'loading'}>
+                ↻
+              </button>
               <button className="phone-row-x" onClick={() => store.removeFederationSource(s.id)} title="제거">
                 ✕
               </button>

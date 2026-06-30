@@ -141,6 +141,14 @@ export function HubManage({
                   <span title={err ?? statusLabel}>{dot}</span> {SOURCE_BADGE[s.sourceType]}
                 </span>
               </button>
+              <button
+                className="nav-edit"
+                title="최신 다시 가져오기 (소스가 갱신됐을 때)"
+                disabled={status === 'loading'}
+                onClick={() => federation.reload(s.id)}
+              >
+                ↻
+              </button>
               {MERGEABLE_SOURCES.has(s.sourceType) && (
                 <button
                   className="nav-edit"

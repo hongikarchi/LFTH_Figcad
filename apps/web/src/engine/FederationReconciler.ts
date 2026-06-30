@@ -61,6 +61,20 @@ export class FederationReconciler {
     return () => this.listeners.delete(cb);
   }
 
+  /**
+   * 최신 다시 가져오기 — 같은 ref를 강제 재추출(reconcile 시그 early-out 우회).
+   * figcad-room = ?op=pull 최신 스냅샷 재페치(소스 룸이 갱신돼도 오버레이 동결 해소).
+   * 파일 소스(image/dwg/3dm)는 content-hash blob이라 재페치=동일 — 새 버전은 재업로드(새 ref).
+   */
+  reload(id: Id): void {
+    const s = this.store.getFederationSource(id);
+    if (!s) return;
+    this.ref.remove(id);
+    this.local.delete(id);
+    this.load(s); // gen 증가 + 재페치/재파싱 → ready 시 notify
+    this.notify(); // loading 상태 즉시 반영
+  }
+
   statusOf(id: Id): SourceStatus | undefined {
     return this.local.get(id)?.status;
   }
