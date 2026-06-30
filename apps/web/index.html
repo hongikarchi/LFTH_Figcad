@@ -2344,6 +2344,64 @@
         padding: 8px 4px;
         line-height: 1.5;
       }
+
+      /* ---- 단면(클리핑) 컨트롤 — 떠 있는 컴팩트 위젯 (폰+데스크톱) ---- */
+      .clip-control {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        z-index: 28;
+        width: min(360px, calc(100vw - 28px));
+      }
+      .clip-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .clip-title {
+        font-size: 12px;
+        font-weight: 800;
+        color: var(--ink);
+        margin-right: 2px;
+      }
+      .clip-axis,
+      .clip-flip,
+      .clip-off {
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.04);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .clip-axis.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .clip-off {
+        margin-left: auto;
+      }
+      .clip-slider {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+      body.device-phone .clip-control {
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 132px);
+      }
     </style>
   </head>
   <body>

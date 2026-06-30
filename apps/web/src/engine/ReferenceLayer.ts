@@ -32,6 +32,8 @@ export interface ReferenceResult {
 
 const REF_COLOR = 0x6a8caf;
 const REF_OPACITY = 0.5;
+const CLAY_COLOR = 0xdedee2; // 오버레이 메시 = 흰색 솔리드(클레이 렌더) — 불투명 매트
+const CLAY_EDGE = 0x8a909a; // 메시 없는 Brep/커브 와이어 = 옅은 회색 선(클레이와 조화)
 const UNDERLAY_COLOR = 0x49545e; // 빽도면 라인 — 진한 청회색(PDF 흑백 대비, 네이티브 요소와 구분)
 const UNDERLAY_OPACITY = 1; // 불투명 — 반투명이면 빽빽한 데서 겹치는 선 알파 누적해 회색 덩어리. opacity 1 = 누적 없음(transparent는 채움/라인 렌더순서용 유지)
 const UNDERLAY_MAX_LABELS = 4000; // 초과(예: 메가시트 18k) 시 텍스트 생략 (스프라이트 draw call·텍스처 예산)
@@ -99,12 +101,10 @@ export class ReferenceLayer {
     const g = new THREE.Group();
     g.name = `reference:${name}`;
     if (offset) g.position.set(offset[0], offset[1], offset[2]);
+    // 클레이 렌더 — 흰색 불투명 솔리드(매트). depthWrite 기본(true)이라 제대로 가려짐(반투명 고스트 아님).
     const mat = new THREE.MeshLambertMaterial({
-      color: REF_COLOR,
-      transparent: true,
-      opacity: REF_OPACITY,
+      color: CLAY_COLOR,
       side: THREE.DoubleSide,
-      depthWrite: false,
     });
     for (const m of result.meshes) {
       const geo = new THREE.BufferGeometry();
@@ -121,7 +121,7 @@ export class ReferenceLayer {
     if (result.edges && result.edges.length) {
       const egeo = new THREE.BufferGeometry();
       egeo.setAttribute('position', new THREE.BufferAttribute(result.edges, 3));
-      const emesh = new THREE.LineSegments(egeo, new THREE.LineBasicMaterial({ color: REF_COLOR }));
+      const emesh = new THREE.LineSegments(egeo, new THREE.LineBasicMaterial({ color: CLAY_EDGE }));
       emesh.userData['figcadReference'] = true;
       g.add(emesh);
     }

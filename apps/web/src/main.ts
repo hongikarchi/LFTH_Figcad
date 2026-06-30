@@ -34,7 +34,7 @@ import { ZoneTool } from './tools/ZoneTool';
 import { CurtainWallTool } from './tools/CurtainWallTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
-import { useUiStore } from './state/uiStore';
+import { useUiStore, type ClipState } from './state/uiStore';
 import { App } from './ui/App';
 import { initDeviceClass } from './ui/useDeviceClass';
 import type { EditorContext } from './tools/context';
@@ -108,16 +108,35 @@ const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EX
 
 // 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.
 // import/federation 모델은 원점서 멀거나 커서 기본 카메라엔 빈 화면 → 이게 해결. 'F' 키 + federation 로드 후 1회 자동.
-function fitView(): boolean {
-  // 요소 메시(derive) + federation 레퍼런스만 — 고정 원점 그리드 제외(포함 시 원좌표 모델서 bbox가
-  // 원점~모델 전체로 늘어나 fit이 모델을 못 잡음). 둘 다 비면 false.
+// 모델 bbox(요소 메시 + 보이는 federation 레퍼런스, 고정 그리드 제외) — fit·clip 공유.
+function modelBox(): THREE.Box3 {
   const box = new THREE.Box3();
   for (const o of sceneManager.pickables) box.expandByObject(o);
-  box.union(referenceLayer.visibleBounds()); // 보이는 federation 소스만(숨긴 먼 소스 제외 — Codex #4)
+  box.union(referenceLayer.visibleBounds());
+  return box;
+}
+function fitView(): boolean {
+  const box = modelBox();
   if (box.isEmpty() || !isFinite(box.min.x)) return false;
   rig.fitBounds(box.min, box.max);
   engine.requestRender();
   return true;
+}
+// 단면(클리핑 플레인) — 전역 renderer.clippingPlanes(전 머티리얼 클립). 평면 위치 = 모델 bbox축 0~1.
+let currentClip: ClipState | null = null;
+function applyClip(): void {
+  const r = engine.renderer;
+  if (!currentClip) { r.clippingPlanes = []; engine.requestRender(); return; }
+  const box = modelBox();
+  if (box.isEmpty() || !isFinite(box.min.x)) { r.clippingPlanes = []; engine.requestRender(); return; }
+  const a = { x: 0, y: 1, z: 2 }[currentClip.axis];
+  const min = box.min.getComponent(a);
+  const max = box.max.getComponent(a);
+  const pos = min + (max - min) * currentClip.t;
+  const sign = currentClip.flip ? -1 : 1;
+  // 평면: normal·P + constant > 0 인 쪽만 남김. sign=+면 axis>pos, flip(sign=-1)이면 axis<pos.
+  r.clippingPlanes = [new THREE.Plane(new THREE.Vector3().setComponent(a, sign), -pos * sign)];
+  engine.requestRender();
 }
 window.addEventListener('keydown', (e) => {
   if ((e.key === 'f' || e.key === 'F') && !/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName)) fitView();
@@ -125,6 +144,7 @@ window.addEventListener('keydown', (e) => {
 // federation 소스가 처음 ready 되면 1회 자동 맞춤(오버레이가 화면 밖이면 무의미하므로).
 let didFitFed = false;
 federation.onChange(() => {
+  if (currentClip) setTimeout(applyClip, 120); // 모델이 clip 켠 뒤 로드되면 평면 위치 재계산
   if (didFitFed) return;
   if (referenceLayer.list().length > 0) { didFitFed = true; setTimeout(fitView, 100); }
 });
@@ -343,6 +363,10 @@ const viewActions = {
   redo: doRedo,
   fit: () => {
     fitView();
+  },
+  setClip: (clip: ClipState | null) => {
+    currentClip = clip;
+    applyClip();
   },
 };
 // 협업 핸들 — presence 명령형 객체를 React 패널에 노출 (rename). peers/connection은 uiStore.

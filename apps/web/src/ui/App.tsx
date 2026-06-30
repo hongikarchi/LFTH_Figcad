@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DocStore } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
-import { useUiStore } from '../state/uiStore';
+import { useUiStore, type ClipState } from '../state/uiStore';
 import { TopBar } from './TopBar';
 import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
@@ -25,6 +25,8 @@ export interface ViewActions {
   redo: () => void;
   /** 전체 맞춤 (zoom-to-fit) */
   fit: () => void;
+  /** 단면(클리핑 플레인) 적용 — null=해제. 모델 bbox 기준 평면 계산 → 렌더러 clippingPlanes. */
+  setClip: (clip: ClipState | null) => void;
 }
 
 /** 문서 변경 시 리렌더 트리거 (React는 문서를 직접 안 들고 매 렌더 fresh 조회) */

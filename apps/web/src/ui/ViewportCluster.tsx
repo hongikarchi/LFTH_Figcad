@@ -2,6 +2,7 @@ import type { DocStore } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { useDocVersion, type ViewActions } from './App';
 import { Icon } from './icons/Icon';
+import { ClipControl } from './ClipControl';
 
 /**
  * 뷰포트 컨트롤 클러스터 (UI/UX 재구성 P1 Slice7) — 캔버스 우하단 코너, 항상-on.
@@ -13,7 +14,13 @@ export function ViewportCluster({ store, actions }: { store: DocStore; actions: 
   useDocVersion(store);
   const viewMode = useUiStore((s) => s.viewMode);
   const activeLevelId = useUiStore((s) => s.activeLevelId);
-  const { setViewMode, setActiveLevel } = useUiStore.getState();
+  const clip = useUiStore((s) => s.clip);
+  const { setViewMode, setActiveLevel, setClipState } = useUiStore.getState();
+  const toggleClip = () => {
+    const next = clip ? null : ({ axis: 'y', t: 0.5, flip: false } as const);
+    setClipState(next);
+    actions.setClip(next);
+  };
 
   const levels = [...store.listLevels()].sort((a, b) => a.order - b.order);
   const idx = levels.findIndex((l) => l.id === activeLevelId);
@@ -26,7 +33,9 @@ export function ViewportCluster({ store, actions }: { store: DocStore; actions: 
   };
 
   return (
-    <div className="viewport-cluster">
+    <>
+      {clip && <ClipControl actions={actions} />}
+      <div className="viewport-cluster">
       <button title="실행 취소 (Ctrl+Z)" onClick={actions.undo}>
         <Icon name="undo" size={16} />
       </button>
@@ -44,6 +53,9 @@ export function ViewportCluster({ store, actions }: { store: DocStore; actions: 
       >
         {viewMode === '3d' ? '3D' : '평면'}
       </button>
+      <button className={`vc-view ${clip ? 'active' : ''}`} title="단면 (클리핑 플레인)" onClick={toggleClip}>
+        단면
+      </button>
       <span className="vc-sep" />
       <button title="아래 스토리" onClick={() => step(-1)} disabled={idx <= 0}>
         ▾
@@ -54,6 +66,7 @@ export function ViewportCluster({ store, actions }: { store: DocStore; actions: 
       <button title="위 스토리" onClick={() => step(1)} disabled={levels.length === 0 || idx >= levels.length - 1}>
         ▴
       </button>
-    </div>
+      </div>
+    </>
   );
 }

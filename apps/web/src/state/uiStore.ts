@@ -41,6 +41,8 @@ export type EditAction = 'move' | 'copy' | 'array' | 'split' | 'trim' | 'mirror'
 export type WorkspaceMode = 'review' | 'model' | 'hub';
 /** 디바이스 클래스 — 폰(모바일 네이티브 셸) vs 데스크톱/아이패드(현행 사이드 레일). useDeviceClass가 matchMedia로 셋. */
 export type DeviceClass = 'phone' | 'desktop';
+/** 단면(클리핑 플레인) — null=끔. axis=평면 법선축, t=모델 bbox 0~1 위치, flip=남길 쪽 반전. */
+export type ClipState = { axis: 'x' | 'y' | 'z'; t: number; flip: boolean };
 /** 폰 바텀시트 콘텐츠 (모바일 리뷰/뷰어 전용) — null=닫힘. 집중형 컴팩트 시트. */
 export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
 
@@ -124,8 +126,11 @@ interface UiState {
   device: DeviceClass;
   /** 폰 바텀시트 콘텐츠 (폰 전용) */
   phoneSheet: PhoneSheet;
+  /** 단면(클리핑 플레인) — null=끔. 엔진 적용은 ViewActions.setClip(렌더러 clippingPlanes). */
+  clip: ClipState | null;
   setDevice: (d: DeviceClass) => void;
   setPhoneSheet: (s: PhoneSheet) => void;
+  setClipState: (c: ClipState | null) => void;
   setTool: (t: ToolName) => void;
   setSketchStyle: (patch: Partial<SketchStyle>) => void;
   setSketchMode: (m: 'line' | 'zone') => void;
@@ -188,8 +193,10 @@ export const useUiStore = create<UiState>((set) => ({
   sketchMode: 'line',
   device: 'desktop', // useDeviceClass가 mount 전 matchMedia로 교정(폰이면 'phone')
   phoneSheet: null,
+  clip: null,
   setDevice: (device) => set({ device }),
   setPhoneSheet: (phoneSheet) => set({ phoneSheet }),
+  setClipState: (clip) => set({ clip }),
   // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
   setTool: (activeTool) =>
     set(
