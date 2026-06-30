@@ -44,6 +44,19 @@ export function pickElement(
   return firstId;
 }
 
+/** 화면 좌표 → 주어진 루트들(오버레이 그룹·요소 메시) 최근접 3D 교차점(월드 m). 없으면 null. 3D 코멘트용. */
+export function raycastPoint(
+  clientX: number,
+  clientY: number,
+  camera: THREE.Camera,
+  roots: THREE.Object3D[],
+): THREE.Vector3 | null {
+  ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(roots, true); // recursive — 그룹 순회
+  return hits.length ? hits[0]!.point.clone() : null;
+}
+
 /**
  * 화면 좌표 → 임의 평면(origin·normal, 월드 m) 교차점 (자유 3D 스케치 — iter-3 S4).
  * 평면 법선=카메라 시선이면 레이가 수직이라 그레이징 불안정 없음.

@@ -186,6 +186,8 @@ export class SceneManager {
       const anchor = resolveCommentPoint(store, c); // 핀 = 앵커(요소 추종)
       const bubblePt = c.at; // 말풍선·지시선 끝 = 텍스트 위치
       const elev = (store.getLevel(c.levelId)?.elevation ?? 0) / 1000 + 0.05;
+      // 3D 코멘트(오버레이/메시 위 — c.z 있으면 그 높이). 없으면 레벨 elevation(레벨바닥 핀).
+      const pinY = c.z !== undefined ? c.z / 1000 + 0.05 : elev;
       const n = replyCount.get(c.id) ?? 0;
       const key = `${c.resolved ? 'r' : 'o'}:${n}`;
       let sprite = this.commentPins.get(c.id);
@@ -201,7 +203,7 @@ export class SceneManager {
         this.engine.scene.add(sprite);
         this.commentPins.set(c.id, sprite);
       }
-      sprite.position.set(anchor[0] / 1000, elev, anchor[1] / 1000);
+      sprite.position.set(anchor[0] / 1000, pinY, anchor[1] / 1000);
 
       // 지시선 (핀→말풍선) — 1mm 넘게 떨어졌을 때만 (앵커=at인 자유 코멘트는 생략)
       const apart = Math.hypot(anchor[0] - bubblePt[0], anchor[1] - bubblePt[1]) > 1;
@@ -215,7 +217,7 @@ export class SceneManager {
         // setLineGeometry = computeBoundingSphere 포함(고정 6-float) → 스테일 bbox로 화면서 frustum-culled 방지.
         setLineGeometry(
           leader.geometry,
-          new Float32Array([anchor[0] / 1000, elev, anchor[1] / 1000, bubblePt[0] / 1000, elev, bubblePt[1] / 1000]),
+          new Float32Array([anchor[0] / 1000, pinY, anchor[1] / 1000, bubblePt[0] / 1000, pinY, bubblePt[1] / 1000]),
         );
         leader.visible = true;
       } else if (leader) {
@@ -227,7 +229,7 @@ export class SceneManager {
       bubbles.push({
         id: c.id,
         text: oneLine.length > 24 ? `${oneLine.slice(0, 24)}…` : oneLine,
-        world: new THREE.Vector3(bubblePt[0] / 1000, elev, bubblePt[1] / 1000),
+        world: new THREE.Vector3(bubblePt[0] / 1000, pinY, bubblePt[1] / 1000),
         resolved: !!c.resolved,
       });
     }

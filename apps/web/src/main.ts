@@ -177,6 +177,7 @@ const ctx: EditorContext = {
   typeId: (kind) => useUiStore.getState().activeTypes[kind] ?? seedTypeByKind[kind],
   wallTypeId: () => useUiStore.getState().activeTypes.wall ?? seedTypeByKind.wall,
   collab: NOOP_COLLAB,
+  overlayRoot: referenceLayer.root, // 3D 코멘트 = 오버레이 메시 위 레이캐스트
 };
 const tools = new ToolController();
 tools.register('wall', new WallTool(ctx));

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { snapPoint, type Element, type Pt, type SnapResult } from '@figcad/core';
-import { pickElement } from '../engine/Picker';
+import { pickElement, raycastPoint } from '../engine/Picker';
 import type { EditorContext } from './context';
 import type { ToolPointerInfo } from './ToolController';
 
@@ -16,6 +16,8 @@ export interface LeaderResult {
   anchorLevelId: string;
   /** 텍스트/말풍선 위치 — doc mm. 클릭2 위치. */
   textAt: Pt;
+  /** 클릭2가 오버레이/메시 표면을 맞혔으면 그 3D 높이(월드 mm) — 3D 코멘트 핀. 평면 바닥이면 undefined. */
+  textZ?: number;
 }
 
 /**
@@ -70,10 +72,18 @@ export class LeaderCapture {
       this.ctx.engine.requestRender();
       return;
     }
-    // 클릭2 = 텍스트 위치 → 완료
+    // 클릭2 = 텍스트/핀 위치 → 완료. 오버레이·메시 표면을 맞히면 그 3D점(높이 z 포함) = 3D 코멘트.
     const a = this.anchor;
+    let textAt = pt;
+    let textZ: number | undefined;
+    const roots = this.ctx.overlayRoot ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables] : this.ctx.scene.pickables;
+    const p3d = raycastPoint(info.clientX, info.clientY, this.ctx.rig.active, roots);
+    if (p3d) {
+      textAt = [Math.round(p3d.x * 1000), Math.round(p3d.z * 1000)];
+      textZ = p3d.y * 1000;
+    }
     this.reset();
-    this.onComplete({ anchor: a.pt, anchorEl: a.el, anchorLevelId: a.levelId, textAt: pt });
+    this.onComplete({ anchor: a.pt, anchorEl: a.el, anchorLevelId: a.levelId, textAt, ...(textZ !== undefined ? { textZ } : {}) });
   }
 
   cancel(): void {

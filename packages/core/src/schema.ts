@@ -463,7 +463,8 @@ export const CommentSchema = z.object({
   id: z.string(),
   parentId: z.string().optional(), // 있으면 답글
   at: Pt, // fallback 위치 (mm) — 앵커 요소 삭제돼도 여기 표시
-  levelId: z.string(), // 핀 높이(레벨 elevation)·평면 필터
+  z: z.number().optional(), // 3D 핀 높이(월드 mm) — 오버레이/메시 표면 위 코멘트. 없으면 레벨 elevation.
+  levelId: z.string(), // 핀 높이(레벨 elevation, z 없을 때)·평면 필터
   anchorId: z.string().optional(), // 추종할 요소 id (선택)
   anchorWhich: z.enum(['a', 'b']).optional(),
   author: z.string(),

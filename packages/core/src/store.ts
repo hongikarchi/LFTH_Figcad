@@ -1046,6 +1046,7 @@ export class DocStore {
   addComment(params: {
     levelId: Id;
     at: Pt;
+    z?: number;
     author: string;
     text: string;
     anchorId?: Id;
@@ -1056,6 +1057,7 @@ export class DocStore {
       id,
       levelId: params.levelId,
       at: [quantize(params.at[0]), quantize(params.at[1])],
+      ...(params.z !== undefined ? { z: quantize(params.z) } : {}),
       author: params.author,
       text: params.text,
       ts: Date.now(),

@@ -56,9 +56,10 @@ export class CommentTool implements Tool {
       }
       if ('levelId' in el) levelId = el.levelId;
     }
-    // 말풍선(텍스트) = 클릭2 위치(at). 앵커 있으면 핀=요소 끝점, 말풍선=at → 지시선.
+    // 말풍선(텍스트) = 클릭2 위치(at). 오버레이/메시 표면 맞히면 3D 높이(textZ) — 모델 위 핀.
     const elev = (this.ctx.store.getLevel(levelId)?.elevation ?? 0) / 1000;
-    const world = new THREE.Vector3(r.textAt[0] / 1000, elev + 0.05, r.textAt[1] / 1000);
+    const worldY = r.textZ !== undefined ? r.textZ / 1000 + 0.05 : elev + 0.05;
+    const world = new THREE.Vector3(r.textAt[0] / 1000, worldY, r.textAt[1] / 1000);
     const author = localStorage.getItem('figcad.userName') ?? '게스트';
     this.editing = true;
     void this.ctx.hud.promptText(world, this.ctx.rig.active).then((text) => {
@@ -67,6 +68,7 @@ export class CommentTool implements Tool {
         this.ctx.store.addComment({
           levelId,
           at: r.textAt,
+          ...(r.textZ !== undefined ? { z: r.textZ } : {}),
           author,
           text,
           ...(anchorId ? { anchorId } : {}),
