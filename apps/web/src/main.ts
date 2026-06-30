@@ -8,6 +8,7 @@ import { CameraRig } from './engine/CameraRig';
 import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
 import { ReferenceLayer } from './engine/ReferenceLayer';
+import { computeSectionContour } from './engine/sectionContour';
 import { FederationReconciler } from './engine/FederationReconciler';
 import { FEDERATION_EXTRACTORS, fetchDwgUnderlay } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
@@ -123,19 +124,48 @@ function fitView(): boolean {
   return true;
 }
 // 단면(클리핑 플레인) — 전역 renderer.clippingPlanes(전 머티리얼 클립). 평면 위치 = 모델 bbox축 0~1.
+// + 단면선(section line): 오버레이 메시∩평면 윤곽을 CPU로 그려 라이노식 절단선 실시간 표시(디바운스).
 let currentClip: ClipState | null = null;
+const sectionLine = new THREE.LineSegments(
+  new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color: 0x1d1d1f }),
+);
+sectionLine.visible = false;
+sectionLine.renderOrder = 3;
+sectionLine.frustumCulled = false;
+engine.scene.add(sectionLine);
+let contourTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleContour(plane: THREE.Plane, diag: number): void {
+  if (contourTimer) clearTimeout(contourTimer);
+  // 디바운스 — 슬라이더 드래그 매 입력마다 60MB 재계산 방지(release 후 1회). 드래그 중엔 직전 윤곽 유지.
+  contourTimer = setTimeout(() => {
+    if (!currentClip) return;
+    const meshes: THREE.Mesh[] = [];
+    referenceLayer.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
+    const seg = computeSectionContour(meshes, plane);
+    sectionLine.geometry.setAttribute('position', new THREE.BufferAttribute(seg, 3));
+    sectionLine.geometry.computeBoundingSphere();
+    // 전역 clip이 단면선(평면 동일면)을 잘라내지 않게 kept 쪽으로 미세 오프셋.
+    sectionLine.position.copy(plane.normal).multiplyScalar(diag * 0.0008);
+    sectionLine.visible = seg.length > 0;
+    engine.requestRender();
+  }, 130);
+}
 function applyClip(): void {
   const r = engine.renderer;
-  if (!currentClip) { r.clippingPlanes = []; engine.requestRender(); return; }
+  if (!currentClip) { r.clippingPlanes = []; sectionLine.visible = false; engine.requestRender(); return; }
   const box = modelBox();
-  if (box.isEmpty() || !isFinite(box.min.x)) { r.clippingPlanes = []; engine.requestRender(); return; }
+  if (box.isEmpty() || !isFinite(box.min.x)) { r.clippingPlanes = []; sectionLine.visible = false; engine.requestRender(); return; }
   const a = { x: 0, y: 1, z: 2 }[currentClip.axis];
   const min = box.min.getComponent(a);
   const max = box.max.getComponent(a);
   const pos = min + (max - min) * currentClip.t;
   const sign = currentClip.flip ? -1 : 1;
   // 평면: normal·P + constant > 0 인 쪽만 남김. sign=+면 axis>pos, flip(sign=-1)이면 axis<pos.
-  r.clippingPlanes = [new THREE.Plane(new THREE.Vector3().setComponent(a, sign), -pos * sign)];
+  const plane = new THREE.Plane(new THREE.Vector3().setComponent(a, sign), -pos * sign);
+  r.clippingPlanes = [plane];
+  const size = box.getSize(new THREE.Vector3());
+  scheduleContour(plane, Math.max(size.x, size.y, size.z) + 1);
   engine.requestRender();
 }
 window.addEventListener('keydown', (e) => {
