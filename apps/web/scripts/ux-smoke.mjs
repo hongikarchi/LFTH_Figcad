@@ -1,6 +1,8 @@
 /**
- * M11.5 UX 스모크 — 네비게이터 2D 뷰 클릭→도면열림(item 1), 하단바 스토리 스위처(item 2),
+ * M11.5 UX 스모크 — 네비게이터 2D 뷰 클릭→도면열림(item 1), 온스크린 클러스터 스토리 스테퍼(item 2),
  * 줌버튼 제거(item 3). 사전: vite dev. 사용: node scripts/ux-smoke.mjs [포트=5173]
+ * NOTE: UI/UX 재구성 P1 Slice7에서 하단 QuickOptions 바가 우하단 ViewportCluster로 대체됨
+ *       (스토리 select → 스테퍼, 줌 버튼 제거). 이 스모크는 현행 ViewportCluster를 검증.
  */
 import puppeteer from 'puppeteer-core';
 
@@ -31,20 +33,42 @@ try {
   });
   await new Promise((r) => setTimeout(r, 150));
 
-  // item 3 — 하단바에 줌 ± 버튼 없음
-  const zoomBtns = await page.evaluate(() =>
-    [...document.querySelectorAll('.quick-options button')].filter((b) => /줌/.test(b.title)).length,
-  );
-  if (zoomBtns !== 0) throw new Error(`줌 버튼 ${zoomBtns}개 남아있음 (제거 실패)`);
-  console.log('PASS  하단 줌 ± 버튼 제거됨 (item 3)');
-
-  // item 2 — 하단바 스토리 스위처(select) 존재 + 옵션 = 스토리 수
-  const story = await page.evaluate(() => {
-    const sel = document.querySelector('.qo-story select');
-    return sel ? { opts: sel.options.length } : null;
+  // item 3 — 온스크린 컨트롤 클러스터(QuickOptions 대체)에 줌 ± 버튼 없음
+  const cluster = await page.evaluate(() => {
+    const c = document.querySelector('.viewport-cluster');
+    if (!c) return null;
+    return [...c.querySelectorAll('button')].filter((b) => /줌|확대|축소/.test(b.title)).length;
   });
-  if (!story || story.opts !== 2) throw new Error(`스토리 스위처 불량: ${JSON.stringify(story)}`);
-  console.log(`PASS  하단 스토리 스위처 (옵션 ${story.opts}개) (item 2)`);
+  if (cluster === null) throw new Error('뷰포트 컨트롤 클러스터(.viewport-cluster) 없음 (item 3)');
+  if (cluster !== 0) throw new Error(`줌 버튼 ${cluster}개 남아있음 (제거 실패)`);
+  console.log('PASS  온스크린 컨트롤 클러스터 줌 ± 버튼 제거됨 (item 3)');
+
+  // item 2 — 온스크린 클러스터 스토리 스테퍼: 현재 스토리 표시 + 위/아래 버튼으로 활성 스토리 전환.
+  //   시드(1층, order 0) + 위에서 추가한 2층(order 1) → 스테퍼가 두 스토리를 알고 전환 가능해야 함.
+  const storyBefore = await page.evaluate(
+    () => document.querySelector('.viewport-cluster .vc-story')?.textContent ?? null,
+  );
+  if (storyBefore !== '1층') throw new Error(`스토리 스테퍼 초기값 불량(예상 1층): ${JSON.stringify(storyBefore)}`);
+  const stepped = await page.evaluate(() => {
+    const up = [...document.querySelectorAll('.viewport-cluster button')].find((b) => b.title === '위 스토리');
+    if (!up) return { ok: false, reason: '버튼 없음' };
+    if (up.disabled) return { ok: false, reason: '비활성(스토리 1개로 인식)' };
+    up.click();
+    return { ok: true };
+  });
+  if (!stepped.ok) throw new Error(`위 스토리 버튼 전환 불가: ${stepped.reason}`);
+  await new Promise((r) => setTimeout(r, 150));
+  const story = await page.evaluate(() => {
+    const levels = [...window.__figcad.store.listLevels()].sort((a, b) => a.order - b.order);
+    return {
+      label: document.querySelector('.viewport-cluster .vc-story')?.textContent ?? null,
+      active: window.__figcad.ui.getState().activeLevelId,
+      secondId: levels[1]?.id ?? null,
+    };
+  });
+  if (story.label !== '2층' || story.active !== story.secondId)
+    throw new Error(`스토리 스테퍼 전환 실패: ${JSON.stringify(story)}`);
+  console.log('PASS  온스크린 스토리 스테퍼 전환 (1층 → 2층, 활성레벨 동기화) (item 2)');
 
   // 활성 스토리 변경이 viewMode를 안 건드림 (3D 유지) — store 동작 보증
   await page.evaluate(() => {
@@ -57,12 +81,14 @@ try {
   if (vm !== '3d') throw new Error(`스토리 전환이 viewMode를 바꿈: ${vm}`);
   console.log('PASS  스토리 전환이 3D 뷰 유지 (item 2)');
 
-  // item 1 — 도면 뷰 생성 → 네비게이터에 나타남 → 클릭 시 drawingOpen + 캔버스
+  // item 1 — 도면 뷰 생성 → 네비게이터(모델 모드 ProjectMap)에 나타남 → 클릭 시 drawingOpen + 캔버스
+  //   네비게이터는 P1 Slice5 이후 WorkRail 모델 모드에서만 렌더(기본 랜딩=review) → 모드 전환 필요.
   await page.evaluate(() => {
-    const { store, seed } = window.__figcad;
+    const { store, seed, ui } = window.__figcad;
+    ui.getState().setMode('model');
     store.createView({ name: '평면 · 1층', type: 'plan', levelId: seed.levelId, cutHeight: 1200 });
   });
-  await new Promise((r) => setTimeout(r, 200));
+  await new Promise((r) => setTimeout(r, 250));
   const clicked = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.navigator button')];
     const b = btns.find((x) => /평면 · 1층/.test(x.textContent || ''));

@@ -1,5 +1,7 @@
 /**
- * M9-B 코멘트 단일페이지 smoke — 도구 배치(DOM 입력)·패널·답글·해결·삭제 UI.
+ * M9-B 코멘트 단일페이지 smoke — 도구 배치·패널·답글·해결 UI.
+ * 코멘트 = iter-2 2클릭 지시선(leader): 클릭1=앵커, 클릭2=말풍선 → 떠있는 DOM 입력(body 직속).
+ * 패널은 협업·리뷰(review) mode WorkRail에 embedded(.cmt-item). review = 기본 mode.
  * 사전: vite dev. 사용: node scripts/comment-smoke.mjs [포트=5173]
  */
 import puppeteer from 'puppeteer-core';
@@ -15,15 +17,25 @@ try {
   await page.goto(`http://localhost:${port}/?p=cmt-${Math.random().toString(36).slice(2, 7)}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__figcad?.store, { timeout: 10000 });
 
-  // 1) 코멘트 도구 → 캔버스 클릭 → DOM 입력 → 코멘트 생성
-  await page.evaluate(() => { window.__figcad.ui.getState().setViewMode('plan'); window.__figcad.ui.getState().setTool('comment'); });
+  // 1) 코멘트 도구(review mode) → 2클릭 지시선(클릭1=앵커, 클릭2=말풍선) → 떠있는 DOM 입력 → 코멘트 생성
+  // 떠있는 입력은 promptText가 body에 직접 append → 'body > input[type=text]'로 React 패널 입력과 구분.
+  await page.evaluate(() => {
+    const ui = window.__figcad.ui.getState();
+    ui.setMode('review'); // CommentPanel embedded 렌더 + comment 도구 팔레트 보장
+    ui.setViewMode('plan'); // 화면→문서 매핑 예측가능, 3D 요소 픽 회피
+    ui.setTool('comment');
+  });
   await new Promise((r) => setTimeout(r, 400));
-  await page.mouse.click(480, 400);
-  await page.waitForSelector('input[type=text]', { timeout: 3000 });
-  await page.type('input[type=text]', '벽 두께 확인');
+  const PROMPT = 'body > input[type=text]';
+  // 좌 work-rail(x≤202)·우 inspector(x≥1034) 회피한 캔버스 좌표. 두 점이 달라 dblclick 병합 없음.
+  await page.mouse.click(480, 420); // 클릭1 = 지시선 시작(앵커)
+  await new Promise((r) => setTimeout(r, 120));
+  await page.mouse.click(640, 360); // 클릭2 = 말풍선 위치(at) → 입력창
+  await page.waitForSelector(PROMPT, { timeout: 3000 });
+  await page.type(PROMPT, '벽 두께 확인');
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.__figcad.store.listComments().length === 1, { timeout: 4000 });
-  console.log('PASS  코멘트 도구 배치 (DOM 입력)');
+  console.log('PASS  코멘트 도구 배치 (2클릭 지시선 + DOM 입력)');
 
   // 2) 패널에 .cmt-item 렌더
   await page.waitForSelector('.cmt-item', { timeout: 3000 });

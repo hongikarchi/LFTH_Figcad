@@ -28,16 +28,16 @@ try {
     store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0] }); // 중복
   });
 
-  // 배지에 발견 수 표시 (중복 1 + 미접합 ≥1)
+  // 배지에 발견 수 표시 (중복 1 + 미접합 ≥1) — iter-2 재구성: 배지는 PresenceStrip(.lint-badge)로 이동
   await page.waitForFunction(
-    () => /검사 \d+/.test(document.querySelector('.qo-lint')?.textContent ?? ''),
+    () => /검사 \d+/.test(document.querySelector('.lint-badge')?.textContent ?? ''),
     { timeout: 5000 },
   );
-  const badge = await page.evaluate(() => document.querySelector('.qo-lint').textContent);
+  const badge = await page.evaluate(() => document.querySelector('.lint-badge').textContent);
   console.log(`PASS  배지 카운트 표시 — "${badge}"`);
 
-  // 패널 열기 → 항목 확인
-  await page.click('.qo-lint');
+  // 패널 열기 → 항목 확인 (배지 클릭 = setMode('model') + setLintOpen(true))
+  await page.click('.lint-badge');
   await page.waitForSelector('.lint-panel', { timeout: 5000 });
   const items = await page.evaluate(() =>
     [...document.querySelectorAll('.lint-item .lint-msg')].map((m) => m.textContent),

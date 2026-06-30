@@ -1,92 +1,102 @@
 /**
- * M9-A 스케치 캡처 스모크 (API 무관) — 펜/마우스 손그림 → 문서공간 스트로크 → 래스터화 + mm 프레임.
- * 실제 vision 호출은 프로덕션 E2E(별도). 여기선 캡처·래스터·UI 배선만.
- * 사전: vite dev. 사용: node scripts/sketch-smoke.mjs [vite 포트=5173]
+ * 스케치(마크업) 도구 스모크 — iter-3 업그레이드 반영.
+ * 스케치는 이제 영속 MARKUP 도구('sketch-pen'). 더 이상 AI 패널을 자동으로 열지 않는다(uiStore: aiOpen 부작용 제거).
+ * 검증: 스케치 도구 선택 → 마크업 모드(AI 자동개방 안 함) · 프리핸드 드로잉 → 영속 SketchElement 생성(문서공간 mm) · 평면뷰 = 레벨 바닥(frame 없음) · 삭제.
+ * AI 손그림→모델 경로는 별도(sketch-live-e2e). 사전: vite dev. 사용: node scripts/sketch-smoke.mjs [vite 포트=5173]
  */
 import puppeteer from 'puppeteer-core';
 
 const port = process.argv[2] ?? '5173';
 const room = `e2e-sketch-${Math.random().toString(36).slice(2, 8)}`;
+const EXE = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.launch({
-  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  headless: true,
-});
+const browser = await puppeteer.launch({ executablePath: EXE, headless: true });
 
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
   await page.goto(`http://localhost:${port}/?p=${room}`, { waitUntil: 'load' });
-  await page.waitForFunction(() => window.__figcad?.sketch, { timeout: 10000 });
+  await page.waitForFunction(() => window.__figcad?.store && window.__figcad?.ui, { timeout: 20000 });
 
-  // 1) 스케치 도구 선택 → AI 패널 자동 표시
-  await page.evaluate(() => {
-    window.__figcad.ui.getState().setViewMode('plan');
-    window.__figcad.ui.getState().setTool('sketch');
-  });
-  await new Promise((r) => setTimeout(r, 300));
-  const aiOpen = await page.evaluate(() => window.__figcad.ui.getState().aiOpen);
-  if (!aiOpen) throw new Error('스케치 도구가 AI 패널을 안 열음');
-  console.log('PASS  스케치 도구 → AI 패널 자동 표시');
+  const sketches = () =>
+    page.evaluate(() =>
+      window.__figcad.store
+        .listElements()
+        .filter((e) => e.kind === 'sketch')
+        .map((s) => ({ id: s.id, mode: s.mode, frame: !!s.frame, n: s.boundary.length })),
+    );
 
-  // 2) 마우스로 사각형 손그림 (4변 = 4 스트로크)
-  const seg = async (x1, y1, x2, y2) => {
-    await page.mouse.move(x1, y1);
+  // 캔버스 중앙(패널 회피) — #viewport 박스 기준
+  const box = await (await page.$('#viewport')).boundingBox();
+  const cx = Math.round(box.x + box.width / 2);
+  const cy = Math.round(box.y + box.height / 2);
+  // 프리핸드 스트로크: 많은 중간점으로 이동(MIN_SEG_MM 데시메이트 통과하도록 넉넉히 큰 경로)
+  const stroke = async (pts) => {
+    await page.mouse.move(cx + pts[0][0], cy + pts[0][1]);
     await page.mouse.down();
-    const N = 6;
-    for (let i = 1; i <= N; i++) {
-      await page.mouse.move(x1 + ((x2 - x1) * i) / N, y1 + ((y2 - y1) * i) / N);
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1];
+      const [bx, by] = pts[i];
+      const N = 8;
+      for (let k = 1; k <= N; k++) {
+        await page.mouse.move(cx + ax + ((bx - ax) * k) / N, cy + ay + ((by - ay) * k) / N);
+      }
     }
     await page.mouse.up();
-    await new Promise((r) => setTimeout(r, 30));
+    await wait(200);
   };
-  await seg(500, 350, 760, 350);
-  await seg(760, 350, 760, 560);
-  await seg(760, 560, 500, 560);
-  await seg(500, 560, 500, 350);
 
-  const nStrokes = await page.evaluate(() => window.__figcad.sketch.getStrokes().length);
-  if (nStrokes < 4) throw new Error(`스트로크 ${nStrokes} (4 기대)`);
-  if (!(await page.evaluate(() => window.__figcad.sketch.hasSketch())))
-    throw new Error('hasSketch false');
-  console.log(`PASS  손그림 ${nStrokes}선 캡처 (문서공간 스트로크)`);
-
-  // 3) 래스터화 → PNG base64 + mm 프레임
-  const ras = await page.evaluate(() => {
-    const r = window.__figcad.sketch.rasterizeSketch();
-    if (!r) return null;
-    return {
-      hasData: typeof r.dataB64 === 'string' && r.dataB64.length > 100,
-      media: r.mediaType,
-      frame: r.frame,
-      w: r.frame.x1 - r.frame.x0,
-      h: r.frame.y1 - r.frame.y0,
-    };
+  // 1) 스케치 도구 선택 → 마크업 모드 (AI 패널 자동개방 안 함 — iter-3 회귀 가드)
+  await page.evaluate(() => {
+    const ui = window.__figcad.ui.getState();
+    ui.setMode('model');
+    ui.setViewMode('plan'); // 평면뷰 = 레벨 바닥(frame 없음) — MarkupTool은 down() 시점에 viewMode를 읽음
+    ui.setSketchMode('line');
+    ui.setTool('sketch-pen');
   });
-  if (!ras || !ras.hasData) throw new Error('래스터화 실패(빈 데이터)');
-  if (ras.media !== 'image/png') throw new Error(`mediaType ${ras.media}`);
-  if (!(ras.w > 0 && ras.h > 0)) throw new Error(`프레임 크기 비정상 ${ras.w}×${ras.h}`);
-  console.log(`PASS  래스터화 PNG + mm 프레임 (${Math.round(ras.w)}×${Math.round(ras.h)}mm)`);
+  await wait(200);
+  const sel = await page.evaluate(() => {
+    const s = window.__figcad.ui.getState();
+    return { tool: s.activeTool, aiOpen: s.aiOpen };
+  });
+  if (sel.tool !== 'sketch-pen') throw new Error(`스케치 도구 미활성: activeTool=${sel.tool}`);
+  if (sel.aiOpen) throw new Error('스케치 도구가 AI 패널을 자동으로 열음(iter-3에서 제거된 부작용)');
+  console.log('PASS  스케치 도구 → 마크업 모드 (AI 자동개방 안 함)');
 
-  // 4) AI 패널 스케치 칩 표시
-  const chip = await page.evaluate(() =>
-    [...document.querySelectorAll('.ai-sketch-chip')].some((e) => e.textContent.includes('스케치')),
-  );
-  if (!chip) throw new Error('AI 패널 스케치 칩 미표시');
-  console.log('PASS  AI 패널 스케치 첨부 칩');
+  // 2) 프리핸드 사각형 → 영속 SketchElement 1개 생성 (문서공간 mm 경계)
+  const before = (await sketches()).length;
+  await stroke([
+    [-120, -90],
+    [120, -90],
+    [120, 90],
+    [-120, 90],
+    [-115, -85],
+  ]);
+  const after = await sketches();
+  if (after.length !== before + 1)
+    throw new Error(`영속 스케치 미생성: ${before} → ${after.length}`);
+  const sk = after[after.length - 1];
+  if (sk.mode !== 'line') throw new Error(`스케치 mode=${sk.mode} (line 기대)`);
+  if (sk.n < 2) throw new Error(`경계 정점 ${sk.n} (>=2 기대 — 프리핸드 캡처 실패)`);
+  console.log(`PASS  프리핸드 → 영속 SketchElement 생성 (정점 ${sk.n}개, mode=${sk.mode})`);
 
-  // 5) 지우기 → hasSketch false + 칩 사라짐
-  await page.evaluate(() => window.__figcad.sketch.clearSketch());
-  await new Promise((r) => setTimeout(r, 150));
-  if (await page.evaluate(() => window.__figcad.sketch.hasSketch()))
-    throw new Error('clearSketch 후에도 hasSketch true');
-  console.log('PASS  스케치 지우기');
+  // 3) 평면뷰 스케치 = 레벨 바닥 (frame 없음)
+  if (sk.frame) throw new Error('평면뷰 스케치인데 frame 설정됨(레벨 바닥이어야 함)');
+  console.log('PASS  평면뷰 스케치 = 레벨 바닥 (frame 없음)');
+
+  // 4) 삭제 → 스케치 제거
+  await page.evaluate((id) => window.__figcad.store.deleteElements([id]), sk.id);
+  await wait(150);
+  const remaining = await sketches();
+  if (remaining.some((s) => s.id === sk.id)) throw new Error('삭제 후에도 스케치 존재');
+  console.log('PASS  스케치 삭제');
 
   if (errors.length) throw new Error(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
-  console.log('\n스케치 스모크 통과');
+  console.log('\n스케치(마크업) 스모크 통과');
 } catch (err) {
   console.error('FAIL ', err.message);
   process.exitCode = 1;

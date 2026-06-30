@@ -25,10 +25,12 @@ try {
     store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [4000, 0] });
     store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [4000, 0], b: [4000, 3000] });
   });
+  // iter-2 reorg: 버전 패널은 '협업·리뷰' 모드 WorkRail에 임베드된 섹션(.rail-section)으로 이동.
+  // 기존 .quick-options '버전' 버튼은 제거됨 → 모드를 review로 두면 패널이 렌더된다(기본값도 review).
   await page.evaluate(() => {
-    [...document.querySelectorAll('.quick-options button')].find((b) => b.textContent === '버전').click();
+    window.__figcad.ui.getState().setMode('review');
   });
-  await page.waitForSelector('.version-panel', { timeout: 5000 });
+  await page.waitForSelector('.ver-commit', { timeout: 5000 });
   await page.type('.ver-commit input', '벽 2개 — 첫 커밋');
   await page.click('.ver-commit button');
   await page.waitForFunction(
