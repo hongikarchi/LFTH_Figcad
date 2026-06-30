@@ -7,6 +7,7 @@ import { Icon } from './icons/Icon';
  */
 const TOOL_META: Partial<Record<ToolName, { label: string; icon: string }>> = {
   select: { label: '선택', icon: 'select' },
+  measure: { label: '측정', icon: 'dimension' }, // 줄자 — 임포트 모델 거리/높이 재기(일회성, 비저장)
   comment: { label: '코멘트', icon: 'comment' },
   sketch: { label: '스케치', icon: 'ai' },
 };

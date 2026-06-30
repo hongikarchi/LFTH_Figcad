@@ -16,6 +16,7 @@ export type ToolName =
   | 'curtainwall'
   | 'zone'
   | 'dimension'
+  | 'measure'
   | 'text'
   | 'label'
   | 'sketch'
@@ -53,10 +54,10 @@ export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
  * AI 도구(스케치)는 mode 아닌 AI dock서 무장. 도면(단면·입면)은 DrawingPanel서 진입.
  */
 export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
-  review: ['select', 'sketch', 'sketch-pen', 'comment', 'label', 'dimension'],
+  review: ['select', 'measure', 'sketch', 'sketch-pen', 'comment', 'label', 'dimension'],
   model: [
     'select', 'wall', 'door', 'window', 'slab', 'grid', 'column', 'beam',
-    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'label', 'sketch-pen',
+    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'dimension', 'measure', 'label', 'sketch-pen',
   ],
   hub: ['select'],
 };

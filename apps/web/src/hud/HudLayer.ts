@@ -57,6 +57,7 @@ export class HudLayer {
     ].join(';');
     document.body.appendChild(this.dragBox);
     this.chip = document.createElement('div');
+    this.chip.className = 'hud-chip'; // 치수/측정 칩 — 식별용(스타일은 인라인)
     this.chip.style.cssText = [
       'position:fixed',
       'padding:4px 10px',
