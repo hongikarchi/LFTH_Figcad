@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { nanoid } from 'nanoid';
 import {
   countByKind,
   diffSnapshots,
@@ -89,27 +88,9 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
     }
   };
 
-  // fork(M6.5) — 이 버전을 새 프로젝트(룸)로. 스냅샷을 localStorage로 핸드오프하고
-  // 새 룸을 새 탭에 연다(main.ts가 sync 후 importSnapshot). 새 룸 히스토리는 새로 시작.
-  const fork = async (c: CommitMeta) => {
-    try {
-      const snap = await fetchCommit(c.hash);
-      const newRoom = nanoid(10);
-      localStorage.setItem(`figcad.fork:${newRoom}`, JSON.stringify(snap));
-      const key = new URL(location.href).searchParams.get('key');
-      const url = `${location.pathname}?p=${newRoom}${key ? `&key=${encodeURIComponent(key)}` : ''}`;
-      const w = window.open(url, '_blank');
-      if (!w) {
-        // 팝업 차단(Safari PWA 등) — 핸드오프 키 정리 후 안내
-        localStorage.removeItem(`figcad.fork:${newRoom}`);
-        setNotice('팝업이 차단되어 새 탭을 열 수 없습니다 — 팝업 허용 후 다시 시도하세요');
-        return;
-      }
-      setNotice(`✓ '${c.message}' 시점에서 새 프로젝트(fork) — 새 탭에서 열림`);
-    } catch (e) {
-      setNotice(`fork 실패: ${e instanceof Error ? e.message : e}`);
-    }
-  };
+  // fork(M6.5)는 버튼 노출 제거 — F2 branch/merge가 미검증인데 fork만 조기 출하라 혼란.
+  // 핸드오프 로직(main.ts importSnapshot + localStorage figcad.fork:)은 보존: 복원/비교/타임라인은 유지.
+  // 재노출 시 git에서 fork() 핸들러 복구.
 
   const restore = async (c: CommitMeta) => {
     try {
@@ -176,7 +157,6 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
               <span className="ver-actions">
                 <button onClick={() => void showDiff(c)}>비교</button>
                 <button onClick={() => void restore(c)}>복원</button>
-                <button onClick={() => void fork(c)} title="이 버전에서 새 프로젝트 생성">fork</button>
               </span>
             </div>
             {diffs[itemKey(c)] &&
