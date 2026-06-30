@@ -318,6 +318,21 @@ export class ReferenceLayer {
     return box;
   }
 
+  /**
+   * 단면선(section contour)용 솔리드 메시 — visibleBounds와 동일 가시성 규칙(보이는 소스만).
+   * 언더레이(DWG 해치 채움·래스터 쿼드)는 평면형이라 수직 클립서 가짜 절단선이 생기므로 제외.
+   * (root.traverse 직접 쓰면 .visible 무시 + 언더레이 포함 → 숨긴/2D 오버레이에 유령 절단선; Codex 리뷰.)
+   */
+  sectionMeshes(): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    if (!this.group.visible) return out;
+    for (const g of this.sources.values()) {
+      if (!g.visible || g.userData['isUnderlay']) continue;
+      g.traverse((o) => { if ((o as THREE.Mesh).isMesh) out.push(o as THREE.Mesh); });
+    }
+    return out;
+  }
+
   remove(name: string): void {
     const g = this.sources.get(name);
     if (!g) return;

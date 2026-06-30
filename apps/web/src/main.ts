@@ -135,18 +135,17 @@ sectionLine.renderOrder = 3;
 sectionLine.frustumCulled = false;
 engine.scene.add(sectionLine);
 let contourTimer: ReturnType<typeof setTimeout> | null = null;
-function scheduleContour(plane: THREE.Plane, diag: number): void {
+function scheduleContour(plane: THREE.Plane): void {
   if (contourTimer) clearTimeout(contourTimer);
-  // 디바운스 — 슬라이더 드래그 매 입력마다 60MB 재계산 방지(release 후 1회). 드래그 중엔 직전 윤곽 유지.
+  // 디바운스 — 슬라이더 드래그 매 입력마다 메시 재스캔 방지(release 후 1회). 드래그 중엔 직전 윤곽 유지.
+  // (실측: 1.25M-tri 단일 메시 ~31ms = 잭 임계 이하. 오프셋은 applyClip서 즉시 설정 — flip 깜빡임 방지.)
   contourTimer = setTimeout(() => {
     if (!currentClip) return;
-    const meshes: THREE.Mesh[] = [];
-    referenceLayer.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
-    const seg = computeSectionContour(meshes, plane);
+    // 보이는·비언더레이 솔리드만(숨긴/2D 오버레이 유령 절단선 방지 — Codex 리뷰).
+    const seg = computeSectionContour(referenceLayer.sectionMeshes(), plane);
+    sectionLine.geometry.dispose(); // 이전 position GPU 버퍼 해제(매 갱신 신규 attribute churn 방지).
     sectionLine.geometry.setAttribute('position', new THREE.BufferAttribute(seg, 3));
     sectionLine.geometry.computeBoundingSphere();
-    // 전역 clip이 단면선(평면 동일면)을 잘라내지 않게 kept 쪽으로 미세 오프셋.
-    sectionLine.position.copy(plane.normal).multiplyScalar(diag * 0.0008);
     sectionLine.visible = seg.length > 0;
     engine.requestRender();
   }, 130);
@@ -165,7 +164,10 @@ function applyClip(): void {
   const plane = new THREE.Plane(new THREE.Vector3().setComponent(a, sign), -pos * sign);
   r.clippingPlanes = [plane];
   const size = box.getSize(new THREE.Vector3());
-  scheduleContour(plane, Math.max(size.x, size.y, size.z) + 1);
+  // 단면선을 kept 쪽으로 미세 오프셋 → 전역 clip이 같은 평면의 선을 잘라내지 않게.
+  // 디바운스 밖(여기서 즉시) 설정해야 flip 시 ~130ms 깜빡임 없음(윤곽 동일, 노멀 부호만 반전).
+  sectionLine.position.copy(plane.normal).multiplyScalar((Math.max(size.x, size.y, size.z) + 1) * 0.0008);
+  scheduleContour(plane);
   engine.requestRender();
 }
 window.addEventListener('keydown', (e) => {
@@ -173,8 +175,13 @@ window.addEventListener('keydown', (e) => {
 });
 // federation 소스가 처음 ready 되면 1회 자동 맞춤(오버레이가 화면 밖이면 무의미하므로).
 let didFitFed = false;
+let clipRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 federation.onChange(() => {
-  if (currentClip) setTimeout(applyClip, 120); // 모델이 clip 켠 뒤 로드되면 평면 위치 재계산
+  // 모델이 clip 켠 뒤 로드되면 평면 위치 재계산. notify는 로드 중 여러 번 발화하므로 단일 트레일링 타이머로 합침.
+  if (currentClip) {
+    if (clipRefreshTimer) clearTimeout(clipRefreshTimer);
+    clipRefreshTimer = setTimeout(() => { clipRefreshTimer = null; applyClip(); }, 120);
+  }
   // 첫 ready 시 1회 자동 맞춤 — latch는 fitView 성공 후에만(스케줄 창서 reload로 소스 사라지면 fit 유실 방지).
   if (!didFitFed && referenceLayer.list().length > 0) {
     setTimeout(() => { if (!didFitFed && fitView()) didFitFed = true; }, 100);
