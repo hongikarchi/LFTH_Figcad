@@ -221,6 +221,7 @@ async function sendWebResponse(res: http.ServerResponse, webRes: Response): Prom
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript', // ES 모듈 청크(예: pdfjs worker) — 누락 시 octet-stream→브라우저 strict-MIME 거부로 PDF import 깨짐(라이브 실측)
   '.css': 'text/css',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
