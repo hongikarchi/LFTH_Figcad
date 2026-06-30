@@ -9,6 +9,9 @@ import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
 import { ReferenceLayer } from './engine/ReferenceLayer';
 import { computeSectionContour } from './engine/sectionContour';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { FederationReconciler } from './engine/FederationReconciler';
 import { FEDERATION_EXTRACTORS, fetchDwgUnderlay } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
@@ -127,14 +130,21 @@ function fitView(): boolean {
 // 단면(클리핑 플레인) — 전역 renderer.clippingPlanes(전 머티리얼 클립). 평면 위치 = 모델 bbox축 0~1.
 // + 단면선(section line): 오버레이 메시∩평면 윤곽을 CPU로 그려 라이노식 절단선 실시간 표시(디바운스).
 let currentClip: ClipState | null = null;
-const sectionLine = new THREE.LineSegments(
-  new THREE.BufferGeometry(),
-  new THREE.LineBasicMaterial({ color: 0x1d1d1f }),
-);
+// 라이노식 굵은 절단선 — LineSegments2(인스턴스 쿼드)라 WebGL 1px 한계 회피(LineBasicMaterial은 linewidth 무시).
+// LineMaterial.resolution은 드로잉버퍼(px·DPR)와 일치해야 안 보이거나 굵기 틀림 → 생성 시 + resize서 갱신 필수.
+const sectionLineMat = new LineMaterial({ color: 0x1d1d1f, linewidth: 2.5 });
+const sectionLine = new LineSegments2(new LineSegmentsGeometry(), sectionLineMat);
 sectionLine.visible = false;
 sectionLine.renderOrder = 3;
 sectionLine.frustumCulled = false;
 engine.scene.add(sectionLine);
+function updateSectionResolution(): void {
+  const v = new THREE.Vector2();
+  engine.renderer.getDrawingBufferSize(v);
+  sectionLineMat.resolution.copy(v);
+}
+updateSectionResolution();
+window.addEventListener('resize', updateSectionResolution); // Engine resize 뒤(등록 순서) → 새 드로잉버퍼 크기 반영
 let contourTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleContour(plane: THREE.Plane): void {
   if (contourTimer) clearTimeout(contourTimer);
@@ -142,12 +152,17 @@ function scheduleContour(plane: THREE.Plane): void {
   // (실측: 1.25M-tri 단일 메시 ~31ms = 잭 임계 이하. 오프셋은 applyClip서 즉시 설정 — flip 깜빡임 방지.)
   contourTimer = setTimeout(() => {
     if (!currentClip) return;
+    updateSectionResolution(); // 매 재빌드 시 드로잉버퍼 크기 재반영(LineMaterial.resolution 신선 유지 — clip 시점엔 DPR 안정).
     // 보이는·비언더레이 솔리드만(숨긴/2D 오버레이 유령 절단선 방지 — Codex 리뷰).
     const seg = computeSectionContour(referenceLayer.sectionMeshes(), plane);
-    sectionLine.geometry.dispose(); // 이전 position GPU 버퍼 해제(매 갱신 신규 attribute churn 방지).
-    sectionLine.geometry.setAttribute('position', new THREE.BufferAttribute(seg, 3));
-    sectionLine.geometry.computeBoundingSphere();
-    sectionLine.visible = seg.length > 0;
+    if (seg.length > 0) {
+      sectionLine.geometry.dispose(); // 이전 인스턴스 버퍼 해제(setPositions가 새 InterleavedBuffer 생성).
+      sectionLine.geometry.setPositions(seg); // 6 float = 1세그먼트(start xyz, end xyz) — 윤곽 출력 형식과 동일.
+      sectionLine.geometry.computeBoundingSphere();
+      sectionLine.visible = true;
+    } else {
+      sectionLine.visible = false;
+    }
     engine.requestRender();
   }, 130);
 }
