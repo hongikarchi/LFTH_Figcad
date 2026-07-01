@@ -48,6 +48,22 @@ describe('뷰포인트(저장 단면) 채널', () => {
     expect(vp.camera.phi).toBeCloseTo(0.7);
   });
 
+  it('동시 저장(concurrent) — 인덱스 로컬 계산: 둘 다 index=3 가능. 데이터 손실 없음(id 상이), 표시명만 중복', () => {
+    // 알려진 CRDT 한계(리뷰): 두 사용자가 각자 [1,2] 상태서 동시에 저장하면 둘 다 max+1=3.
+    // 서버 조율 없이는 불가피. "N번 단면 봐주세요" 참조 안정성 위해 stored index 유지(삭제 시 재번호 안 함).
+    const a = setup();
+    const b = setup();
+    a.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: 'A' });
+    a.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: 'A' });
+    b.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: 'B' });
+    b.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: 'B' });
+    const idA = a.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: 'A' });
+    const idB = b.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: 'B' });
+    expect(a.listViewpoints()[2]!.index).toBe(3);
+    expect(b.listViewpoints()[2]!.index).toBe(3); // 동일 index(중복 표시명) — 하지만
+    expect(idA).not.toBe(idB); // id 상이 → CRDT 병합 시 둘 다 생존(데이터 손실 없음)
+  });
+
   it('importSnapshot — 커밋복원(viewpoints 부재)=보존, JSON백업(명시)=교체', () => {
     const s = setup();
     s.addViewpoint({ camera: CAM, viewMode: '3d', clip: null, author: '나' });

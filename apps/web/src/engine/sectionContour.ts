@@ -97,52 +97,92 @@ export function computeSectionFill(segments: Float32Array, plane: THREE.Plane): 
     adj[a]!.push(eid); adj[b]!.push(eid);
   }
 
-  // 스티칭 — 미사용 엣지서 시작해 인접 따라 닫힌 루프 추적
+  // 스티칭 — 미사용 엣지서 시작, 각 정점서 **회전순(sharpest CW turn)**으로 다음 엣지 선택.
+  // 임의 선택은 degree>2(T/X 교차·중첩벽)서 loop 병합·figure-8(자기교차) → garbage 삼각분할(Codex HIGH).
+  // 회전순 = 단일 면 경계 추적(degree 2면 후보 1개라 기존과 동일 = 매니폴드 회귀안전). 잔여 비단순
+  // 루프(내부 정점 재방문)는 폐기 = 오채움 대신 미채움(정직).
   const used = new Array(edges.length).fill(false);
+  const angleTo = (from: number, cur: number): number =>
+    Math.atan2(verts[from]![1] - verts[cur]![1], verts[from]![0] - verts[cur]![0]);
+  const chooseNext = (cur: number, from: number): number => {
+    const inAng = angleTo(from, cur); // 되돌아가는(reverse-incoming) 방향
+    let best = -1, bestDelta = Infinity;
+    for (const eid of adj[cur]!) {
+      if (used[eid]) continue;
+      const [ea, eb] = edges[eid]!;
+      const w = ea === cur ? eb : ea;
+      let delta = inAng - angleTo(w, cur); // reverse서 시계방향 거리
+      while (delta <= 1e-9) delta += Math.PI * 2;
+      if (delta < bestDelta) { bestDelta = delta; best = eid; }
+    }
+    return best;
+  };
   const loops: V2[][] = [];
   for (let e0 = 0; e0 < edges.length; e0++) {
     if (used[e0]) continue;
     const start = edges[e0]![0];
+    let from = start;
     let cur = edges[e0]![1];
     used[e0] = true;
     const loopIdx: number[] = [start, cur];
-    let closed = false;
+    const visited = new Set<number>([start, cur]);
+    let closed = false, simple = true;
     for (let guard = 0; guard < edges.length + 1; guard++) {
       if (cur === start) { closed = true; break; }
-      const cand = adj[cur]!.find((eid) => !used[eid]);
-      if (cand === undefined) break; // 열린 경계 → 미채움
-      used[cand] = true;
-      const [ea, eb] = edges[cand]!;
+      const eid = chooseNext(cur, from);
+      if (eid < 0) break; // 열린 경계 → 미채움
+      used[eid] = true;
+      const [ea, eb] = edges[eid]!;
       const next = ea === cur ? eb : ea;
-      cur = next;
       if (next === start) { closed = true; break; }
+      if (visited.has(next)) { simple = false; break; } // 내부 정점 재방문 = 비단순 → 폐기
+      visited.add(next);
       loopIdx.push(next);
+      from = cur;
+      cur = next;
     }
-    if (closed && loopIdx.length >= 3) loops.push(loopIdx.map((i) => verts[i]!));
+    if (closed && simple && loopIdx.length >= 3) loops.push(loopIdx.map((i) => verts[i]!));
   }
   if (!loops.length) return new Float32Array(0);
 
-  // depth-parity 분류: repPoint(loop[0]) 를 다른 루프들이 포함하는 개수 = depth. 짝=외곽, 홀=구멍.
-  const depth = loops.map((L, i) => {
+  const toV2 = (a: V2) => new THREE.Vector2(a[0], a[1]);
+  // 각 루프의 **엄밀 내부점** — loop[0](정점)은 인접 루프 경계와 겹칠 수 있어 parity 불안정(Codex).
+  // 자기 삼각분할 첫 삼각형 무게중심 = 오목 루프서도 내부 보장. 두 containment 패스서 동일 점 재사용.
+  const repPoint = (loop: V2[]): V2 => {
+    try {
+      const t = THREE.ShapeUtils.triangulateShape(loop.map(toV2), []);
+      const f0 = t[0];
+      if (f0 && f0.length === 3) {
+        const [i, j, k] = f0 as [number, number, number];
+        return [(loop[i]![0] + loop[j]![0] + loop[k]![0]) / 3, (loop[i]![1] + loop[j]![1] + loop[k]![1]) / 3];
+      }
+    } catch { /* 폴백 */ }
+    return loop[0]!;
+  };
+  const reps = loops.map(repPoint);
+
+  // depth-parity 분류: repPoint를 다른 루프들이 포함하는 개수 = depth. 짝=외곽, 홀=구멍.
+  const depth = loops.map((_, i) => {
     let d = 0;
-    for (let j = 0; j < loops.length; j++) if (j !== i && pointInPoly(L[0]![0], L[0]![1], loops[j]!)) d++;
+    for (let j = 0; j < loops.length; j++) if (j !== i && pointInPoly(reps[i]![0], reps[i]![1], loops[j]!)) d++;
     return d;
   });
   // 각 홀 → 즉시 부모 외곽(그를 포함하며 depth-1)
   const holesOf = new Map<number, number[]>();
   for (let h = 0; h < loops.length; h++) {
     if (depth[h]! % 2 === 0) continue; // 외곽
-    let parent = -1;
     for (let o = 0; o < loops.length; o++) {
       if (o === h || depth[o]! !== depth[h]! - 1) continue;
-      if (pointInPoly(loops[h]![0]![0], loops[h]![0]![1], loops[o]!)) { parent = o; break; }
+      if (pointInPoly(reps[h]![0], reps[h]![1], loops[o]!)) {
+        if (!holesOf.has(o)) holesOf.set(o, []);
+        holesOf.get(o)!.push(h);
+        break;
+      }
     }
-    if (parent >= 0) { if (!holesOf.has(parent)) holesOf.set(parent, []); holesOf.get(parent)!.push(h); }
   }
 
   // 외곽(짝 depth)마다 홀과 삼각분할 → 3D
   const tris: number[] = [];
-  const toV2 = (a: V2) => new THREE.Vector2(a[0], a[1]);
   const push3d = (a: V2) => tris.push(origin.x + u.x * a[0] + v.x * a[1], origin.y + u.y * a[0] + v.y * a[1], origin.z + u.z * a[0] + v.z * a[1]);
   for (let o = 0; o < loops.length; o++) {
     if (depth[o]! % 2 !== 0) continue; // 외곽만

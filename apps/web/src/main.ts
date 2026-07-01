@@ -154,6 +154,8 @@ function updateSectionResolution(): void {
 updateSectionResolution();
 window.addEventListener('resize', updateSectionResolution); // Engine resize 뒤(등록 순서) → 새 드로잉버퍼 크기 반영
 let contourTimer: ReturnType<typeof setTimeout> | null = null;
+let prevClipAxis: ClipState['axis'] | null = null;
+let prevClipT = -1;
 function scheduleContour(plane: THREE.Plane): void {
   if (contourTimer) clearTimeout(contourTimer);
   // 디바운스 — 슬라이더 드래그 매 입력마다 메시 재스캔 방지(release 후 1회). 드래그 중엔 직전 윤곽 유지.
@@ -166,13 +168,11 @@ function scheduleContour(plane: THREE.Plane): void {
     if (seg.length > 0) {
       sectionLine.geometry.dispose(); // 이전 인스턴스 버퍼 해제(setPositions가 새 InterleavedBuffer 생성).
       sectionLine.geometry.setPositions(seg); // 6 float = 1세그먼트(start xyz, end xyz) — 윤곽 출력 형식과 동일.
-      sectionLine.geometry.computeBoundingSphere();
-      sectionLine.visible = true;
+      sectionLine.visible = true; // frustumCulled=false + 미레이캐스트 → boundingSphere 불요(Codex).
       // poché 채움 — 절단선 세그먼트 재사용(재계산 없음), 닫힌 루프만 채워짐(열린 경계=선만).
       const fill = computeSectionFill(seg, plane);
       sectionFill.geometry.dispose();
       sectionFill.geometry.setAttribute('position', new THREE.BufferAttribute(fill, 3));
-      sectionFill.geometry.computeBoundingSphere();
       sectionFill.visible = fill.length > 0;
     } else {
       sectionLine.visible = false;
@@ -200,6 +200,11 @@ function applyClip(): void {
   const off = (Math.max(size.x, size.y, size.z) + 1) * 0.0008;
   sectionLine.position.copy(plane.normal).multiplyScalar(off);
   sectionFill.position.copy(plane.normal).multiplyScalar(off);
+  // axis/t 변경(flip 아님) 시 스테일 채움 시트 즉시 숨김 — 큰 회색면이 디바운스(130ms) 동안 잘못된
+  // 방향/위치로 크게 보임(Codex). flip은 윤곽·채움 반사대칭 불변이라 유지. scheduleContour가 재계산 후 복원.
+  if (currentClip.axis !== prevClipAxis || currentClip.t !== prevClipT) sectionFill.visible = false;
+  prevClipAxis = currentClip.axis;
+  prevClipT = currentClip.t;
   scheduleContour(plane);
   engine.requestRender();
 }
@@ -450,7 +455,7 @@ const viewActions = {
       camera: rig.getPose(),
       viewMode: s.viewMode,
       clip: s.clip,
-      author: presence.userName,
+      author: presence.userName || '게스트', // presence.userName은 항상 문자열이나 방어적 폴백
       ...(name ? { name } : {}),
     });
   },
