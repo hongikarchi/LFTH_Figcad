@@ -425,35 +425,8 @@ export const CAPABILITIES: Capability[] = [
       }),
     summary: (a) => `치수 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
   },
-  {
-    id: 'create_text',
-    category: 'annotation',
-    titleKo: '텍스트',
-    icon: 'text',
-    descriptionKo:
-      '텍스트 주석 생성 — 평면 한 점(at)에 문자열. 방 이름·메모 등. size=글자 크기 mm(생략 시 200).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        levelId: { type: 'string', description: '배치할 레벨(층) id' },
-        at: ptSchema('텍스트 위치'),
-        text: { type: 'string', description: '표시할 문자열' },
-        size: { type: 'integer', description: '글자 크기 mm (생략 시 200)' },
-      },
-      required: ['levelId', 'at', 'text'],
-      additionalProperties: false,
-    },
-    mutating: true,
-    aiExposed: true,
-    run: (store, a) =>
-      store.createText({
-        levelId: asStr(a['levelId'], 'levelId'),
-        at: asPt(a['at']),
-        text: asStr(a['text'], 'text'),
-        ...(optNum(a['size']) !== undefined ? { size: optNum(a['size'])! } : {}),
-      }),
-    summary: (a) => `텍스트 '${a['text']}' ${fmtPt(a['at'])}`,
-  },
+  // create_text 캐패빌리티 제거 — 텍스트 종류는 신규 생성 안 함(레이블로 대체, 일관성).
+  // store.createText + 스키마·deriveText·렌더는 back-compat로 보존(기존 문서 텍스트 요소는 계속 로드/렌더/편집).
   {
     id: 'create_label',
     category: 'annotation',

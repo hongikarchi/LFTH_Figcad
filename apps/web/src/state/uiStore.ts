@@ -17,7 +17,6 @@ export type ToolName =
   | 'zone'
   | 'dimension'
   | 'measure'
-  | 'text'
   | 'label'
   | 'sketch'
   | 'sketch-pen'
@@ -50,7 +49,7 @@ export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
 /**
  * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기,
  * 협업·리뷰=선택·스케치·주석(코멘트/레이블/치수). mode 전환 시 도구가 팔레트에 없으면 select로 리셋.
- * 텍스트('text')는 신규 생성 중단(iter-2 3-3) — back-compat 위해 스키마·TextTool은 유지, 팔레트서만 제외.
+ * 텍스트('text')는 도구·AI 생성 완전 제거(레이블로 대체) — 스키마·deriveText·렌더만 back-compat 보존(기존 문서).
  * AI 도구(스케치)는 mode 아닌 AI dock서 무장. 도면(단면·입면)은 DrawingPanel서 진입.
  */
 export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {

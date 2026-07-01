@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument, SEED_IDS } from '../src/store';
 import { AI_TOOLS, applyOpLog, executeOp, type OpLogEntry } from '../src/ai';
 import { DeriveCache } from '../src/geometry';
-import type { DimensionElement, TextElement, WallElement } from '../src/schema';
+import type { DimensionElement, WallElement } from '../src/schema';
 
 /**
  * AI 주석 파이프라인 — LLM 없이 검증.
@@ -12,16 +12,16 @@ import type { DimensionElement, TextElement, WallElement } from '../src/schema';
  */
 
 describe('AI 주석 도구 — opLog 파이프라인 (LLM 무관)', () => {
-  it('buildAiTools에 create_dimension·create_text 노출', () => {
+  it('buildAiTools에 create_dimension 노출 · create_text는 제거', () => {
     const names = AI_TOOLS.map((t) => t.name);
     expect(names).toContain('create_dimension');
-    expect(names).toContain('create_text');
+    expect(names).not.toContain('create_text'); // 텍스트 생성 완전 제거(레이블로 대체, 일관성)
     // 각 도구에 input_schema 존재 (agent.ts가 그대로 API에 넘김)
     const dim = AI_TOOLS.find((t) => t.name === 'create_dimension')!;
     expect(dim.input_schema).toBeTruthy();
   });
 
-  it('드라이런→재생: 벽+치수+텍스트, 치수는 좌표 기반이라 재생 스토어 진짜 벽에 자동 바인딩', () => {
+  it('드라이런→재생: 벽+치수, 치수는 좌표 기반이라 재생 스토어 진짜 벽에 자동 바인딩', () => {
     // --- 서버 드라이런 (인메모리) ---
     const dry = new DocStore();
     seedDocument(dry);
@@ -31,7 +31,7 @@ describe('AI 주석 도구 — opLog 파이프라인 (LLM 무관)', () => {
       log.push({ op, args, result });
       return result;
     };
-    // "방 한 벽 그리고 치수 넣고 거실 라벨 달아줘"가 낼 법한 opLog
+    // "방 한 벽 그리고 치수 넣어줘"가 낼 법한 opLog
     const dryWall = run('create_wall', {
       levelId: SEED_IDS.level,
       typeId: SEED_IDS.wall200,
@@ -39,7 +39,6 @@ describe('AI 주석 도구 — opLog 파이프라인 (LLM 무관)', () => {
       b: [4000, 0],
     }) as string;
     run('create_dimension', { levelId: SEED_IDS.level, a: [0, 0], b: [4000, 0], offset: 600 });
-    run('create_text', { levelId: SEED_IDS.level, at: [2000, 1500], text: '거실' });
 
     // 드라이런 스토어에서 치수가 드라이 벽에 바인딩됐는지
     const dryDim = dry.listElements().find((e): e is DimensionElement => e.kind === 'dimension')!;
@@ -49,13 +48,12 @@ describe('AI 주석 도구 — opLog 파이프라인 (LLM 무관)', () => {
     const real = new DocStore();
     seedDocument(real);
     const res = applyOpLog(real, log);
-    expect(res.applied).toBe(3);
+    expect(res.applied).toBe(2);
     expect(res.failed).toHaveLength(0);
-    expect(res.createdIds).toHaveLength(3);
+    expect(res.createdIds).toHaveLength(2);
 
     const wall = real.listElements().find((e): e is WallElement => e.kind === 'wall')!;
     const dim = real.listElements().find((e): e is DimensionElement => e.kind === 'dimension')!;
-    const text = real.listElements().find((e): e is TextElement => e.kind === 'text')!;
 
     // 재생 벽 id는 드라이 id와 다름 (독립 nanoid)
     expect(wall.id).not.toBe(dryWall);
@@ -63,8 +61,6 @@ describe('AI 주석 도구 — opLog 파이프라인 (LLM 무관)', () => {
     expect(dim.bindA).toEqual({ id: wall.id, anchor: 'a' });
     expect(dim.bindB).toEqual({ id: wall.id, anchor: 'b' });
     expect(dim.offset).toBe(600);
-    expect(text.text).toBe('거실');
-    expect(text.at).toEqual([2000, 1500]);
 
     // 추종 동작: 재생 스토어에서 벽 끝점 이동 → 치수 측정값 갱신
     const cache = new DeriveCache();

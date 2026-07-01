@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument } from '../src/store';
 import { DeriveCache } from '../src/geometry';
-import { runCapability } from '../src/capabilities';
 import { lint } from '../src/lint';
 import { elementFootprint } from '../src/select';
 import type { TextElement } from '../src/schema';
@@ -12,7 +11,7 @@ function setup() {
   return { store, seed };
 }
 
-describe('텍스트 주석', () => {
+describe('텍스트 주석 (back-compat — 생성 UI·AI 제거, 스토어 API·스키마·렌더만 보존)', () => {
   it('createText → 라벨 채널 + 픽 프록시', () => {
     const { store, seed } = setup();
     const id = store.createText({ levelId: seed.levelId, at: [1000, 2000], text: '거실' });
@@ -32,20 +31,6 @@ describe('텍스트 주석', () => {
     expect((store.getElement(id) as TextElement).at).toEqual([110, 221]);
     const [copy] = store.duplicateElements([id], [500, 0]);
     expect((store.getElement(copy!) as TextElement).at).toEqual([610, 221]);
-  });
-
-  it('create_text capability — float 관용', () => {
-    const { store, seed } = setup();
-    const id = runCapability(store, 'create_text', {
-      levelId: seed.levelId,
-      at: [1000.4, 2000.6],
-      text: '거실',
-      size: 250,
-    }) as string;
-    const t = store.getElement(id) as TextElement;
-    expect(t.at).toEqual([1000, 2001]);
-    expect(t.text).toBe('거실');
-    expect(t.size).toBe(250);
   });
 
   it('풋프린트 = 점, lint 클린', () => {

@@ -184,15 +184,6 @@ export function renderToolContext(
     );
   }
 
-  if (activeTool === 'text') {
-    return (
-      <div className="infobox">
-        <span className="infobox-title">텍스트 도구</span>
-        <span className="infobox-hint">점 클릭 → 입력창에 문자 입력 (Enter 확정 · Esc 취소)</span>
-      </div>
-    );
-  }
-
   if (activeTool === 'label') {
     return (
       <div className="infobox">
