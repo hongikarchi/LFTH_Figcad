@@ -2,6 +2,14 @@ import * as THREE from 'three';
 
 export type ViewMode = '3d' | 'plan';
 
+/** 카메라 궤도 포즈 — 뷰포인트(저장 단면) 캡처/복원용. 렌더 m·rad (뷰 메타데이터라 mm-정수 불요). */
+export interface CameraPose {
+  target: [number, number, number]; // 월드 m
+  distance: number; // m
+  theta: number; // 방위각 rad
+  phi: number; // 극각 rad
+}
+
 const TWEEN_DURATION = 0.3; // seconds
 const MIN_DISTANCE = 1;
 const MAX_DISTANCE = 5000; // 대형 모델(경기장 ~100m·import 매스) 전체맞춤 허용 (구 200 = 95m 건물 못 담음)
@@ -172,6 +180,27 @@ export class CameraRig {
   /** 타깃을 월드 좌표(m)로 이동 — 요소 점프용. 각도·거리는 유지 */
   focusOn(x: number, y: number, z: number): void {
     this.target.set(x, y, z);
+    this.apply();
+  }
+
+  /** 현재 궤도 포즈 캡처 (뷰포인트 저장용). mode는 uiStore.viewMode가 별도 소유. */
+  getPose(): CameraPose {
+    return { target: [this.target.x, this.target.y, this.target.z], distance: this.distance, theta: this.theta, phi: this.phi };
+  }
+
+  /**
+   * 궤도 포즈 복원 (뷰포인트 점프 — 스냅, 트윈 없음). mode 전환은 호출측이 uiStore.setViewMode로 별도 처리.
+   * updateFrustum까지 = ortho도 즉시 정합.
+   */
+  setPose(p: CameraPose): void {
+    this.target.set(p.target[0], p.target[1], p.target[2]);
+    this.distance = THREE.MathUtils.clamp(p.distance, MIN_DISTANCE, MAX_DISTANCE);
+    this.theta = p.theta;
+    this.phi = THREE.MathUtils.clamp(p.phi, MIN_PHI, MAX_PHI);
+    this.tweenT = 1; // 트윈 중단 = 즉시 스냅
+    this.savedPhi = this.phi;
+    this.savedTheta = this.theta;
+    this.updateFrustum(window.innerWidth / window.innerHeight);
     this.apply();
   }
 

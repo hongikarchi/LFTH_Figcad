@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DocStore } from '@figcad/core';
+import type { DocStore, Viewpoint } from '@figcad/core';
 import type { FederationReconciler } from '../engine/FederationReconciler';
 import { useUiStore, type ClipState } from '../state/uiStore';
 import { TopBar } from './TopBar';
@@ -27,6 +27,10 @@ export interface ViewActions {
   fit: () => void;
   /** 단면(클리핑 플레인) 적용 — null=해제. 모델 bbox 기준 평면 계산 → 렌더러 clippingPlanes. */
   setClip: (clip: ClipState | null) => void;
+  /** 현재 카메라+단면을 뷰포인트로 저장(문서·공유) → id. name 없으면 "단면 N" 자동. */
+  saveViewpoint: (name?: string) => string;
+  /** 저장된 뷰포인트로 점프 — 카메라 포즈 + viewMode + 클립 재현("N번 단면 봐주세요"). */
+  jumpViewpoint: (vp: Viewpoint) => void;
 }
 
 /** 문서 변경 시 리렌더 트리거 (React는 문서를 직접 안 들고 매 렌더 fresh 조회) */

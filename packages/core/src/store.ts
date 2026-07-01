@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { nanoid } from 'nanoid';
 import {
   CommentSchema,
+  ViewpointSchema,
   CORE_SCHEMA_VERSION,
   DrawingViewSchema,
   FederationSourceSchema,
@@ -27,6 +28,7 @@ import {
   type RoofElement,
   type SlabElement,
   type Comment,
+  type Viewpoint,
   type DrawingView,
   type FederationSource,
   type ZoneElement,
@@ -153,6 +155,8 @@ export interface DocSnapshot {
   views?: DrawingView[];
   /** federation 소스 (v4). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
   federation?: FederationSource[];
+  /** 뷰포인트(저장 단면) (v6). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
+  viewpoints?: Viewpoint[];
 }
 
 export type DocObserver = (change: DocChange) => void;
@@ -187,6 +191,7 @@ export class DocStore {
   private yTypes: Y.Map<unknown>;
   private yElements: Y.Map<unknown>;
   private yComments: Y.Map<unknown>;
+  private yViewpoints: Y.Map<unknown>;
   private yViews: Y.Map<unknown>;
   private yFederation: Y.Map<unknown>;
 
@@ -195,6 +200,7 @@ export class DocStore {
   private types = new Map<Id, ElemType>();
   private elements = new Map<Id, Element>();
   private comments = new Map<Id, Comment>();
+  private viewpoints = new Map<Id, Viewpoint>();
   private views = new Map<Id, DrawingView>();
   private federationSources = new Map<Id, FederationSource>();
   private observers = new Set<DocObserver>();
@@ -211,6 +217,7 @@ export class DocStore {
     this.yTypes = this.ydoc.getMap('types');
     this.yElements = this.ydoc.getMap('elements');
     this.yComments = this.ydoc.getMap('comments');
+    this.yViewpoints = this.ydoc.getMap('viewpoints');
     this.yViews = this.ydoc.getMap('views');
     this.yFederation = this.ydoc.getMap('federation');
 
@@ -219,6 +226,7 @@ export class DocStore {
     for (const id of this.yTypes.keys()) this.mirrorType(id);
     for (const id of this.yElements.keys()) this.mirrorElement(id);
     for (const id of this.yComments.keys()) this.mirrorComment(id);
+    for (const id of this.yViewpoints.keys()) this.mirrorViewpoint(id);
     for (const id of this.yViews.keys()) this.mirrorView(id);
     for (const id of this.yFederation.keys()) this.mirrorFederationSource(id);
 
@@ -289,6 +297,14 @@ export class DocStore {
       }
       this.notifyAll(); // 코멘트 변경 → 옵저버 강제 통지 (emit은 빈 change를 무시함)
     });
+    // 뷰포인트(저장 단면) = 평면 JSON 엔트리(요소 아님). 변경 시 빈 통지로 뷰포인트 패널 재동기화.
+    this.yViewpoints.observe((e) => {
+      for (const [id, c] of e.changes.keys) {
+        if (c.action === 'delete') this.viewpoints.delete(id);
+        else this.mirrorViewpoint(id);
+      }
+      this.notifyAll();
+    });
     // 도면 뷰 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 통지로 도면 패널 재파생.
     this.yViews.observe((e) => {
       for (const [id, c] of e.changes.keys) {
@@ -311,6 +327,11 @@ export class DocStore {
   private mirrorComment(id: Id): void {
     const parsed = CommentSchema.safeParse(this.yComments.get(id));
     if (parsed.success) this.comments.set(id, parsed.data);
+  }
+
+  private mirrorViewpoint(id: Id): void {
+    const parsed = ViewpointSchema.safeParse(this.yViewpoints.get(id));
+    if (parsed.success) this.viewpoints.set(id, parsed.data);
   }
 
   private mirrorView(id: Id): void {
@@ -1109,6 +1130,47 @@ export class DocStore {
     return this.comments.get(id);
   }
 
+  /** 뷰포인트(저장 단면) 추가 — 카메라+클립 북마크. index 자동(마지막+1), name 자동 "단면 N". */
+  addViewpoint(params: {
+    camera: Viewpoint['camera'];
+    viewMode: '3d' | 'plan';
+    clip: Viewpoint['clip'];
+    author: string;
+    name?: string;
+  }): Id {
+    const id = nanoid(12);
+    const index = this.viewpoints.size
+      ? Math.max(...[...this.viewpoints.values()].map((v) => v.index)) + 1
+      : 1;
+    const v = ViewpointSchema.parse({
+      id,
+      name: params.name?.trim() || `단면 ${index}`,
+      index,
+      camera: params.camera,
+      viewMode: params.viewMode,
+      clip: params.clip,
+      author: params.author,
+      ts: Date.now(),
+    });
+    this.transact(() => this.yViewpoints.set(id, v));
+    return id;
+  }
+
+  renameViewpoint(id: Id, name: string): void {
+    const v = this.viewpoints.get(id);
+    const n = name.trim();
+    if (!v || !n) return;
+    this.transact(() => this.yViewpoints.set(id, { ...v, name: n }));
+  }
+
+  deleteViewpoint(id: Id): void {
+    this.transact(() => this.yViewpoints.delete(id));
+  }
+
+  listViewpoints(): Viewpoint[] {
+    return [...this.viewpoints.values()].sort((a, b) => a.index - b.index);
+  }
+
   // ===== 도면 뷰 (M11) — 별도 'views' 채널. 2D 라인워크는 deriveDrawing으로 파생,
   // 여기엔 뷰 정의(절단높이·선·범위·축척)만. undo 비추적(코멘트와 동일 — 도면 config). =====
 
@@ -1539,6 +1601,7 @@ export class DocStore {
       types: [...this.types.values()],
       elements: [...this.elements.values()],
       comments: [...this.comments.values()],
+      viewpoints: [...this.viewpoints.values()],
       views: [...this.views.values()],
       federation: [...this.federationSources.values()],
     };
@@ -1575,6 +1638,11 @@ export class DocStore {
       const p = CommentSchema.safeParse(v);
       if (p.success) comments.push(p.data);
     }
+    const viewpoints: Viewpoint[] = [];
+    for (const v of ydoc.getMap('viewpoints').values()) {
+      const p = ViewpointSchema.safeParse(v);
+      if (p.success) viewpoints.push(p.data);
+    }
     const views: DrawingView[] = [];
     for (const v of ydoc.getMap('views').values()) {
       const p = DrawingViewSchema.safeParse(v);
@@ -1599,6 +1667,7 @@ export class DocStore {
       types,
       elements,
       comments,
+      viewpoints,
       views,
       federation,
     };
@@ -1622,6 +1691,7 @@ export class DocStore {
         store.yElements.set(el.id, ymap);
       }
       for (const c of snap.comments ?? []) store.yComments.set(c.id, CommentSchema.parse(c));
+      for (const vp of snap.viewpoints ?? []) store.yViewpoints.set(vp.id, ViewpointSchema.parse(vp));
       for (const v of snap.views ?? []) store.yViews.set(v.id, DrawingViewSchema.parse(v));
       for (const s of snap.federation ?? [])
         store.yFederation.set(s.id, FederationSourceSchema.parse(s));
@@ -1648,6 +1718,9 @@ export class DocStore {
     // JSON 백업 복원(comments 명시, [] 포함)만 교체. (커밋 blob엔 코멘트 미포함 — 의도)
     const replaceComments = snap.comments !== undefined;
     const comments = replaceComments ? snap.comments!.map((c) => CommentSchema.parse(c)) : [];
+    // 뷰포인트도 직교 채널 — 커밋 복원(viewpoints 부재)은 보존, JSON 백업(명시)만 교체
+    const replaceViewpoints = snap.viewpoints !== undefined;
+    const viewpoints = replaceViewpoints ? snap.viewpoints!.map((v) => ViewpointSchema.parse(v)) : [];
     // 도면 뷰도 직교 채널 — 커밋 복원(views 부재)은 보존, JSON 백업(views 명시)만 교체
     const replaceViews = snap.views !== undefined;
     const views = replaceViews ? snap.views!.map((v) => DrawingViewSchema.parse(v)) : [];
@@ -1677,6 +1750,10 @@ export class DocStore {
       if (replaceComments) {
         for (const k of [...this.yComments.keys()]) this.yComments.delete(k);
         for (const c of comments) this.yComments.set(c.id, c);
+      }
+      if (replaceViewpoints) {
+        for (const k of [...this.yViewpoints.keys()]) this.yViewpoints.delete(k);
+        for (const v of viewpoints) this.yViewpoints.set(v.id, v);
       }
       if (replaceViews) {
         for (const k of [...this.yViews.keys()]) this.yViews.delete(k);

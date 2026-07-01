@@ -7,7 +7,7 @@ import { z } from 'zod';
  * 불변 규칙: 지오메트리는 여기 없다 — 항상 파라미터에서 파생.
  */
 
-export const CORE_SCHEMA_VERSION = 5; // v2 코멘트 · v3 도면뷰 · v4 federation · v5 projectOrigin (구버전 부재→없음 호환)
+export const CORE_SCHEMA_VERSION = 6; // v2 코멘트 · v3 도면뷰 · v4 federation · v5 projectOrigin · v6 viewpoints(저장 단면) (구버전 부재→없음 호환)
 
 export type Id = string;
 
@@ -473,6 +473,28 @@ export const CommentSchema = z.object({
   resolved: z.boolean().optional(), // 루트만 의미
 });
 export type Comment = z.infer<typeof CommentSchema>;
+
+/**
+ * 뷰포인트(저장 단면) — 요소 아닌 별도 채널(ydoc 'viewpoints' 맵). 카메라 궤도 포즈 + 단면(클립) 북마크.
+ * "단면 N"으로 저장·전원 공유 → 클릭 시 카메라+클립 재현("3번 단면 봐주세요"). 지오메트리 아님 =
+ * 렌더 m·rad 뷰 메타데이터라 mm-정수 불요(파생·마이터에 안 쓰임).
+ */
+export const ViewpointSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  index: z.number().int(), // 표시 번호(단면 N)
+  camera: z.object({
+    target: z.tuple([z.number(), z.number(), z.number()]), // 월드 m (궤도 타깃)
+    distance: z.number(),
+    theta: z.number(), // 방위각 rad
+    phi: z.number(), // 극각 rad
+  }),
+  viewMode: z.enum(['3d', 'plan']),
+  clip: z.object({ axis: z.enum(['x', 'y', 'z']), t: z.number(), flip: z.boolean() }).nullable(),
+  author: z.string(),
+  ts: z.number().int(), // epoch ms
+});
+export type Viewpoint = z.infer<typeof ViewpointSchema>;
 
 /**
  * 도면 뷰 — 요소가 아닌 별도 채널(ydoc 'views' 맵 예정). 2D 라인워크는 저장 안 함 —

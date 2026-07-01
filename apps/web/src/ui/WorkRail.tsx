@@ -5,6 +5,7 @@ import { Toolbox } from './Toolbox';
 import { ToolPalette } from './ToolPalette';
 import { ProjectMap } from './ProjectMap';
 import { CommentPanel } from './CommentPanel';
+import { ViewpointPanel } from './ViewpointPanel';
 import { LintPanel } from './LintPanel';
 import { VersionPanel } from './VersionPanel';
 import { HubManage } from './HubManage';
@@ -46,6 +47,7 @@ export function WorkRail({
           </div>
         )}
         <CommentPanel store={store} actions={actions} embedded />
+        <ViewpointPanel store={store} actions={actions} />
         <VersionPanel store={store} embedded />
       </div>
     );

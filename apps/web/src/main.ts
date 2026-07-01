@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
 import * as THREE from 'three';
 import * as Y from 'yjs';
-import { DocStore, seedDocument } from '@figcad/core';
+import { DocStore, seedDocument, type Viewpoint } from '@figcad/core';
 import { Engine } from './engine/Engine';
 import { CameraRig } from './engine/CameraRig';
 import { buildScene } from './engine/buildScene';
@@ -442,6 +442,27 @@ const viewActions = {
   setClip: (clip: ClipState | null) => {
     currentClip = clip;
     applyClip();
+  },
+  // 현재 카메라 궤도 + viewMode + 단면(클립)을 뷰포인트로 저장(문서 채널, 전원 공유) → id.
+  saveViewpoint: (name?: string) => {
+    const s = useUiStore.getState();
+    return store.addViewpoint({
+      camera: rig.getPose(),
+      viewMode: s.viewMode,
+      clip: s.clip,
+      author: presence.userName,
+      ...(name ? { name } : {}),
+    });
+  },
+  // 저장 뷰포인트로 점프 — viewMode(→rig.setMode) → 카메라 포즈 스냅 → 클립 재현("N번 단면 봐주세요").
+  jumpViewpoint: (vp: Viewpoint) => {
+    const s = useUiStore.getState();
+    s.setViewMode(vp.viewMode); // 구독이 rig.setMode + sceneManager.setViewContext
+    rig.setPose(vp.camera);
+    s.setClipState(vp.clip);
+    currentClip = vp.clip;
+    applyClip();
+    engine.requestRender();
   },
 };
 // 협업 핸들 — presence 명령형 객체를 React 패널에 노출 (rename). peers/connection은 uiStore.
