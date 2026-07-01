@@ -8,7 +8,7 @@ import { CameraRig } from './engine/CameraRig';
 import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
 import { ReferenceLayer } from './engine/ReferenceLayer';
-import { computeSectionContour } from './engine/sectionContour';
+import { computeSectionContour, computeSectionFill } from './engine/sectionContour';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
@@ -137,6 +137,15 @@ sectionLine.visible = false;
 sectionLine.renderOrder = 3;
 sectionLine.frustumCulled = false;
 engine.scene.add(sectionLine);
+// 단면 poché(해치) 채움 — 닫힌 루프만(computeSectionFill). 라인(renderOrder 3) 아래·클레이 위(2), 반투명.
+const sectionFill = new THREE.Mesh(
+  new THREE.BufferGeometry(),
+  new THREE.MeshBasicMaterial({ color: 0x8a909a, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+);
+sectionFill.visible = false;
+sectionFill.renderOrder = 2;
+sectionFill.frustumCulled = false;
+engine.scene.add(sectionFill);
 function updateSectionResolution(): void {
   const v = new THREE.Vector2();
   engine.renderer.getDrawingBufferSize(v);
@@ -159,17 +168,24 @@ function scheduleContour(plane: THREE.Plane): void {
       sectionLine.geometry.setPositions(seg); // 6 float = 1세그먼트(start xyz, end xyz) — 윤곽 출력 형식과 동일.
       sectionLine.geometry.computeBoundingSphere();
       sectionLine.visible = true;
+      // poché 채움 — 절단선 세그먼트 재사용(재계산 없음), 닫힌 루프만 채워짐(열린 경계=선만).
+      const fill = computeSectionFill(seg, plane);
+      sectionFill.geometry.dispose();
+      sectionFill.geometry.setAttribute('position', new THREE.BufferAttribute(fill, 3));
+      sectionFill.geometry.computeBoundingSphere();
+      sectionFill.visible = fill.length > 0;
     } else {
       sectionLine.visible = false;
+      sectionFill.visible = false;
     }
     engine.requestRender();
   }, 130);
 }
 function applyClip(): void {
   const r = engine.renderer;
-  if (!currentClip) { r.clippingPlanes = []; sectionLine.visible = false; engine.requestRender(); return; }
+  if (!currentClip) { r.clippingPlanes = []; sectionLine.visible = sectionFill.visible = false; engine.requestRender(); return; }
   const box = modelBox();
-  if (box.isEmpty() || !isFinite(box.min.x)) { r.clippingPlanes = []; sectionLine.visible = false; engine.requestRender(); return; }
+  if (box.isEmpty() || !isFinite(box.min.x)) { r.clippingPlanes = []; sectionLine.visible = sectionFill.visible = false; engine.requestRender(); return; }
   const a = { x: 0, y: 1, z: 2 }[currentClip.axis];
   const min = box.min.getComponent(a);
   const max = box.max.getComponent(a);
@@ -181,7 +197,9 @@ function applyClip(): void {
   const size = box.getSize(new THREE.Vector3());
   // 단면선을 kept 쪽으로 미세 오프셋 → 전역 clip이 같은 평면의 선을 잘라내지 않게.
   // 디바운스 밖(여기서 즉시) 설정해야 flip 시 ~130ms 깜빡임 없음(윤곽 동일, 노멀 부호만 반전).
-  sectionLine.position.copy(plane.normal).multiplyScalar((Math.max(size.x, size.y, size.z) + 1) * 0.0008);
+  const off = (Math.max(size.x, size.y, size.z) + 1) * 0.0008;
+  sectionLine.position.copy(plane.normal).multiplyScalar(off);
+  sectionFill.position.copy(plane.normal).multiplyScalar(off);
   scheduleContour(plane);
   engine.requestRender();
 }
