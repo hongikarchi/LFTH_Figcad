@@ -1,8 +1,10 @@
-import type { Level } from '../schema';
+import type { ElemType, Level } from '../schema';
+import type { ElemTypeInput } from '../store';
 import {
   asIds,
   asNum,
   asPt,
+  asSection,
   asStr,
   fmtLen,
   fmtPt,
@@ -47,6 +49,7 @@ export const CAPABILITIES: Capability[] = [
         a: ptSchema('중심선 시작점'),
         b: ptSchema('중심선 끝점'),
         height: { type: 'integer', description: '벽 높이 mm (생략 시 레벨 층고)' },
+        baseOffset: { type: 'integer', description: '바닥 오프셋 mm (레벨 바닥 기준, 생략 시 0 — 허리벽 등)' },
         sagitta: {
           type: 'integer',
           description:
@@ -65,6 +68,7 @@ export const CAPABILITIES: Capability[] = [
         a: asPt(a['a']),
         b: asPt(a['b']),
         ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+        ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
         ...(optNum(a['sagitta']) !== undefined ? { sagitta: optNum(a['sagitta'])! } : {}),
       }),
     summary: (a) => `벽 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
@@ -189,6 +193,7 @@ export const CAPABILITIES: Capability[] = [
         typeId: { type: 'string', description: '기둥 타입 id (문서의 types에서 kind=column)' },
         at: ptSchema('단면 중심점'),
         height: { type: 'integer', description: '기둥 높이 mm (생략 시 레벨 층고)' },
+        baseOffset: { type: 'integer', description: '레벨 바닥 대비 베이스 오프셋 mm (생략 시 0)' },
       },
       required: ['levelId', 'typeId', 'at'],
       additionalProperties: false,
@@ -201,8 +206,38 @@ export const CAPABILITIES: Capability[] = [
         typeId: asStr(a['typeId'], 'typeId'),
         at: asPt(a['at']),
         ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+        ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
       }),
     summary: (a) => `기둥 생성 ${fmtPt(a['at'])}`,
+  },
+  {
+    id: 'create_asset',
+    category: 'structure',
+    titleKo: '오브젝트',
+    icon: 'tree',
+    descriptionKo:
+      '배치 오브젝트(엔투라지) 생성 — at(평면점 mm)에 나무/사람/차/관목 배치(스케일·맥락 참고물). assetKind로 종류 선택, height 생략 시 종류별 기본 높이.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
+        assetKind: { type: 'string', enum: ['tree', 'person', 'car', 'bush'], description: '오브젝트 종류' },
+        at: ptSchema('배치 점'),
+        height: { type: 'integer', description: '높이 mm (생략 시 종류별 기본)' },
+      },
+      required: ['levelId', 'assetKind', 'at'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) =>
+      store.createAsset({
+        levelId: asStr(a['levelId'], 'levelId'),
+        assetKind: asStr(a['assetKind'], 'assetKind') as 'tree' | 'person' | 'car' | 'bush',
+        at: asPt(a['at']),
+        ...(optNum(a['height']) !== undefined ? { height: optNum(a['height'])! } : {}),
+      }),
+    summary: (a) => `오브젝트 생성 ${a['assetKind'] ?? ''} ${fmtPt(a['at'])}`,
   },
   {
     id: 'create_beam',
@@ -504,6 +539,125 @@ export const CAPABILITIES: Capability[] = [
           : {}),
       }),
     summary: (a) => `개구부 배치 (offset ${a['offset']}mm)`,
+  },
+
+  // ===== type =====
+  {
+    id: 'create_type',
+    category: 'type',
+    titleKo: '타입 생성',
+    icon: 'layers',
+    descriptionKo:
+      '요소 타입(패밀리) 생성 — 새 타입 id 반환(요소 생성 op의 typeId로 사용). kind별 필수 파라미터: 기둥/보=section, 커튼월=mullionSection, 벽/슬라브/지붕=thickness, 개구부=opening, 계단=width+riser, 난간=height+postSpacing. 단면 = {shape:"rect",width,depth} | {shape:"circle",diameter} | {shape:"hsection",width,depth,web,flange} | {shape:"polygon",points:[[x,y],…] 3~128점, 앵커 상대 mm}.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['wall', 'opening', 'slab', 'column', 'beam', 'stair', 'railing', 'roof', 'curtainwall'],
+          description: '타입 종류',
+        },
+        name: { type: 'string', description: "타입 이름 (예: 'H-300×150', 'RC 보 300×600')" },
+        color: { type: 'string', description: '렌더 색 #rrggbb (생략 시 kind 기본색)' },
+        section: {
+          type: 'object',
+          description: '기둥/보 단면 (kind=column|beam 필수)',
+        },
+        mullionSection: {
+          type: 'object',
+          description: '커튼월 멀리언 단면 (kind=curtainwall 필수)',
+        },
+        thickness: { type: 'integer', description: '두께 mm (kind=wall|slab|roof 필수)' },
+        opening: {
+          type: 'object',
+          description: '개구부 파라미터 (kind=opening 필수)',
+          properties: {
+            kind: { type: 'string', enum: ['door', 'window'] },
+            width: { type: 'integer' },
+            height: { type: 'integer' },
+            sillHeight: { type: 'integer', description: '창대 높이 mm (문=0, 생략 시 0)' },
+          },
+          required: ['kind', 'width', 'height'],
+          additionalProperties: false,
+        },
+        width: { type: 'integer', description: '계단 폭 mm (kind=stair 필수)' },
+        riser: { type: 'integer', description: '계단 목표 단높이 mm (kind=stair 필수)' },
+        height: { type: 'integer', description: '난간 높이 mm (kind=railing 필수)' },
+        postSpacing: { type: 'integer', description: '난간 포스트 간격 mm (kind=railing 필수)' },
+      },
+      required: ['kind', 'name'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) => {
+      const kind = asStr(a['kind'], 'kind') as ElemType['kind'];
+      const name = asStr(a['name'], 'name');
+      const color = (fallback: string): string =>
+        typeof a['color'] === 'string' ? (a['color'] as string) : fallback;
+      // kind별 필수 파라미터 검증 + 시드 기본색 — store.addType(quantize+검증+zod)이 최종 방어
+      const input = ((): ElemTypeInput => {
+        switch (kind) {
+          case 'wall':
+            return { kind, name, thickness: asNum(a['thickness'], 'thickness'), color: color('#eceae5') };
+          case 'slab':
+            return { kind, name, thickness: asNum(a['thickness'], 'thickness'), color: color('#dcdad5') };
+          case 'roof':
+            return { kind, name, thickness: asNum(a['thickness'], 'thickness'), color: color('#c4bfb4') };
+          case 'column':
+            return { kind, name, section: asSection(a['section'], 'section'), color: color('#d8d4cc') };
+          case 'beam':
+            return { kind, name, section: asSection(a['section'], 'section'), color: color('#cfc9bf') };
+          case 'curtainwall':
+            return {
+              kind,
+              name,
+              mullionSection: asSection(a['mullionSection'], 'mullionSection'),
+              color: color('#8fa8b8'),
+            };
+          case 'opening': {
+            const o = a['opening'];
+            if (!o || typeof o !== 'object' || Array.isArray(o))
+              throw new Error('opening must be {kind, width, height, sillHeight?}');
+            const oo = o as Record<string, unknown>;
+            const okind = oo['kind'];
+            if (okind !== 'door' && okind !== 'window')
+              throw new Error('opening.kind must be door|window');
+            return {
+              kind,
+              name,
+              color: color(okind === 'door' ? '#b08d57' : '#9cc3d5'),
+              opening: {
+                kind: okind,
+                width: asNum(oo['width'], 'opening.width'),
+                height: asNum(oo['height'], 'opening.height'),
+                sillHeight: optNum(oo['sillHeight']) ?? 0,
+              },
+            };
+          }
+          case 'stair':
+            return {
+              kind,
+              name,
+              width: asNum(a['width'], 'width'),
+              riser: asNum(a['riser'], 'riser'),
+              color: color('#c9c4ba'),
+            };
+          case 'railing':
+            return {
+              kind,
+              name,
+              height: asNum(a['height'], 'height'),
+              postSpacing: asNum(a['postSpacing'], 'postSpacing'),
+              color: color('#bdb8ae'),
+            };
+          default:
+            throw new Error(`unknown type kind: ${String(kind)}`);
+        }
+      })();
+      return store.addType(input); // id 반환 → applyOpLog createdIds/placeholder 리맵 자동
+    },
+    summary: (a) => `타입 생성 ${a['kind'] ?? '?'} '${a['name'] ?? ''}'`,
   },
 
   // ===== level =====

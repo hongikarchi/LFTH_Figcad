@@ -264,6 +264,8 @@ export function lint(store: DocStore): LintFinding[] {
       key = `lbl|${el.levelId}|${el.at[0]},${el.at[1]}|${el.template}|${el.targetId ?? ''}|${el.customText ?? ''}`;
     } else if (el.kind === 'sketch') {
       key = `sk|${el.levelId}|${el.mode}|${boundaryKey(el.boundary)}`;
+    } else if (el.kind === 'asset') {
+      key = `ast|${el.levelId}|${el.assetKind}|${el.at[0]},${el.at[1]}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
     } else {
       key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
     }

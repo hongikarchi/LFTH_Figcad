@@ -3,6 +3,7 @@ import {
   createOpContentKey,
   elementContentKey,
   type DocStore,
+  type FederationSource,
   type OpLogEntry,
 } from '@figcad/core';
 import { CORS, isSafeRoom, json } from './version';
@@ -92,6 +93,67 @@ export async function handleConnectorRequest(
     }
   }
 
+  // M13-G Lane-2 통과 — 커넥터가 잔여(자유곡면/미인식) brep를 메시 blob(fed-upload로 이미 업로드)으로
+  // federation 소스 등록. HTTP 전용 커넥터는 store.addFederationSource를 못 부르는 게 유일한 갭이라
+  // 이 동사가 그걸 연다. ?op=origin과 동일 패턴(비요소 store 뮤테이션 + persist 브로드캐스트).
+  // 본문엔 지오 없음(불변① — ref[URL]만). "조용한 근사 금지"(§9.3) = 잔여 무손실 보존.
+  if (op === 'fed-register' && request.method === 'POST') {
+    let body: { name?: unknown; sourceType?: unknown; ref?: unknown; replace?: unknown };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json(400, { error: '본문은 {name, sourceType, ref, replace?} JSON' });
+    }
+    const { name, sourceType, ref, replace } = body;
+    if (typeof name !== 'string' || name.length === 0 || name.length > 200)
+      return json(400, { error: 'name = 1~200자 문자열' });
+    if (typeof sourceType !== 'string') return json(400, { error: 'sourceType 필요' });
+    if (typeof ref !== 'string' || ref.length === 0 || ref.length > 2048)
+      return json(400, { error: 'ref = 1~2048자 URL' });
+    if (replace !== undefined && (typeof replace !== 'string' || replace.length > 200))
+      return json(400, { error: 'replace = 문자열' });
+    // ref 검증 — 반드시 *이 룸*의 fed-blob URL만(임의 호스트로 클라 페치 유도 차단). fed-upload가 낸
+    // URL = <base>/parties/doc/<room>?op=fed-blob&key=federation/<room>/<hash>.<ext>. key는 fed-blob의
+    // 자기 검증(federation.ts:67)과 동일 규칙. 서버는 자기 public origin을 확신 못 하므로(Railway 프록시
+    // Host 모호) 호스트는 강제 안 함 — path+key+room+ROOM_KEY 게이트로 방어.
+    let refUrl: URL;
+    try {
+      refUrl = new URL(ref);
+    } catch {
+      return json(400, { error: 'ref는 절대 URL이어야 함' });
+    }
+    const refKey = refUrl.searchParams.get('key') ?? '';
+    if (
+      refUrl.searchParams.get('op') !== 'fed-blob' ||
+      !refUrl.pathname.includes(`/parties/doc/${room}`) ||
+      !refKey.startsWith(`federation/${room}/`) ||
+      refKey.includes('..')
+    )
+      return json(400, { error: 'ref는 이 룸의 fed-blob URL이어야 함' });
+
+    // replace(멱등 재푸시) — 같은 그룹(MVP: name+sourceType 매칭)의 기존 소스 제거 후 재등록.
+    // 재-PushBreps가 잔여 오버레이를 중복 쌓지 않게(정확중첩 차단 = apply ?dedup=1의 오버레이 등가물).
+    if (replace !== undefined) {
+      for (const s of store.listFederationSources())
+        if (s.name === name && s.sourceType === sourceType) store.removeFederationSource(s.id);
+    }
+    let id: string;
+    try {
+      id = store.addFederationSource({
+        name,
+        sourceType: sourceType as FederationSource['sourceType'],
+        ref,
+        visible: true,
+        addedBy: 'Rhino 커넥터',
+      });
+    } catch {
+      // addFederationSource 내부 FederationSourceSchema.parse 실패(주로 sourceType enum 밖) = 400, not 500.
+      return json(400, { error: 'federation 소스 검증 실패 (sourceType enum 확인)' });
+    }
+    await persist();
+    return json(200, { id });
+  }
+
   // oplog 적용 (커넥터 Push / 라이브 쓰기)
   if (op === 'apply' && request.method === 'POST') {
     const len = Number(request.headers.get('content-length') ?? '0');
@@ -175,5 +237,5 @@ export async function handleConnectorRequest(
     return json(200, { ...result, deduped });
   }
 
-  return json(400, { error: 'op은 apply(POST)/pull(GET) 중 하나' });
+  return json(400, { error: 'op은 apply(POST)/pull(GET)/origin/fed-register(POST) 중 하나' });
 }

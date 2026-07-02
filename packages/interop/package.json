@@ -9,6 +9,7 @@
     "./rhino": "./src/rhino3dm.ts",
     "./dxf": "./src/dxf.ts",
     "./dwg-underlay": "./src/dwgUnderlay.ts",
+    "./underlay-snap": "./src/underlaySnap.ts",
     "./coords": "./src/federationCoords.ts"
   },
   "scripts": {

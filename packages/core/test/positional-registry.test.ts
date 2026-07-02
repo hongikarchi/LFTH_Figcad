@@ -42,6 +42,7 @@ const FACTORY: Record<Element['kind'], Factory> = {
       boundary: [[200, 9000], [4200, 9000], [4200, 9500]],
       style: { color: '#0a84ff', opacity: 1, width: 2, lineType: 'solid' },
     }),
+  asset: (s, d) => s.createAsset({ levelId: d.levelId, assetKind: 'tree', at: [5000, 5000] }),
 };
 
 const ALL_KINDS = Object.keys(POSITIONAL) as Element['kind'][];

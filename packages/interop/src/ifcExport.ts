@@ -16,7 +16,7 @@ import type {
   WallElement,
   WallType,
 } from '@figcad/core';
-import { resolveOpening, arcPolyline, curvedWallFootprint, type Pt } from '@figcad/core';
+import { resolveOpening, arcPolyline, curvedWallFootprint, sectionVHalf, type Pt, type Section } from '@figcad/core';
 import { ifcGuidFromId } from './ifcGuid';
 
 /**
@@ -58,6 +58,8 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
     w(new I.IfcCartesianPoint([x, y] as never) as unknown as WebIFC.IfcLineObject);
   const dir3 = (x: number, y: number, z: number) =>
     w(new I.IfcDirection([x, y, z] as never) as unknown as WebIFC.IfcLineObject);
+  const dir2 = (x: number, y: number) =>
+    w(new I.IfcDirection([x, y] as never) as unknown as WebIFC.IfcLineObject);
   const place3 = (loc: unknown, refDir?: unknown) =>
     w(new I.IfcAxis2Placement3D(loc as never, null, (refDir ?? null) as never));
   const local = (relTo: unknown, rel: unknown) =>
@@ -126,6 +128,66 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
     ) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>;
     layerUsageByThickness.set(thickness, usage);
     return usage;
+  };
+
+  /**
+   * 단면 → IFC 프로필 (기둥/보 공유 — column/beam 블록 중복 추출).
+   * 보 프로필 평면 규약: 솔리드 로컬 X=수직(world Z)·Y=수평(n) →
+   *   rect = XDim/YDim 스왑(기존 그대로), polygon = (p,q)→(q,p) 좌표 스왑,
+   *   hsection = 치수 유지 + Position RefDirection(0,1) 회전(OverallDepth를 로컬 X=수직으로,
+   *   I형은 2축 대칭이라 부호 무관). 기둥 = 전부 identity.
+   */
+  const profileFor = (section: Section, forBeam: boolean): WebIFC.Handle<WebIFC.IfcLineObject> => {
+    switch (section.shape) {
+      case 'circle':
+        return w(
+          new I.IfcCircleProfileDef(
+            I.IfcProfileTypeEnum.AREA,
+            null,
+            w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
+            (section.diameter / 2) as never,
+          ),
+        ) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>;
+      case 'rect':
+        // 보: XDim=수직(춤)=depth, YDim=수평=width
+        return w(
+          new I.IfcRectangleProfileDef(
+            I.IfcProfileTypeEnum.AREA,
+            null,
+            w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
+            (forBeam ? section.depth : section.width) as never,
+            (forBeam ? section.width : section.depth) as never,
+          ),
+        ) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>;
+      case 'hsection':
+        return w(
+          new I.IfcIShapeProfileDef(
+            I.IfcProfileTypeEnum.AREA,
+            null,
+            w(
+              new I.IfcAxis2Placement2D(pt2(0, 0) as never, (forBeam ? dir2(0, 1) : null) as never),
+            ) as never,
+            section.width as never,
+            section.depth as never,
+            section.web as never,
+            section.flange as never,
+            null,
+            null,
+            null,
+          ),
+        ) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>;
+      case 'polygon': {
+        // 닫힌 IfcPolyline (슬라브 패턴) — 첫점을 끝에 한 번 더
+        const pts = forBeam
+          ? section.points.map(([p, q]) => [q, p] as [number, number])
+          : section.points.map(([p, q]) => [p, q] as [number, number]);
+        const ring = [...pts, pts[0]!];
+        const poly = w(new I.IfcPolyline(ring.map((p) => pt2(p[0], p[1]) as never)));
+        return w(
+          new I.IfcArbitraryClosedProfileDef(I.IfcProfileTypeEnum.AREA, null, poly as never),
+        ) as unknown as WebIFC.Handle<WebIFC.IfcLineObject>;
+      }
+    }
   };
 
   const wallsById = new Map(snap.elements.filter((e): e is WallElement => e.kind === 'wall').map((e) => [e.id, e]));
@@ -279,25 +341,7 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
       const height = col.height ?? level.height;
       const baseOffset = col.baseOffset ?? 0;
       const objPlace = local(storeyPlace, place3(pt3(col.at[0], col.at[1], baseOffset)));
-      const profile =
-        section.shape === 'circle'
-          ? w(
-              new I.IfcCircleProfileDef(
-                I.IfcProfileTypeEnum.AREA,
-                null,
-                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
-                (section.diameter / 2) as never,
-              ),
-            )
-          : w(
-              new I.IfcRectangleProfileDef(
-                I.IfcProfileTypeEnum.AREA,
-                null,
-                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
-                section.width as never,
-                section.depth as never,
-              ),
-            );
+      const profile = profileFor(section, false);
       const solid = w(
         new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, 1) as never, height as never),
       );
@@ -322,33 +366,13 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
       if (len === 0) continue;
       const ux = dx / len;
       const uy = dy / len;
-      const vHalf = section.shape === 'circle' ? section.diameter / 2 : section.depth / 2;
-      const z = beam.zOffset ?? level.height - vHalf;
+      const z = beam.zOffset ?? level.height - sectionVHalf(section);
       const objPlace = local(storeyPlace, place3(pt3(beam.a[0], beam.a[1], z)));
       // 솔리드 좌표계: Axis(로컬 Z) = 보 축(평면), RefDirection(로컬 X) = 수직(world Z)
       const solidPos = w(
         new I.IfcAxis2Placement3D(pt3(0, 0, 0) as never, dir3(ux, uy, 0) as never, dir3(0, 0, 1) as never),
       );
-      const profile =
-        section.shape === 'circle'
-          ? w(
-              new I.IfcCircleProfileDef(
-                I.IfcProfileTypeEnum.AREA,
-                null,
-                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
-                (section.diameter / 2) as never,
-              ),
-            )
-          : w(
-              // XDim=수직(춤)=depth, YDim=수평=width
-              new I.IfcRectangleProfileDef(
-                I.IfcProfileTypeEnum.AREA,
-                null,
-                w(new I.IfcAxis2Placement2D(pt2(0, 0) as never, null)) as never,
-                section.depth as never,
-                section.width as never,
-              ),
-            );
+      const profile = profileFor(section, true);
       const solid = w(
         new I.IfcExtrudedAreaSolid(profile as never, solidPos as never, dir3(0, 0, 1) as never, len as never),
       );

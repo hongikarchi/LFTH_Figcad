@@ -1,6 +1,7 @@
 import type { DocStore } from '../store';
 import type { ColumnType, DrawingView, Pt, RoofType, Section, SlabType, WallType } from '../schema';
 import { wallFootprint } from './deriveWall';
+import { sectionRing } from './deriveStructure';
 import { polygonArea, polygonCentroid } from './deriveZone';
 import { labelText } from './deriveLabel';
 import { labelTargetCenter, resolveDimAnchor } from '../select';
@@ -42,26 +43,9 @@ export interface Drawing2D {
 
 const EMPTY: Drawing2D = { cut: [], proj: [], hatch: [], labels: [] };
 
-/** 단면 프로필 → 평면 폴리곤 (축 정렬). 원 = 24각형. */
+/** 단면 프로필 → 평면 폴리곤 (축 정렬) — sectionRing 위임 (rect 코너순서·원 24각형 시작각 동일 검증됨). */
 function sectionPolygon(at: Pt, sec: Section): Pt[] {
-  if (sec.shape === 'rect') {
-    const hw = sec.width / 2;
-    const hd = sec.depth / 2;
-    return [
-      [at[0] - hw, at[1] - hd],
-      [at[0] + hw, at[1] - hd],
-      [at[0] + hw, at[1] + hd],
-      [at[0] - hw, at[1] + hd],
-    ];
-  }
-  const r = sec.diameter / 2;
-  const N = 24;
-  const out: Pt[] = [];
-  for (let i = 0; i < N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    out.push([at[0] + Math.cos(a) * r, at[1] + Math.sin(a) * r]);
-  }
-  return out;
+  return sectionRing(sec).map(([sx, sy]) => [at[0] + sx, at[1] + sy] as Pt);
 }
 
 /** 점이 단순 폴리곤 내부인가 (ray-casting). 로컬 정의 — select.ts 순환 import 회피. */

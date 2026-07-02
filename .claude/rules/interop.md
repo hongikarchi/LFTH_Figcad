@@ -16,6 +16,7 @@ description: interop WASM 로딩·포맷별 손실·import 한계
 | 포맷 | 파라메트릭 보존 | 비고 |
 |---|---|---|
 | IFC (web-ifc) | ✅ 유일 — IfcWallStandardCase Axis+MaterialLayerSetUsage 1:1 | Revit import 기본 DirectShape 고지. ArchiCAD 인증 import 우수 |
+| IFC 단면 프로필 | ✅ rect/circle/**hsection=IfcIShapeProfileDef**(왕복 deep-equal)·polygon=IfcArbitraryClosedProfileDef(export만, import=미지원 카운트) | **보 프로필 방향 규약**: rect=XDim/YDim 스왑 · hsection=치수 유지+Position `RefDirection(0,1)` 회전 · polygon=(p,q)→(q,p) 좌표 스왑. 공용 `profileFor(section, forBeam)`(ifcExport) — 재인라인 금지. vHalf/라벨은 core `sectionVHalf`/`formatSection` import |
 | .3dm (rhino3dm) | ❌ 지오레벨 (중심선+footprint, 두께/높이/슬로프 손실) | MIT |
 | DXF | ❌ 2D 지오메트리만 | 평면 라인워크·HATCH |
 

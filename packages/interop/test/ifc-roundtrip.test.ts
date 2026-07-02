@@ -42,6 +42,25 @@ function roundtrip(s: DocStore) {
   return { snapshot, skipped, bytes };
 }
 
+/** 외부 도구 IFC 흉내 — 손으로 쓴 최소 STEP 파일 (외부 규약 픽스처는 우리 exporter로 못 만듦) */
+function stepFile(dataLines: string[]): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      'ISO-10303-21;',
+      'HEADER;',
+      "FILE_DESCRIPTION((''),'2;1');",
+      "FILE_NAME('','',(''),(''),'','','');",
+      "FILE_SCHEMA(('IFC4'));",
+      'ENDSEC;',
+      'DATA;',
+      ...dataLines,
+      'ENDSEC;',
+      'END-ISO-10303-21;',
+      '',
+    ].join('\n'),
+  );
+}
+
 describe('IFC 라운드트립', () => {
   it('벽 — 좌표/두께/방향 보존', () => {
     const s = sample();
@@ -307,5 +326,181 @@ describe('IFC 라운드트립', () => {
     const m2 = api.OpenModel(bytes);
     expect(api.GetLineIDsWithType(m2, WebIFC.IFCWALLSTANDARDCASE).size()).toBe(4);
     api.CloseModel(m2);
+  });
+});
+
+describe('IFC — hsection/polygon 단면 (커넥터 v0.4 S1)', () => {
+  const H = { shape: 'hsection', width: 150, depth: 300, web: 7, flange: 9 } as const;
+
+  it('H형강 보+기둥 — IFCISHAPEPROFILEDEF 4치수로 export', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const bId = s.addType({ kind: 'beam', name: 'H보', section: H, color: '#ccc' });
+    const cId = s.addType({ kind: 'column', name: 'H기둥', section: H, color: '#ccc' });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: bId, a: [0, 0], b: [5000, 0] });
+    s.createColumn({ levelId: SEED_IDS.level, typeId: cId, at: [1000, 1000] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    const profs = api.GetLineIDsWithType(m, WebIFC.IFCISHAPEPROFILEDEF);
+    expect(profs.size()).toBe(2);
+    for (let i = 0; i < profs.size(); i++) {
+      const p = api.GetLine(m, profs.get(i)) as unknown as Record<string, { value: number }>;
+      expect(p['OverallWidth']!.value).toBe(150);
+      expect(p['OverallDepth']!.value).toBe(300);
+      expect(p['WebThickness']!.value).toBe(7);
+      expect(p['FlangeThickness']!.value).toBe(9);
+    }
+    api.CloseModel(m);
+  });
+
+  it('H형강 왕복 — 보(회전 Position)·기둥(identity) 모두 단면 deep-equal (방향 양방향 핀)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const bId = s.addType({ kind: 'beam', name: 'H보', section: H, color: '#ccc' });
+    const cId = s.addType({ kind: 'column', name: 'H기둥', section: H, color: '#ccc' });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: bId, a: [0, 0], b: [3000, 4000] }); // 대각 축까지
+    s.createColumn({ levelId: SEED_IDS.level, typeId: cId, at: [1000, 1000] });
+    const { snapshot } = roundtrip(s);
+    const beam = snapshot.elements.find((e): e is BeamElement => e.kind === 'beam')!;
+    const col = snapshot.elements.find((e): e is ColumnElement => e.kind === 'column')!;
+    const bt = snapshot.types.find((t) => t.id === beam.typeId);
+    const ct = snapshot.types.find((t) => t.id === col.typeId);
+    expect(bt?.kind === 'beam' && bt.section).toEqual(H);
+    expect(ct?.kind === 'column' && ct.section).toEqual(H);
+    // 보 끝점도 보존 (Position 회전이 축 복원을 깨지 않음)
+    expect(beam.a).toEqual([0, 0]);
+    expect(Math.abs(beam.b[0] - 3000)).toBeLessThanOrEqual(1);
+    expect(Math.abs(beam.b[1] - 4000)).toBeLessThanOrEqual(1);
+  });
+
+  it('polygon 기둥 — IfcArbitraryClosedProfileDef로 export, import는 미지원 카운트(크래시 없음)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const pId = s.addType({
+      kind: 'column',
+      name: '삼각기둥',
+      section: { shape: 'polygon', points: [[-200, -200], [200, -200], [0, 300]] },
+      color: '#ccc',
+    });
+    s.createColumn({ levelId: SEED_IDS.level, typeId: pId, at: [1000, 1000] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCARBITRARYCLOSEDPROFILEDEF).size()).toBe(1);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCCOLUMN).size()).toBe(1);
+    api.CloseModel(m);
+    const { snapshot, skipped } = importIfc(api, bytes);
+    expect(snapshot.elements.filter((e) => e.kind === 'column')).toHaveLength(0);
+    expect(skipped['column(미지원 표현)']).toBe(1);
+  });
+
+  it('외부 규약 보 — 솔리드 RefDirection 수평(0,1,0) = 스왑 없이 width/depth 그대로 (전치 방지)', () => {
+    // 일반 외부 IFC 규약: 프로파일 X=수평 → XDim=width. 우리 export 규약(RefDirection(0,0,1))일 때만 스왑.
+    const bytes = stepFile([
+      "#1=IFCPROJECT('2O2Fr$t4X7Zf8NOew3FLOH',$,'ext',$,$,$,$,$,$);",
+      '#10=IFCCARTESIANPOINT((1000.,2000.,300.));',
+      '#11=IFCAXIS2PLACEMENT3D(#10,$,$);',
+      '#12=IFCLOCALPLACEMENT($,#11);',
+      '#20=IFCCARTESIANPOINT((0.,0.));',
+      '#21=IFCAXIS2PLACEMENT2D(#20,$);',
+      '#22=IFCRECTANGLEPROFILEDEF(.AREA.,$,#21,300.,600.);',
+      '#30=IFCCARTESIANPOINT((0.,0.,0.));',
+      '#31=IFCDIRECTION((1.,0.,0.));',
+      '#32=IFCDIRECTION((0.,1.,0.));',
+      '#33=IFCAXIS2PLACEMENT3D(#30,#31,#32);',
+      '#34=IFCDIRECTION((0.,0.,1.));',
+      '#35=IFCEXTRUDEDAREASOLID(#22,#33,#34,5000.);',
+      "#40=IFCSHAPEREPRESENTATION($,'Body','SweptSolid',(#35));",
+      '#41=IFCPRODUCTDEFINITIONSHAPE($,$,(#40));',
+      "#50=IFCBEAM('2O2Fr$t4X7Zf8NOew3FLOI',$,'B1',$,$,#12,#41,$,$);",
+    ]);
+    const { snapshot, skipped } = importIfc(api, bytes);
+    const beam = snapshot.elements.find((e): e is BeamElement => e.kind === 'beam')!;
+    expect(beam).toBeDefined();
+    expect(beam.a).toEqual([1000, 2000]);
+    expect(beam.b).toEqual([6000, 2000]); // Axis(1,0,0) × 5000
+    expect(beam.zOffset).toBe(300);
+    const t = snapshot.types.find((x) => x.id === beam.typeId);
+    // 무조건 스왑이면 600×300으로 전치되던 케이스
+    expect(t?.kind === 'beam' && t.section).toEqual({ shape: 'rect', width: 300, depth: 600 });
+    expect(skipped['보(프로파일 회전 미지원)']).toBeUndefined();
+  });
+
+  it('외부 보 프로파일 자체 회전(비항등 2D RefDirection) — 스킵 카운트 + best-effort import (조용한 손실 금지)', () => {
+    const bytes = stepFile([
+      "#1=IFCPROJECT('2O2Fr$t4X7Zf8NOew3FLOH',$,'ext',$,$,$,$,$,$);",
+      '#10=IFCCARTESIANPOINT((0.,0.,0.));',
+      '#11=IFCAXIS2PLACEMENT3D(#10,$,$);',
+      '#12=IFCLOCALPLACEMENT($,#11);',
+      '#20=IFCCARTESIANPOINT((0.,0.));',
+      '#23=IFCDIRECTION((0.707107,0.707107));', // 45° — 우리가 반영 못 하는 회전
+      '#21=IFCAXIS2PLACEMENT2D(#20,#23);',
+      '#22=IFCRECTANGLEPROFILEDEF(.AREA.,$,#21,300.,600.);',
+      '#30=IFCCARTESIANPOINT((0.,0.,0.));',
+      '#31=IFCDIRECTION((1.,0.,0.));',
+      '#32=IFCDIRECTION((0.,1.,0.));',
+      '#33=IFCAXIS2PLACEMENT3D(#30,#31,#32);',
+      '#34=IFCDIRECTION((0.,0.,1.));',
+      '#35=IFCEXTRUDEDAREASOLID(#22,#33,#34,4000.);',
+      "#40=IFCSHAPEREPRESENTATION($,'Body','SweptSolid',(#35));",
+      '#41=IFCPRODUCTDEFINITIONSHAPE($,$,(#40));',
+      "#50=IFCBEAM('2O2Fr$t4X7Zf8NOew3FLOI',$,'B1',$,$,#12,#41,$,$);",
+    ]);
+    const { snapshot, skipped } = importIfc(api, bytes);
+    expect(skipped['보(프로파일 회전 미지원)']).toBe(1); // 카운트됨 = 조용하지 않음
+    const beam = snapshot.elements.find((e) => e.kind === 'beam');
+    expect(beam).toBeDefined(); // 그래도 best-effort 치수로 import
+  });
+
+  it('외부 불량 IShapeProfile 기둥(web≥width) — 전체 import 중단 없이 스킵+카운트, 나머지는 살아남음', () => {
+    const bytes = stepFile([
+      "#1=IFCPROJECT('2O2Fr$t4X7Zf8NOew3FLOH',$,'ext',$,$,$,$,$,$);",
+      // 불량: WebThickness 150 ≥ OverallWidth 100 → store.addType validateSection throw 유발
+      '#10=IFCCARTESIANPOINT((1000.,1000.,0.));',
+      '#11=IFCAXIS2PLACEMENT3D(#10,$,$);',
+      '#12=IFCLOCALPLACEMENT($,#11);',
+      '#20=IFCCARTESIANPOINT((0.,0.));',
+      '#21=IFCAXIS2PLACEMENT2D(#20,$);',
+      '#22=IFCISHAPEPROFILEDEF(.AREA.,$,#21,100.,300.,150.,9.,$,$,$);',
+      '#30=IFCCARTESIANPOINT((0.,0.,0.));',
+      '#33=IFCAXIS2PLACEMENT3D(#30,$,$);',
+      '#34=IFCDIRECTION((0.,0.,1.));',
+      '#35=IFCEXTRUDEDAREASOLID(#22,#33,#34,3000.);',
+      "#40=IFCSHAPEREPRESENTATION($,'Body','SweptSolid',(#35));",
+      '#41=IFCPRODUCTDEFINITIONSHAPE($,$,(#40));',
+      "#50=IFCCOLUMN('2O2Fr$t4X7Zf8NOew3FLOJ',$,'C-bad',$,$,#12,#41,$,$);",
+      // 정상 기둥 (rect 400×400) — 불량 기둥 뒤에서도 import되어야 함
+      '#60=IFCCARTESIANPOINT((4000.,1000.,0.));',
+      '#61=IFCAXIS2PLACEMENT3D(#60,$,$);',
+      '#62=IFCLOCALPLACEMENT($,#61);',
+      '#70=IFCRECTANGLEPROFILEDEF(.AREA.,$,#21,400.,400.);',
+      '#75=IFCEXTRUDEDAREASOLID(#70,#33,#34,3000.);',
+      "#80=IFCSHAPEREPRESENTATION($,'Body','SweptSolid',(#75));",
+      '#81=IFCPRODUCTDEFINITIONSHAPE($,$,(#80));',
+      "#90=IFCCOLUMN('2O2Fr$t4X7Zf8NOew3FLOK',$,'C-ok',$,$,#62,#81,$,$);",
+    ]);
+    const { snapshot, skipped } = importIfc(api, bytes); // throw 없음 (이전엔 여기서 전체 abort + CloseModel 누락)
+    expect(skipped['기둥(변환 실패)']).toBe(1);
+    const cols = snapshot.elements.filter((e): e is ColumnElement => e.kind === 'column');
+    expect(cols).toHaveLength(1);
+    expect(cols[0]!.at).toEqual([4000, 1000]);
+    const t = snapshot.types.find((x) => x.id === cols[0]!.typeId);
+    expect(t?.kind === 'column' && t.section).toEqual({ shape: 'rect', width: 400, depth: 400 });
+  });
+
+  it('polygon 보 — (p,q)→(q,p) 프로필 좌표 export가 유효 IFC (재오픈 가능)', () => {
+    const s = new DocStore();
+    seedDocument(s);
+    const pId = s.addType({
+      kind: 'beam',
+      name: '다각보',
+      section: { shape: 'polygon', points: [[-150, -300], [150, -300], [150, 300], [-150, 300]] },
+      color: '#ccc',
+    });
+    s.createBeam({ levelId: SEED_IDS.level, typeId: pId, a: [0, 0], b: [5000, 0] });
+    const bytes = exportIfc(api, s.snapshot());
+    const m = api.OpenModel(bytes);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCARBITRARYCLOSEDPROFILEDEF).size()).toBe(1);
+    expect(api.GetLineIDsWithType(m, WebIFC.IFCBEAM).size()).toBe(1);
+    api.CloseModel(m);
   });
 });

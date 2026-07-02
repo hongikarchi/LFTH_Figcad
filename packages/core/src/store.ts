@@ -38,6 +38,8 @@ import {
   type WallElement,
   type SketchElement,
   type SketchStyle,
+  type AssetElement,
+  type AssetKind,
 } from './schema';
 import { resolveDimAnchor } from './select';
 
@@ -47,13 +49,60 @@ const q2 = (p: readonly [number, number] | [number, number]): Pt => [
   quantize(p[1]),
 ];
 
-/** 단면 치수 양자화 (rect=width/depth, circle=diameter) — 타입 ops 경계에서 */
+/** 단면 치수 양자화 (rect/hsection/circle 수치 + polygon points) — 타입 ops 경계에서 */
 function quantizeSection(section: Record<string, unknown>): Record<string, unknown> {
   const out = { ...section };
-  for (const k of ['width', 'depth', 'diameter']) {
+  for (const k of ['width', 'depth', 'diameter', 'web', 'flange']) {
     if (typeof out[k] === 'number') out[k] = quantize(out[k] as number);
   }
+  if (Array.isArray(out['points'])) {
+    out['points'] = (out['points'] as unknown[]).map((p) =>
+      Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number'
+        ? [quantize(p[0]), quantize(p[1])]
+        : p,
+    );
+  }
   return out;
+}
+
+/**
+ * 단면 유효성 (zod refine 불가 — discriminatedUnion 멤버는 plain ZodObject여야 함).
+ * hsection = 웹/플랜지가 외곽 안에 실존, polygon = 단순 폴리곤. addType/updateType 공유.
+ */
+function validateSection(section: Record<string, unknown>): void {
+  if (section['shape'] === 'rect') {
+    const w = section['width'];
+    const d = section['depth'];
+    if (typeof w !== 'number' || w <= 0) throw new Error('rect: width는 0보다 커야 함');
+    if (typeof d !== 'number' || d <= 0) throw new Error('rect: depth는 0보다 커야 함');
+  }
+  if (section['shape'] === 'circle') {
+    const dia = section['diameter'];
+    if (typeof dia !== 'number' || dia <= 0) throw new Error('circle: diameter는 0보다 커야 함');
+  }
+  if (section['shape'] === 'hsection') {
+    const w = section['width'];
+    const d = section['depth'];
+    const tw = section['web'];
+    const tf = section['flange'];
+    if (typeof tw !== 'number' || tw <= 0) throw new Error('hsection: web은 0보다 커야 함');
+    if (typeof tf !== 'number' || tf <= 0) throw new Error('hsection: flange는 0보다 커야 함');
+    if (typeof w === 'number' && tw >= w) throw new Error('hsection: web은 width보다 작아야 함');
+    if (typeof d === 'number' && 2 * tf >= d) throw new Error('hsection: 2×flange는 depth보다 작아야 함');
+  }
+  if (section['shape'] === 'polygon') {
+    const pts = section['points'];
+    if (!Array.isArray(pts) || pts.length < 3 || !isSimplePolygon(pts as Pt[]))
+      throw new Error('self-intersecting section polygon');
+    // 퇴화(중복점/전점 공선 = 면적 0) — isSimplePolygon은 통과하지만 downstream earcut이 NaN
+    let area2 = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i] as [number, number];
+      const [x2, y2] = pts[(i + 1) % pts.length] as [number, number];
+      area2 += x1 * y2 - x2 * y1;
+    }
+    if (area2 === 0) throw new Error('degenerate section polygon (면적 0)');
+  }
 }
 
 /** 무한 직선 교차점 (평행이면 null) — trim/extend용 */
@@ -493,8 +542,13 @@ export class DocStore {
     if ('thickness' in type && typeof type.thickness === 'number') {
       quantized['thickness'] = quantize(type.thickness);
     }
-    if ('section' in type && type.section && typeof type.section === 'object') {
-      quantized['section'] = quantizeSection(type.section as Record<string, unknown>);
+    for (const k of ['section', 'mullionSection'] as const) {
+      const sec = (quantized as Record<string, unknown>)[k];
+      if (sec && typeof sec === 'object') {
+        const q = quantizeSection(sec as Record<string, unknown>);
+        validateSection(q);
+        quantized[k] = q;
+      }
     }
     const parsed = ElemTypeSchema.parse(quantized);
     this.transact(() => this.yTypes.set(id, parsed));
@@ -507,8 +561,13 @@ export class DocStore {
     if (!prev) return;
     const next: Record<string, unknown> = { ...prev, ...patch, id, kind: prev.kind };
     if (typeof next['thickness'] === 'number') next['thickness'] = quantize(next['thickness']);
-    if (next['section'] && typeof next['section'] === 'object')
-      next['section'] = quantizeSection(next['section'] as Record<string, unknown>);
+    for (const k of ['section', 'mullionSection'] as const) {
+      if (next[k] && typeof next[k] === 'object') {
+        const q = quantizeSection(next[k] as Record<string, unknown>);
+        validateSection(q);
+        next[k] = q;
+      }
+    }
     if (prev.kind === 'opening' && typeof next['opening'] === 'object' && next['opening']) {
       const o = next['opening'] as Record<string, unknown>;
       for (const k of ['width', 'height', 'sillHeight']) {
@@ -651,6 +710,22 @@ export class DocStore {
       ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
     }) as ColumnElement;
     this.setElement(id, column);
+    return id;
+  }
+
+  /** 배치 오브젝트(엔투라지) 생성(항목7) — 타입 없음, assetKind가 종류. POSITIONAL='point'. */
+  createAsset(params: { levelId: Id; assetKind: AssetKind; at: Pt; height?: number; baseOffset?: number }): Id {
+    const id = nanoid(12);
+    const asset = ElementSchema.parse({
+      id,
+      kind: 'asset',
+      levelId: params.levelId,
+      assetKind: params.assetKind,
+      at: [quantize(params.at[0]), quantize(params.at[1])],
+      ...(params.height !== undefined ? { height: quantize(params.height) } : {}),
+      ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+    }) as AssetElement;
+    this.setElement(id, asset);
     return id;
   }
 

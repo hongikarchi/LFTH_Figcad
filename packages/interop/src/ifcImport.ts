@@ -1,5 +1,5 @@
 import * as WebIFC from 'web-ifc';
-import { DocStore, type DocSnapshot, type Id, type Section } from '@figcad/core';
+import { DocStore, formatSection, type DocSnapshot, type Id, type Section } from '@figcad/core';
 
 /**
  * IFC4 → Figcad 문서 (web-ifc reader).
@@ -50,6 +50,14 @@ export interface IfcImportResult {
 
 export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportResult {
   const m = ifcApi.OpenModel(bytes);
+  try {
+    return importModel(ifcApi, m);
+  } finally {
+    ifcApi.CloseModel(m); // 개별 요소 실패는 루프서 흡수하지만, 예외 불문 WASM 모델 누수 방지
+  }
+}
+
+function importModel(ifcApi: WebIFC.IfcAPI, m: number): IfcImportResult {
   const skipped: Record<string, number> = {};
   const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
 
@@ -139,20 +147,56 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
   };
 
   // --- 단면 복원 (기둥/보 압출 프로필 → Section) ---
-  // 기둥 프로필: XDim=width, YDim=depth. 보 프로필: XDim=depth, YDim=width (export와 대칭).
-  const sectionFromProfile = (profile: AnyLine | undefined, beamSwap: boolean): Section | null => {
+  // rect — 기둥: XDim=width, YDim=depth. 보: beamSwap일 때만 XDim=depth, YDim=width (export와 대칭).
+  //   beamSwap = 솔리드 Position RefDirection≈(0,0,1) = *우리 export 규약*(프로파일 X=world 수직)에서만.
+  //   외부 IFC 일반 규약(RefDirection 수평/기본 (1,0,0) = 프로파일 X=수평)은 스왑 없이 그대로 —
+  //   무조건 스왑하면 외부 보 width/depth가 조용히 전치되던 버그(v0.4 리뷰).
+  // hsection(IfcIShapeProfileDef) — 보 방향은 export의 Position RefDirection(0,1) 회전에 있으므로
+  //   치수는 기둥/보 동일하게 그대로 복원(스왑 없음 = 회전의 역, 라운드트립 deep-equal).
+  // 프로파일 자체 2D 회전(IfcAxis2Placement2D RefDirection)은 미반영 — 우리 export의 hsection
+  //   (0,1) 보 마커만 인지, 그 외 비항등 회전은 best-effort 치수 + onProfileRotation 카운트(조용한 손실 금지).
+  // polygon(IfcArbitraryClosedProfileDef) import는 v1 미지원 → null = 기존 '미지원 표현' 카운트.
+  const sectionFromProfile = (
+    profile: AnyLine | undefined,
+    beamSwap: boolean,
+    onProfileRotation?: () => void,
+  ): Section | null => {
     if (!profile) return null;
+    const rot = (((profile['Position'] as AnyLine)?.['RefDirection'] as AnyLine)?.['DirectionRatios'] as
+      | unknown[]
+      | undefined)?.map(num);
+    const rotIdentity = !rot || (Math.abs((rot[0] ?? 1) - 1) < 1e-6 && Math.abs(rot[1] ?? 0) < 1e-6);
+    const rotBeamMarker = !!rot && Math.abs(rot[0] ?? 0) < 1e-6 && Math.abs((rot[1] ?? 0) - 1) < 1e-6;
+    const ow = Math.round(num(profile['OverallWidth']));
+    const od = Math.round(num(profile['OverallDepth']));
+    const tw = Math.round(num(profile['WebThickness']));
+    const tf = Math.round(num(profile['FlangeThickness']));
+    if (ow > 0 && od > 0 && tw > 0 && tf > 0) {
+      if (!rotIdentity && !rotBeamMarker) onProfileRotation?.();
+      return { shape: 'hsection', width: ow, depth: od, web: tw, flange: tf };
+    }
     const radius = num(profile['Radius']);
-    if (radius > 0) return { shape: 'circle', diameter: Math.round(radius * 2) };
+    if (radius > 0) return { shape: 'circle', diameter: Math.round(radius * 2) }; // 회전 무의미
     const xd = Math.round(num(profile['XDim']));
     const yd = Math.round(num(profile['YDim']));
     if (xd <= 0 || yd <= 0) return null;
+    if (!rotIdentity) onProfileRotation?.(); // rect 회전은 어떤 것도 미반영
     return beamSwap ? { shape: 'rect', width: yd, depth: xd } : { shape: 'rect', width: xd, depth: yd };
   };
-  const sectionKey = (s: Section): string =>
-    s.shape === 'circle' ? `c${s.diameter}` : `r${s.width}x${s.depth}`;
-  const sectionLabel = (s: Section): string =>
-    s.shape === 'circle' ? `D${s.diameter}` : `${s.width}×${s.depth}`;
+  // polygon 키는 방어적(현재 sectionFromProfile은 polygon을 안 만듦) — 점열 직렬화로 결정적 dedup 키.
+  const sectionKey = (s: Section): string => {
+    switch (s.shape) {
+      case 'circle':
+        return `c${s.diameter}`;
+      case 'rect':
+        return `r${s.width}x${s.depth}`;
+      case 'hsection':
+        return `h${s.width}x${s.depth}x${s.web}x${s.flange}`;
+      case 'polygon':
+        return `p${s.points.map((p) => `${p[0]},${p[1]}`).join(';')}`;
+    }
+  };
+  const sectionLabel = (s: Section): string => formatSection(s); // 코어 단일 소스 라벨
 
   // --- 벽 (IfcWallStandardCase + 외부 도구의 평범한 IfcWall 둘 다) ---
   const wallExpressToId = new Map<number, Id>();
@@ -241,27 +285,33 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     return id;
   };
   for (const cid of ids(WebIFC.IFCCOLUMN)) {
-    const cl = line(cid);
-    const place = (cl['ObjectPlacement'] as AnyLine)?.['RelativePlacement'] as AnyLine | undefined;
-    const loc = coordsOf(place?.['Location']);
-    const at: [number, number] = [Math.round(loc[0] ?? 0), Math.round(loc[1] ?? 0)];
-    const baseOffset = Math.round(loc[2] ?? 0);
-    const solid = bodySolid(cl);
-    const section = sectionFromProfile(solid?.['SweptArea'] as AnyLine | undefined, false);
-    const height = Math.round(num(solid?.['Depth']));
-    if (!section || height <= 0) {
-      bump('column(미지원 표현)');
-      continue;
+    // 외부 불량 프로파일(예: IShapeProfile web≥width)이 addType validateSection서 throw해도
+    // import 전체가 죽지 않게 — 개별 스킵+카운트 (보/슬라브 루프와 동일 패턴).
+    try {
+      const cl = line(cid);
+      const place = (cl['ObjectPlacement'] as AnyLine)?.['RelativePlacement'] as AnyLine | undefined;
+      const loc = coordsOf(place?.['Location']);
+      const at: [number, number] = [Math.round(loc[0] ?? 0), Math.round(loc[1] ?? 0)];
+      const baseOffset = Math.round(loc[2] ?? 0);
+      const solid = bodySolid(cl);
+      const section = sectionFromProfile(solid?.['SweptArea'] as AnyLine | undefined, false);
+      const height = Math.round(num(solid?.['Depth']));
+      if (!section || height <= 0) {
+        bump('column(미지원 표현)');
+        continue;
+      }
+      const levelId = levelFor(elementStorey.get(cid));
+      const level = store.getLevel(levelId)!;
+      store.createColumn({
+        levelId,
+        typeId: columnTypeFor(section),
+        at,
+        ...(height !== level.height ? { height } : {}),
+        ...(baseOffset !== 0 ? { baseOffset } : {}),
+      });
+    } catch {
+      bump('기둥(변환 실패)');
     }
-    const levelId = levelFor(elementStorey.get(cid));
-    const level = store.getLevel(levelId)!;
-    store.createColumn({
-      levelId,
-      typeId: columnTypeFor(section),
-      at,
-      ...(height !== level.height ? { height } : {}),
-      ...(baseOffset !== 0 ? { baseOffset } : {}),
-    });
   }
 
   // --- 보 (IfcBeam) — placement a + 솔리드 축 방향(Position.Axis)·길이(Depth)로 b 복원 ---
@@ -283,7 +333,15 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     // import는 그 값을 명시 zOffset으로 복원(지오 동일, 파라만 explicit화). 의도된 정규화.
     const zOffset = Math.round(loc[2] ?? 0);
     const solid = bodySolid(bl);
-    const section = sectionFromProfile(solid?.['SweptArea'] as AnyLine | undefined, true);
+    // rect 스왑은 우리 export 규약(솔리드 RefDirection≈(0,0,1))일 때만 — sectionFromProfile 주석 참조.
+    const solidRef = (((solid?.['Position'] as AnyLine)?.['RefDirection'] as AnyLine)?.['DirectionRatios'] as
+      | unknown[]
+      | undefined)?.map(num);
+    const beamSwap =
+      !!solidRef && Math.abs(solidRef[2] ?? 0) > 0.99 && Math.hypot(solidRef[0] ?? 0, solidRef[1] ?? 0) < 0.01;
+    const section = sectionFromProfile(solid?.['SweptArea'] as AnyLine | undefined, beamSwap, () =>
+      bump('보(프로파일 회전 미지원)'),
+    );
     const len = num(solid?.['Depth']);
     const axis = ((solid?.['Position'] as AnyLine)?.['Axis'] as AnyLine)?.['DirectionRatios'] as
       | number[]
@@ -303,7 +361,7 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     try {
       store.createBeam({ levelId, typeId: beamTypeFor(section), a, b, zOffset });
     } catch {
-      bump('beam(zero-length)');
+      bump('보(변환 실패)'); // zero-length 축·불량 단면 등 — 라벨 일반화 (v0.4 리뷰 2b)
     }
   }
 
@@ -345,7 +403,6 @@ export function importIfc(ifcApi: WebIFC.IfcAPI, bytes: Uint8Array): IfcImportRe
     }
   }
 
-  ifcApi.CloseModel(m);
   const snapshot = store.snapshot();
   snapshot.meta = { ...snapshot.meta, projectName };
   return { snapshot, skipped };

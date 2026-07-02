@@ -16,26 +16,54 @@ const CIRCLE_SEGMENTS = 24; // 원형 단면 N각형 테셀레이션 (줌 무관
 
 /**
  * 단면 → 원점 중심 링 (mm, 평면 [x, y]). rect = width(x)×depth(y),
- * circle = 지름 N각형. 보·기둥이 공유 (extrudeProfile 단일 경로).
+ * circle = 지름 N각형, hsection = 12점 I링(CCW), polygon = 점 그대로.
+ * 보·기둥이 공유 (extrudeProfile 단일 경로).
  */
 export function sectionRing(section: Section): Ring {
-  if (section.shape === 'rect') {
-    const hw = section.width / 2;
-    const hd = section.depth / 2;
-    return [
-      [-hw, -hd],
-      [hw, -hd],
-      [hw, hd],
-      [-hw, hd],
-    ];
+  switch (section.shape) {
+    case 'rect': {
+      const hw = section.width / 2;
+      const hd = section.depth / 2;
+      return [
+        [-hw, -hd],
+        [hw, -hd],
+        [hw, hd],
+        [-hw, hd],
+      ];
+    }
+    case 'circle': {
+      const r = section.diameter / 2;
+      const ring: Ring = [];
+      for (let i = 0; i < CIRCLE_SEGMENTS; i++) {
+        const a = (i / CIRCLE_SEGMENTS) * Math.PI * 2;
+        ring.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
+      return ring;
+    }
+    case 'hsection': {
+      // I형강 12점 CCW — 좌하단부터 반시계 (rect와 동일 시작 코너 규약)
+      const hw = section.width / 2;
+      const hd = section.depth / 2;
+      const tw2 = section.web / 2;
+      const ny = hd - section.flange; // 플랜지 안쪽(노치) y
+      return [
+        [-hw, -hd],
+        [hw, -hd],
+        [hw, -ny],
+        [tw2, -ny],
+        [tw2, ny],
+        [hw, ny],
+        [hw, hd],
+        [-hw, hd],
+        [-hw, ny],
+        [-tw2, ny],
+        [-tw2, -ny],
+        [-hw, -ny],
+      ];
+    }
+    case 'polygon':
+      return section.points.map(([x, y]) => [x, y]);
   }
-  const r = section.diameter / 2;
-  const ring: Ring = [];
-  for (let i = 0; i < CIRCLE_SEGMENTS; i++) {
-    const a = (i / CIRCLE_SEGMENTS) * Math.PI * 2;
-    ring.push([Math.cos(a) * r, Math.sin(a) * r]);
-  }
-  return ring;
 }
 
 /**
@@ -78,9 +106,32 @@ export function columnDeriveKey(input: ColumnDeriveInput): string {
   ]);
 }
 
-/** 단면의 수직 반높이 (rect=depth/2, circle=반지름) — 보 기본 높이 계산용 */
-function sectionVHalf(section: Section): number {
-  return section.shape === 'circle' ? section.diameter / 2 : section.depth / 2;
+/** 단면의 수직 반높이 (rect/hsection=depth/2, circle=반지름, polygon=max y) — 보 기본 높이·interop 공유 단일 소스 */
+export function sectionVHalf(section: Section): number {
+  switch (section.shape) {
+    case 'rect':
+    case 'hsection':
+      return section.depth / 2;
+    case 'circle':
+      return section.diameter / 2;
+    case 'polygon':
+      return Math.max(...section.points.map(([, y]) => y));
+  }
+}
+
+/** 단면의 수평 전체 폭 (rect/hsection=width, circle=지름, polygon=maxX-minX) — 커튼월 멀리언·interop 공유 */
+export function sectionWidth(section: Section): number {
+  switch (section.shape) {
+    case 'rect':
+    case 'hsection':
+      return section.width;
+    case 'circle':
+      return section.diameter;
+    case 'polygon': {
+      const xs = section.points.map(([x]) => x);
+      return Math.max(...xs) - Math.min(...xs);
+    }
+  }
 }
 
 /**
@@ -386,8 +437,7 @@ export function deriveCurtainWall(input: CurtainWallDeriveInput): DerivedGeometr
   const n: [number, number] = [dir[1], -dir[0]]; // 베이스라인 수직(평면)
   const ring = sectionRing(type.mullionSection);
   // 멀리언 폭 — 끝 테두리와 겹치는 내부 스톱 제거 임계 + 패널 inset
-  const mullionW =
-    type.mullionSection.shape === 'rect' ? type.mullionSection.width : type.mullionSection.diameter;
+  const mullionW = sectionWidth(type.mullionSection);
   const uStops = gridStops(L, cw.uSpacing, mullionW);
   const vStops = gridStops(H, cw.vSpacing, mullionW);
   const meshes: MeshData[] = [];

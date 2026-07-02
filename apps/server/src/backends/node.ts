@@ -270,7 +270,7 @@ const server = http.createServer(async (req, res) => {
       if (body === null) return void send413(res);
       const reqW = toWebRequest(req, body);
       let out: Response;
-      if (op === 'apply' || op === 'pull' || op === 'origin') {
+      if (op === 'apply' || op === 'pull' || op === 'origin' || op === 'fed-register') {
         const r = getRoom(room);
         const persist = async () => saveDoc(room, r.doc);
         out = await serialize(room, () => handleConnectorRequest(reqW, room, liveStore(r), persist, ROOM_KEY));

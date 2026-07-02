@@ -2,6 +2,7 @@ import rhino3dm from 'rhino3dm';
 import {
   DocStore,
   sectionRing,
+  sectionVHalf,
   arcPolyline,
   curvedWallFootprint,
   type BeamType,
@@ -162,8 +163,8 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
     } else if (el.kind === 'beam') {
       // 중심축 라인 (보 높이 z)
       const section = beamTypes.get(el.typeId)?.section ?? { shape: 'rect', width: 300, depth: 600 };
-      const vHalf = section.shape === 'circle' ? section.diameter / 2 : section.depth / 2;
-      const z = (elev.get(el.levelId) ?? 0) + (el.zOffset ?? (levelH.get(el.levelId) ?? 3000) - vHalf);
+      // 수직 반높이 = 코어 sectionVHalf 단일 소스 (deriveBeam 기본 zOffset과 동일 수식 — 재인라인 금지)
+      const z = (elev.get(el.levelId) ?? 0) + (el.zOffset ?? (levelH.get(el.levelId) ?? 3000) - sectionVHalf(section));
       objects.add(
         new rhino.PolylineCurve([
           [el.a[0], el.a[1], z],
@@ -449,10 +450,33 @@ function composeXf(a: Xf, b: Xf): Xf {
 /** Emscripten embind 핸들 해제 (누수 방지). 데이터 추출 후 일시 래퍼에만 호출. */
 const del = (o: unknown): void => (o as { delete?: () => void } | null | undefined)?.delete?.();
 
+/**
+ * 병합 버퍼 내 객체 범위 — **삼각형 인덱스(faceIndex) 공간**, start 오름차순(방출 순서 = tris 단조 증가).
+ * 임포트 객체 식별(스냅 정보칩·라벨 프리필·AI 매니페스트)용 — 렌더는 여전히 단일 메시(draw call 예산).
+ */
+export interface Rhino3dmObjectRange {
+  start: number;
+  count: number;
+  /** 객체 이름 — 없으면 인스턴스 정의(블록) 이름 폴백 */
+  name?: string;
+  /** rhino object uuid (인스턴스별 유니크) */
+  id?: string;
+  /** 레이어 fullPath/이름 */
+  layer?: string;
+}
+
+/** 정체성 range 상한 — 초과분은 소스레벨 이름으로 열화(캡 초과 메가모델 힙 가드, ~수 MB). */
+const MAX_GROUPS = 50_000;
+
 export function import3dmRefs(
   bytes: Uint8Array,
   opts?: RhinoOpts,
-): Promise<{ meshes: { positions: Float32Array }[]; edges: Float32Array; skipped: number; capped: boolean }> {
+): Promise<{
+  meshes: { positions: Float32Array; groups?: Rhino3dmObjectRange[] }[];
+  edges: Float32Array;
+  skipped: number;
+  capped: boolean;
+}> {
   return getRhino(opts).then((rhino) => {
     const doc = rhino.File3dm.fromByteArray(bytes);
     if (!doc) throw new Error('.3dm 파싱 실패');
@@ -469,20 +493,41 @@ export function import3dmRefs(
     // ⚠️ doc.objects()는 **인스턴스 정의 멤버 지오메트리도 포함**(isInstanceDefinitionObject) — byId엔 넣되
     // top엔 넣지 않는다. 넣으면 (a) 변환 없이 원점에 중복 렌더 + (b) Mesh 멤버면 top emit이 delete →
     // InstanceReference 재귀가 삭제된 객체 재사용 = use-after-delete 크래시(블록 많은 .3dm = 타깃 파일).
+    // 레이어 테이블 1회 — layerIndex → fullPath/이름 (정체성 표시·AI 카테고리용, 실패=무명).
+    const layerTable: (string | undefined)[] = [];
+    try {
+      const layers = (doc as { layers?: () => { count: number; get: (i: number) => unknown } }).layers?.();
+      if (layers) {
+        for (let i = 0; i < layers.count; i++) {
+          const ly = layers.get(i) as { fullPath?: string; name?: string } | undefined;
+          layerTable[i] = ly?.fullPath || ly?.name || undefined;
+        }
+      }
+    } catch {
+      /* 레이어 무명 허용 */
+    }
+
     const objs = doc.objects();
     const OM = (rhino as { ObjectMode?: { Hidden?: number } }).ObjectMode;
     const byId = new Map<string, unknown>();
-    const top: unknown[] = [];
+    const top: { geo: unknown; name?: string; id?: string; layer?: string }[] = [];
     for (let i = 0; i < objs.count; i++) {
       const o = objs.get(i);
-      const at = (o as { attributes?: () => { id?: string; isInstanceDefinitionObject?: boolean; mode?: number } } | undefined)?.attributes?.();
+      const at = (o as { attributes?: () => { id?: string; name?: string; layerIndex?: number; isInstanceDefinitionObject?: boolean; mode?: number } } | undefined)?.attributes?.();
       const id = at?.id;
       const geo = (o as { geometry?: () => unknown } | undefined)?.geometry?.();
       if (!geo) continue;
       if (id) byId.set(id, geo);
       const isDefMember = at?.isInstanceDefinitionObject === true; // InstanceReference 통해서만 렌더
       const hidden = OM?.Hidden !== undefined && at?.mode === OM.Hidden; // 작성자가 숨긴 객체 제외
-      if (!isDefMember && !hidden) top.push(geo);
+      if (!isDefMember && !hidden) {
+        top.push({
+          geo,
+          name: at?.name || undefined,
+          id,
+          layer: at?.layerIndex !== undefined ? layerTable[at.layerIndex] : undefined,
+        });
+      }
     }
     const idefs = (doc as { instanceDefinitions?: () => { count: number; get: (i: number) => unknown } }).instanceDefinitions?.();
     const idefById = new Map<string, { count: number; get: (i: number) => string } | unknown>();
@@ -588,9 +633,26 @@ export function import3dmRefs(
       skipped++; // annotation·point 등
     };
 
-    for (const geo of top) emit(geo, IDENT_XF, 0);
+    // 객체별 삼각형 range 수집 — tris 단조 증가라 groups는 정렬·연속 보장(이진탐색 가능).
+    // 무명 InstanceReference는 인스턴스 정의(블록) 이름 폴백. 캡 초과분 = 소스레벨 이름으로 열화.
+    const groups: Rhino3dmObjectRange[] = [];
+    for (const t of top) {
+      const start = tris;
+      emit(t.geo, IDENT_XF, 0);
+      if (tris > start && groups.length < MAX_GROUPS) {
+        let name = t.name;
+        if (!name && (t.geo as { objectType?: number }).objectType === T.InstanceReference) {
+          const pid = (t.geo as { parentIdefId?: string }).parentIdefId;
+          const def = pid ? (idefById.get(pid) as { name?: string } | undefined) : undefined;
+          name = def?.name || undefined;
+        }
+        groups.push({ start, count: tris - start, name, id: t.id, layer: t.layer });
+      }
+    }
     (doc as { delete?: () => void }).delete?.();
-    const meshes = meshPos.length ? [{ positions: new Float32Array(meshPos) }] : [];
+    const meshes = meshPos.length
+      ? [{ positions: new Float32Array(meshPos), ...(groups.length ? { groups } : {}) }]
+      : [];
     return { meshes, edges: new Float32Array(seg), skipped, capped };
   });
 }

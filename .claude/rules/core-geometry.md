@@ -32,6 +32,6 @@ description: core 지오메트리 파생·단위·신규 Element kind 배선 체
 `buildDeriveIndex`는 전방참조라 대개 불변.
 
 ## 공유 헬퍼 (재발명 금지)
-- 원→N각형 단면: `Section`(rect/circle) → `extrudeProfile` 단일 경로 (기둥/보/계단/지붕/난간 공유 — 커튼월 멀리언도 재사용).
+- 단면: `Section` 어휘 = **rect / circle / hsection / polygon** → `sectionRing` → `extrudeProfile` 단일 경로 (기둥/보/계단/지붕/난간 공유 — 커튼월 멀리언·deriveDrawing 평면절단도 재사용). 파생 수치·라벨 단일 소스 = `sectionVHalf`(수직 반높이, polygon=max y)·`sectionWidth`(수평 폭) — deriveStructure.ts export — + `formatSection`(라벨, schema.ts). interop/web에서 shape ternary 재인라인 금지 — import 할 것. 검증(hsection web<width·2flange<depth, polygon 단순폴리곤)은 store `validateSection`(zod refine 불가 — discriminatedUnion).
 - 바인딩 추종: `resolveDimAnchor(store,bind,fallback)` (select.ts) — DeriveCache·transformCopy·footprint·InfoBox 공유. 치수·코멘트·(라벨) 전부 이거로.
 - 라벨 채널: `DerivedGeometry.labels?:{text,pos,style}[]` — 그리드 버블·텍스트·치수·존/라벨 텍스트 전부 SceneManager `updateLabels` 한 경로.

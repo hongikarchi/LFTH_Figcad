@@ -1,5 +1,5 @@
 import type { DocStore } from '../store';
-import type { Id, Pt } from '../schema';
+import type { Id, Pt, Section } from '../schema';
 
 /**
  * Capability Registry (M8) — 모든 문서 변경/조회 기능의 단일 카탈로그.
@@ -18,7 +18,8 @@ export type CapabilityCategory =
   | 'opening' // 문·창
   | 'edit' // 이동/복사/배열/분할/연장/대칭/회전/수정/삭제
   | 'level' // 레벨(층)
-  | 'annotation'; // 치수·텍스트
+  | 'annotation' // 치수·텍스트
+  | 'type'; // 타입(패밀리) 정의 — create_type
 // 확장: 'interop' | 'version' (별 패키지/계약이라 강제 통합 금지)
 
 export interface Capability {
@@ -78,6 +79,34 @@ export const asNum = (v: unknown, name: string): number => {
 };
 export const optNum = (v: unknown): number | undefined =>
   typeof v === 'number' ? v : undefined;
+
+/** 단면 인자 코어션 — 수치는 float 관용(store가 quantize), 검증(구조·단순폴리곤)은 store가 최종 방어 */
+export const asSection = (v: unknown, name: string): Section => {
+  if (!v || typeof v !== 'object' || Array.isArray(v))
+    throw new Error(`${name} must be a section object`);
+  const o = v as Record<string, unknown>;
+  switch (o['shape']) {
+    case 'rect':
+      return { shape: 'rect', width: asNum(o['width'], `${name}.width`), depth: asNum(o['depth'], `${name}.depth`) };
+    case 'circle':
+      return { shape: 'circle', diameter: asNum(o['diameter'], `${name}.diameter`) };
+    case 'hsection':
+      return {
+        shape: 'hsection',
+        width: asNum(o['width'], `${name}.width`),
+        depth: asNum(o['depth'], `${name}.depth`),
+        web: asNum(o['web'], `${name}.web`),
+        flange: asNum(o['flange'], `${name}.flange`),
+      };
+    case 'polygon': {
+      const raw = o['points'];
+      if (!Array.isArray(raw)) throw new Error(`${name}.points must be [[x,y],...]`);
+      return { shape: 'polygon', points: raw.map(asPt) };
+    }
+    default:
+      throw new Error(`${name}.shape must be rect|circle|hsection|polygon`);
+  }
+};
 
 // --- 요약 포맷 헬퍼 ---
 

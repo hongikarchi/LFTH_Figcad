@@ -39,11 +39,26 @@ function posKey(cat: PositionalCategory, src: Record<string, unknown>): string {
   return 'H'; // hosted(opening) — dedup 대상 아님
 }
 
-/** 기존 요소의 content key (종류+레벨+타입+좌표). */
+/**
+ * 수직 파라미터 키 (v0.4 리뷰) — zOffset(보)·baseOffset(기둥/벽…)·height가 있을 때만 폴드.
+ * 같은 평면 좌표에 층층이 쌓인 부재(보 zOffset·기둥 baseOffset만 다른 2개)가 dedup에
+ * 조용히 삭제되지 않게. 필드 없으면 빈 문자열 = 기존 요소/옵 키 불변(양쪽 동일 파생).
+ */
+function vertKey(src: Record<string, unknown>): string {
+  let out = '';
+  for (const k of ['zOffset', 'baseOffset', 'height']) {
+    const v = src[k];
+    if (typeof v === 'number') out += `|${k}:${Math.round(v)}`;
+  }
+  return out;
+}
+
+/** 기존 요소의 content key (종류+레벨+타입+좌표+수직 파라미터). */
 export function elementContentKey(el: Element): string {
   const typeId = 'typeId' in el ? (el as { typeId: string }).typeId : '';
   const levelId = 'levelId' in el ? (el as { levelId: string }).levelId : '';
-  return `${el.kind}|${levelId}|${typeId}|${posKey(POSITIONAL[el.kind], el as unknown as Record<string, unknown>)}`;
+  const src = el as unknown as Record<string, unknown>;
+  return `${el.kind}|${levelId}|${typeId}|${posKey(POSITIONAL[el.kind], src)}${vertKey(src)}`;
 }
 
 /**
@@ -55,5 +70,5 @@ export function createOpContentKey(opName: string, args: Record<string, unknown>
   if (!kind) return null;
   const typeId = typeof args['typeId'] === 'string' ? (args['typeId'] as string) : '';
   const levelId = typeof args['levelId'] === 'string' ? (args['levelId'] as string) : '';
-  return `${kind}|${levelId}|${typeId}|${posKey(POSITIONAL[kind], args)}`;
+  return `${kind}|${levelId}|${typeId}|${posKey(POSITIONAL[kind], args)}${vertKey(args)}`;
 }

@@ -112,4 +112,18 @@ describe('IFC 메시 추출 (federation 오버레이)', () => {
     // 명시: 세 extent가 서로 다른 값(4≠3≠2)이라야 이 테스트가 의미있다.
     expect(near(ext.x, E) && near(ext.y, H) && near(ext.z, N)).toBe(true);
   });
+
+  it('객체 정체성 — expressId·ifcType이 메시에 실려온다 (스냅/라벨/AI용)', () => {
+    const s = footprintRoom();
+    const bytes = exportIfc(api, s.snapshot());
+    const meshes = importIfcMeshes(api, bytes);
+    expect(meshes.length).toBeGreaterThan(0);
+    for (const m of meshes) {
+      expect(typeof m.expressId).toBe('number'); // flatMesh.expressID 관통
+    }
+    // 타입명은 web-ifc API(GetLineType/GetNameFromTypeCode) 가용 시 채워진다 — 현 버전 기준 단언.
+    // (미래 API 드리프트 시 name/ifcType은 undefined로 열화 — 그건 별도 완화 경로라 여기선 존재를 고정.)
+    const typed = meshes.filter((m) => typeof m.ifcType === 'string' && m.ifcType.toUpperCase().includes('IFC'));
+    expect(typed.length).toBeGreaterThan(0);
+  });
 });

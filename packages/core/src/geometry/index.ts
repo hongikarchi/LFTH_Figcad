@@ -28,6 +28,7 @@ import {
   textDeriveKey,
 } from './deriveAnnotations';
 import { deriveZone, zoneDeriveKey } from './deriveZone';
+import { deriveAsset, assetDeriveKey } from './deriveAsset';
 import { deriveSketch, sketchDeriveKey } from './deriveSketch';
 import { deriveLabel, labelDeriveKey, labelText } from './deriveLabel';
 import { resolveDimAnchor, labelTargetCenter } from '../select';
@@ -56,6 +57,7 @@ export * from './deriveOthers';
 export * from './deriveStructure';
 export * from './deriveAnnotations';
 export * from './deriveZone';
+export * from './deriveAsset';
 export * from './deriveSketch';
 export * from './deriveLabel';
 export * from './deriveDrawing';
@@ -218,6 +220,12 @@ export class DeriveCache {
       const input = { column: el, type: type as ColumnType, level };
       key = `c:${columnDeriveKey(input)}`;
       compute = () => deriveColumn(input);
+    } else if (el.kind === 'asset') {
+      const level = store.getLevel(el.levelId);
+      if (!level) return null;
+      const input = { asset: el, level }; // 타입 없음 — assetKind가 종류
+      key = `ast:${assetDeriveKey(input)}`;
+      compute = () => deriveAsset(input);
     } else if (el.kind === 'beam') {
       const type = store.getType(el.typeId);
       const level = store.getLevel(el.levelId);

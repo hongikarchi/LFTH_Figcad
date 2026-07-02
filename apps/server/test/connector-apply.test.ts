@@ -79,3 +79,95 @@ describe('커넥터 ?op=apply 멱등화 (iter-2 2)', () => {
     expect(typeof cp!.ts).toBe('number');
   });
 });
+
+describe('dedup=1 — 수직 파라미터 겹층 부재 (v0.4 리뷰: zOffset/baseOffset 키 폴드)', () => {
+  it('같은 평면축 zOffset만 다른 보 2개 배치 — 둘 다 적용, 재푸시는 둘 다 dedup', async () => {
+    const { store, seed } = setup();
+    const base = store.listElements().length;
+    const beam = (z: number) => ({
+      op: 'create_beam',
+      args: { levelId: seed.levelId, typeId: seed.beamTypeId, a: [0, 0], b: [5000, 0], zOffset: z },
+    });
+    const first = await apply(store, [beam(2700), beam(5700)], true);
+    expect(first.json.applied).toBe(2); // 위층 보가 in-batch dedup으로 삭제되지 않음
+    expect(first.json.deduped).toBe(0);
+    expect(store.listElements().length).toBe(base + 2);
+
+    const again = await apply(store, [beam(2700), beam(5700)], true); // 동일 배치 재푸시
+    expect(again.json.applied).toBe(0);
+    expect(again.json.deduped).toBe(2);
+    expect(store.listElements().length).toBe(base + 2); // 중첩 0
+  });
+
+  it('같은 at, baseOffset만 다른 기둥 2개 — 둘 다 적용, 재푸시는 둘 다 dedup', async () => {
+    const { store, seed } = setup();
+    const base = store.listElements().length;
+    const col = (baseOffset: number) => ({
+      op: 'create_column',
+      args: { levelId: seed.levelId, typeId: seed.columnTypeId, at: [1000, 1000], height: 1500, baseOffset },
+    });
+    const first = await apply(store, [col(0), col(1500)], true);
+    expect(first.json.applied).toBe(2);
+    expect(first.json.deduped).toBe(0);
+    expect(store.listElements().length).toBe(base + 2);
+
+    const again = await apply(store, [col(0), col(1500)], true);
+    expect(again.json.applied).toBe(0);
+    expect(again.json.deduped).toBe(2);
+    expect(store.listElements().length).toBe(base + 2);
+  });
+});
+
+describe('커넥터 create_type 배치 (v0.4 S1 — placeholder 리맵 + dedup 거동)', () => {
+  const H = { shape: 'hsection', width: 150, depth: 300, web: 7, flange: 9 };
+  const typeOp = { op: 'create_type', args: { kind: 'beam', name: 'H-300×150', section: H }, result: 'tmp-1' };
+  const beamOp = (seed: ReturnType<typeof seedDocument>) => ({
+    op: 'create_beam',
+    args: { levelId: seed.levelId, typeId: 'tmp-1', a: [0, 0], b: [5000, 0] },
+    result: 'tmp-2',
+  });
+
+  it('배치 [create_type(result:tmp), create_beam(typeId:tmp)] → 2 적용 + 요소가 실 typeId 참조', async () => {
+    const { store, seed } = setup();
+    const r = await apply(store, [typeOp, beamOp(seed)]);
+    expect(r.json.applied).toBe(2);
+    expect(r.json.failed).toHaveLength(0);
+    const beam = store.listElements().find((e) => e.kind === 'beam') as { typeId: string } | undefined;
+    expect(beam).toBeTruthy();
+    expect(beam!.typeId).not.toBe('tmp-1'); // placeholder가 실 id로 치환됨
+    const t = store.getType(beam!.typeId);
+    expect(t?.kind).toBe('beam');
+    expect(t?.name).toBe('H-300×150');
+  });
+
+  it('dedup=1 재푸시 — create_type은 재적용(문서화된 v1 거동: 타입 op은 content key 없음 → 항상 적용). 커넥터는 스냅샷 타입 매칭(2단계 POST)으로 create_type 자체를 안 보내는 게 계약', async () => {
+    const { store, seed } = setup();
+    const first = await apply(store, [typeOp, beamOp(seed)], true);
+    expect(first.json.applied).toBe(2);
+    const typesBefore = store.snapshot().types.length;
+
+    const again = await apply(store, [typeOp, beamOp(seed)], true);
+    // create_type: dedup 키 없음(createOpContentKey null) → 재적용 = 중복 타입 (v1 문서화 거동)
+    expect(store.snapshot().types.length).toBe(typesBefore + 1);
+    // create_beam(placeholder typeId): dedup 키가 리맵 *전* 계산이라 기존 요소(실 typeId)와 불일치 →
+    // 역시 재적용 — 이것이 커넥터가 create_type을 dedup 없는 POST-B로 분리해야 하는 이유(plan Phase 3).
+    expect(again.json.applied).toBe(2);
+  });
+
+  it('dedup=1 + 실 typeId 재푸시(2단계 POST 흐름) — create_beam은 deduped', async () => {
+    const { store, seed } = setup();
+    // POST-B: 타입만 (dedup 없음) → 실 id 획득
+    const tRes = await apply(store, [typeOp]);
+    expect(tRes.json.applied).toBe(1);
+    const realTypeId = (tRes.json as unknown as { createdIds: string[] }).createdIds[0]!;
+    // POST-C: 요소만 (dedup=1, 실 typeId)
+    const el = { op: 'create_beam', args: { levelId: seed.levelId, typeId: realTypeId, a: [0, 0], b: [5000, 0] } };
+    const c1 = await apply(store, [el], true);
+    expect(c1.json.applied).toBe(1);
+    expect(c1.json.deduped).toBe(0);
+    // 재푸시 → 정확중첩 차단
+    const c2 = await apply(store, [el], true);
+    expect(c2.json.applied).toBe(0);
+    expect(c2.json.deduped).toBe(1);
+  });
+});

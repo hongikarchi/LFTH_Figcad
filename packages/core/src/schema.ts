@@ -22,12 +22,32 @@ export type Pt = z.infer<typeof Pt>;
  * 단면 — 기둥/보 공유 (CAD/Revit/ArchiCAD 패밀리의 프로필 개념).
  * rect = width(x)×depth(y), circle = 지름. 원은 derive에서 N각형 테셀레이션
  * (extrudeProfile 단일 경로 — CSG 불필요, 설계 원칙).
+ * hsection = H/I형강 (width=플랜지폭 b, depth=춤 h, web=웹두께 tw, flange=플랜지두께 tf).
+ * polygon = 임의 단면 (앵커 상대 mm 정수 점, 3~128 — max=중첩 DoS 방어, apply.ts argsBounded는 top-level만 봄).
+ * additive 확장 — CORE_SCHEMA_VERSION bump 없음(federation 'dxf' 전례): 구클라는
+ * 미지 shape 타입을 safeParse 드롭(mirrorType) — 크래시 없이 해당 타입만 스킵.
  */
 export const SectionSchema = z.discriminatedUnion('shape', [
   z.object({ shape: z.literal('rect'), width: mm, depth: mm }),
   z.object({ shape: z.literal('circle'), diameter: mm }),
+  z.object({ shape: z.literal('hsection'), width: mm, depth: mm, web: mm, flange: mm }),
+  z.object({ shape: z.literal('polygon'), points: z.array(Pt).min(3).max(128) }),
 ]);
 export type Section = z.infer<typeof SectionSchema>;
+
+/** 단면 라벨 단일 소스 (Navigator/InfoBox/interop 공유 — 수제 ternary 재발명 금지) */
+export function formatSection(s: Section): string {
+  switch (s.shape) {
+    case 'rect':
+      return `${s.width}×${s.depth}`;
+    case 'circle':
+      return `Ø${s.diameter}`;
+    case 'hsection':
+      return `H ${s.width}×${s.depth}×${s.web}/${s.flange}`;
+    case 'polygon':
+      return `다각형 ${s.points.length}pt`;
+  }
+}
 
 export const LevelSchema = z.object({
   id: z.string(),
@@ -379,6 +399,24 @@ export const SketchElementSchema = z.object({
 });
 export type SketchElement = z.infer<typeof SketchElementSchema>;
 
+/**
+ * 배치 오브젝트(엔투라지) — 나무·사람·차 등 스케일/맥락 참고물(항목7). 한 점(at)에 종류별 절차적 로우폴리.
+ * 타입(ElemType) 없음 — assetKind가 곧 종류. POSITIONAL='point'(column/text와 동일 — move/footprint 재사용).
+ * 지오메트리 미저장(불변①) — deriveAsset이 assetKind+height에서 순수 파생.
+ */
+export const ASSET_KINDS = ['tree', 'person', 'car', 'bush'] as const;
+export const AssetElementSchema = z.object({
+  id: z.string(),
+  kind: z.literal('asset'),
+  levelId: z.string(),
+  assetKind: z.enum(ASSET_KINDS),
+  at: Pt, // 배치 점 (평면 mm)
+  height: mm.optional(), // 크기(생략 시 종류별 기본 높이)
+  baseOffset: mm.optional(), // 레벨 바닥 위 오프셋 (기본 0)
+});
+export type AssetElement = z.infer<typeof AssetElementSchema>;
+export type AssetKind = (typeof ASSET_KINDS)[number];
+
 export const ElementSchema = z.discriminatedUnion('kind', [
   WallElementSchema,
   OpeningElementSchema,
@@ -395,6 +433,7 @@ export const ElementSchema = z.discriminatedUnion('kind', [
   LabelElementSchema,
   DimensionElementSchema,
   SketchElementSchema,
+  AssetElementSchema,
 ]);
 export type Element = z.infer<typeof ElementSchema>;
 
@@ -419,6 +458,7 @@ export const KIND_LABEL: Record<Element['kind'], string> = {
   label: '레이블',
   dimension: '치수',
   sketch: '스케치',
+  asset: '오브젝트',
 };
 
 /**
@@ -449,6 +489,7 @@ export const POSITIONAL: Record<Element['kind'], PositionalCategory> = {
   column: 'point',
   text: 'point',
   label: 'point',
+  asset: 'point', // at 단일 점 — move/rotate/footprint 기계부 재사용(column과 동일)
   opening: 'hosted',
 };
 
@@ -645,6 +686,11 @@ export interface CurtainWallDeriveInput {
 
 export interface TextDeriveInput {
   text: TextElement;
+  level: Level;
+}
+
+export interface AssetDeriveInput {
+  asset: AssetElement;
   level: Level;
 }
 

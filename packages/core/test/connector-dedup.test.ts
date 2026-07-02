@@ -73,6 +73,34 @@ describe('커넥터 멱등화 — content key 매칭', () => {
     expect(seen.has(key!)).toBe(true);
   });
 
+  it('겹층 보 — 같은 평면축 zOffset만 다른 2개는 키가 다름 (조용한 삭제 방지)', () => {
+    const { store, seed } = setup();
+    store.createBeam({ levelId: seed.levelId, typeId: seed.beamTypeId, a: [0, 0], b: [5000, 0], zOffset: 2700 });
+    const seen = new Set(store.listElements().map(elementContentKey));
+    const args = (z: number) => ({ levelId: seed.levelId, typeId: seed.beamTypeId, a: [0, 0], b: [5000, 0], zOffset: z });
+    expect(seen.has(createOpContentKey('create_beam', args(2700))!)).toBe(true); // 동일 재푸시 = 스킵
+    expect(seen.has(createOpContentKey('create_beam', args(5700))!)).toBe(false); // 위층 보 = 적용
+  });
+
+  it('겹층 기둥 — 같은 at, baseOffset/height만 다른 것도 키가 다름', () => {
+    const { store, seed } = setup();
+    store.createColumn({ levelId: seed.levelId, typeId: seed.columnTypeId, at: [1000, 1000], baseOffset: 0, height: 1500 });
+    const seen = new Set(store.listElements().map(elementContentKey));
+    const args = (baseOffset: number, height: number) => ({
+      levelId: seed.levelId, typeId: seed.columnTypeId, at: [1000, 1000], baseOffset, height,
+    });
+    expect(seen.has(createOpContentKey('create_column', args(0, 1500))!)).toBe(true);
+    expect(seen.has(createOpContentKey('create_column', args(1500, 1500))!)).toBe(false); // 상부 기둥
+  });
+
+  it('수직 파라미터 없는 요소 — 키 불변 (기존 문서와 매칭 유지)', () => {
+    const { store, seed } = setup();
+    store.createBeam({ levelId: seed.levelId, typeId: seed.beamTypeId, a: [0, 0], b: [5000, 0] }); // zOffset 미지정
+    const seen = new Set(store.listElements().map(elementContentKey));
+    const key = createOpContentKey('create_beam', { levelId: seed.levelId, typeId: seed.beamTypeId, a: [0, 0], b: [5000, 0] });
+    expect(seen.has(key!)).toBe(true); // 양쪽 다 필드 생략 → 동일 파생
+  });
+
   it('create 아닌 옵(update/delete) = null (항상 적용)', () => {
     expect(createOpContentKey('update_element', { id: 'x', a: [0, 0] })).toBeNull();
     expect(createOpContentKey('delete_elements', { ids: ['x'] })).toBeNull();

@@ -43,6 +43,12 @@ const METER_SCALE = 1;
 export interface ExtractedMesh {
   positions: Float32Array;
   normals: Float32Array;
+  /** IFC 엔티티 expressID (배치된 제품) — 임포트 객체 식별(스냅/라벨/AI 매니페스트)용 */
+  expressId?: number;
+  /** IfcRoot.Name — 없으면 무명 */
+  name?: string;
+  /** IFC 타입명 ('IFCWALL' 등) — refDisplayName 폴백/카테고리 */
+  ifcType?: string;
 }
 
 /**
@@ -54,9 +60,43 @@ export function importIfcMeshes(api: WebIFC.IfcAPI, bytes: Uint8Array): Extracte
   const modelID = api.OpenModel(bytes);
   const out: ExtractedMesh[] = [];
 
+  // 제품(expressID)당 Name·타입명 1회 조회 캐시 — 정체성은 스냅/라벨/AI용, 실패=무명(throw 금지).
+  // web-ifc API 표면이 버전마다 달라(GetLineType/GetNameFromTypeCode) 전부 방어적으로 감싼다.
+  const metaCache = new Map<number, { name?: string; type?: string }>();
+  const metaOf = (eid: number): { name?: string; type?: string } => {
+    let meta = metaCache.get(eid);
+    if (meta === undefined) {
+      let name: string | undefined;
+      let type: string | undefined;
+      try {
+        const line = api.GetLine(modelID, eid) as { Name?: { value?: unknown } } | undefined;
+        const nv = line?.Name?.value;
+        name = typeof nv === 'string' && nv.length > 0 ? nv : undefined;
+      } catch {
+        /* 무명 허용 */
+      }
+      try {
+        const a = api as unknown as {
+          GetLineType?: (m: number, e: number) => number;
+          GetNameFromTypeCode?: (c: number) => string;
+        };
+        const code = a.GetLineType?.(modelID, eid);
+        const tn = code !== undefined ? a.GetNameFromTypeCode?.(code) : undefined;
+        type = typeof tn === 'string' && tn.length > 0 ? tn : undefined;
+      } catch {
+        /* 타입 무명 허용 */
+      }
+      meta = { name, type };
+      metaCache.set(eid, meta);
+    }
+    return meta;
+  };
+
   try {
     api.StreamAllMeshes(modelID, (flatMesh: WebIFC.FlatMesh) => {
       const geoms = flatMesh.geometries;
+      const eid = flatMesh.expressID;
+      const meta = metaOf(eid);
       for (let gi = 0; gi < geoms.size(); gi++) {
         const placed = geoms.get(gi);
         const m = placed.flatTransformation; // flat 4x4, column-major
@@ -96,7 +136,7 @@ export function importIfcMeshes(api: WebIFC.IfcAPI, bytes: Uint8Array): Extracte
         // 노멀은 생략 — 좌표 축교환은 반사라 winding이 뒤집힌다. ReferenceLayer 머티리얼이
         // DoubleSide + computeVertexNormals이라 flat normal로 충분 (정확도 무관 디스플레이).
         const normals = new Float32Array(0);
-        out.push({ positions, normals });
+        out.push({ positions, normals, expressId: eid, name: meta.name, ifcType: meta.type });
       }
       // flatMesh는 StreamAllMeshes 콜백이 소유하는 임시 뷰 — delete() 없음(LoadAllGeometry의
       // Vector<FlatMesh>와 다름). 해제할 WASM 핸들은 GetGeometry의 IfcGeometry뿐(위에서 delete).
