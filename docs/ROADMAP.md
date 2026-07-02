@@ -5,9 +5,10 @@
 
 ## 현재 상태 (Current)
 
-- **Primary = Railway (라이브 배포중)**: **https://lfthfigcad-production.up.railway.app** (Node 백엔드, Dockerfile). 최신 배포 = **M17**(라이브 `index-H8RBVy3z.js`, master `78e3756`). CF(`figcad.archivibe.workers.dev`)는 rollback용. 배포가이드 `docs/RAILWAY_DEPLOY.md`.
+- **Primary = Railway (라이브 배포중)**: **https://lfthfigcad-production.up.railway.app** (Node 백엔드, Dockerfile). 최신 배포 = **M18**(라이브 `index-DWd-VGyy.js`, master `41c11fa`, deployment `88c0c909`). CF(`figcad.archivibe.workers.dev`)는 rollback용. 배포가이드 `docs/RAILWAY_DEPLOY.md`.
+  - **M18 (2026-07-02)**: 3개 병행 스트림 합류 배포 — ① **메인 11항목**(줌선택 z·오빗 피벗=커서/선택·버전 3D 시각비교 diffOverlay·치수 생성표면 제거·스냅마커 공유·**asset kind 엔투라지**·뷰 기즈모 8a·연동모델 메뉴 portal 수정·드래그이동 제거·마크업→스케치) ② **임포트 읽기전용 상호작용**(정체성 관통: glTF/IFC/.3dm/room→userData+삼각형 range · 3D 피처 스냅 vertex>edge>face 원근보정 · 라벨 프리필 · 빽도면 끝점 스냅+그리기 13툴 트레이싱 · **AI 연동모델 매니페스트**+인젝션 가드) ③ **커넥터 v0.4**(파라메트릭 리프트: Section hsection/polygon·create_type·FigcadFit/Classify·패널 프리뷰). 리뷰 7건 수정. 검증 core 415·interop 108·server 35.
   - **M17 (2026-07-01)**: 야간 Phase 9(실시간 단면+절단선·굵은선·줄자 측정·fork정리) → 아침 배포 + 4추가: **Text 종류 생성 제거**(스키마·렌더 back-compat) · **단면 poché**(절단선 루프 스티칭+채움, sharpest-turn 비매니폴드 견고) · **공유 이름있는 뷰포인트**(카메라+클립 저장·전원공유·"N번 단면 봐주세요", ydoc viewpoints v6 채널). 각 기능 어드버서리얼 리뷰→수정.
-  - **사용자 남은 일**: AI 키 + **리전 US**(Anthropic 403 회피) · 커넥터 BASE = 이 Railway URL.
+  - **사용자 남은 일**: M18 브라우저 스모크(3D 모서리 측정·라벨 프리필·빽도면 스냅/트레이싱·AI "연동 모델에 뭐 있어?") · AI 키 + **리전 US**(Anthropic 403 회피) · 커넥터 BASE = 이 Railway URL.
 - **M16 ✅ (2026-06-27~07-01, 상세 HISTORY ▶M16)**: 멀티포맷 ingest(image/PDF 래스터·**DWG/DXF 클라 WASM 언더레이**·.3dm SOLID) + sketch→markup + UI/UX iter-2(ModeTabs·HubStrip·AI dock) + AI 사진/음성 + **모바일 리뷰/뷰어 셸** + 클레이 렌더·단면(클립) + pull-latest + **야간 멀티에이전트 보안/품질 하드닝**(미인증 WS-DoS·body cap·.mjs MIME 등). **interop "DWG 배제" 규칙 뒤집힘** → 클라 WASM DWG 채택(아래 영역별 규칙 갱신요).
 - **M14 실사용 검증 🔄**: 갭 4개 해결. 남은 = 사용자 조율 세션(2기기 동시편집·glTF 정합). 갭 캡처 = `docs/realuse-validation.md`.
 - **M17 배포 완료 (master 78e3756 · 위 Primary 참조)**: 야간 Phase 9 + 아침 4항목 전부 라이브. 잔여 후속: poché 완전 DCEL 면추적(현재 sharpest-turn+guard=오채움 없음, 병리적 비매니폴드는 미채움) · 폰 뷰포인트 시트(수신측, 데이터는 이미 채널 공유) · 뷰포인트 라이브 프레즌스(옵션 B, 미채택).
