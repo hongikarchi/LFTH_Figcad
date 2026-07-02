@@ -688,7 +688,7 @@ export class DocStore {
     return id;
   }
 
-  createSlab(params: { levelId: Id; typeId: Id; boundary: Pt[]; thicknessOverride?: number }): Id {
+  createSlab(params: { levelId: Id; typeId: Id; boundary: Pt[]; thicknessOverride?: number; zOffset?: number }): Id {
     const boundary = params.boundary.map(
       ([x, y]) => [quantize(x), quantize(y)] as Pt,
     );
@@ -703,6 +703,7 @@ export class DocStore {
       ...(params.thicknessOverride !== undefined
         ? { thicknessOverride: quantize(params.thicknessOverride) }
         : {}),
+      ...(params.zOffset !== undefined ? { zOffset: quantize(params.zOffset) } : {}),
     }) as SlabElement;
     this.setElement(id, slab);
     return id;
@@ -812,13 +813,14 @@ export class DocStore {
     return id;
   }
 
-  createStair(params: { levelId: Id; typeId: Id; a: Pt; b: Pt; baseOffset?: number }): Id {
+  createStair(params: { levelId: Id; typeId: Id; a: Pt; b: Pt; baseOffset?: number; rise?: number }): Id {
     if (
       quantize(params.a[0]) === quantize(params.b[0]) &&
       quantize(params.a[1]) === quantize(params.b[1])
     ) {
       throw new Error('zero-length stair');
     }
+    if (params.rise !== undefined && quantize(params.rise) <= 0) throw new Error('stair rise must be > 0');
     const id = nanoid(12);
     const stair = ElementSchema.parse({
       id,
@@ -828,6 +830,7 @@ export class DocStore {
       a: [quantize(params.a[0]), quantize(params.a[1])],
       b: [quantize(params.b[0]), quantize(params.b[1])],
       ...(params.baseOffset !== undefined ? { baseOffset: quantize(params.baseOffset) } : {}),
+      ...(params.rise !== undefined ? { rise: quantize(params.rise) } : {}),
     }) as StairElement;
     this.setElement(id, stair);
     return id;
@@ -1070,6 +1073,7 @@ export class DocStore {
       if (!isSimplePolygon(next.boundary)) return;
       if (next.thicknessOverride !== undefined)
         next.thicknessOverride = quantize(next.thicknessOverride);
+      if (next.zOffset !== undefined) next.zOffset = quantize(next.zOffset);
     } else if (next.kind === 'grid') {
       next.a = [quantize(next.a[0]), quantize(next.a[1])];
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
@@ -1096,6 +1100,10 @@ export class DocStore {
       next.b = [quantize(next.b[0]), quantize(next.b[1])];
       if (next.a[0] === next.b[0] && next.a[1] === next.b[1]) return;
       if (next.baseOffset !== undefined) next.baseOffset = quantize(next.baseOffset);
+      if (next.kind === 'stair' && next.rise !== undefined) {
+        next.rise = quantize(next.rise);
+        if (next.rise <= 0) return; // 0 이하 상승 = 무효 패치 거부
+      }
     } else if (next.kind === 'roof') {
       next.boundary = next.boundary.map(([x, y]) => [quantize(x), quantize(y)] as Pt);
       if (!isSimplePolygon(next.boundary)) return;

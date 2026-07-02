@@ -128,7 +128,8 @@ function massFootprint(
     const level = store.getLevel(s.levelId);
     if (type?.kind !== 'slab' || !level) return null;
     const th = s.thicknessOverride ?? (type as SlabType).thickness;
-    return { poly: s.boundary, zb: level.elevation - th, zt: level.elevation }; // elevation에서 아래로
+    const top = level.elevation + (s.zOffset ?? 0);
+    return { poly: s.boundary, zb: top - th, zt: top }; // elevation+zOffset에서 아래로
   }
   if (el.kind === 'roof') {
     const r = el as unknown as import('../schema').RoofElement;

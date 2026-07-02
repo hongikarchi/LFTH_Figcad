@@ -141,7 +141,7 @@ export async function exportRhino(snap: DocSnapshot, opts?: RhinoOpts): Promise<
         );
       }
     } else if (el.kind === 'slab') {
-      const z = elev.get(el.levelId) ?? 0;
+      const z = (elev.get(el.levelId) ?? 0) + (el.zOffset ?? 0);
       const pts = el.boundary.map((p) => [p[0], p[1], z] as number[]);
       pts.push(pts[0]!);
       objects.add(new rhino.PolylineCurve(pts), attr(slabLayer));

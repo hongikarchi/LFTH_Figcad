@@ -249,7 +249,7 @@ export function lint(store: DocStore): LintFinding[] {
     } else if (el.kind === 'curtainwall') {
       key = `cw|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.uSpacing}|${el.vSpacing}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
     } else if (el.kind === 'stair') {
-      key = `st|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.baseOffset ?? ''}`;
+      key = `st|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.baseOffset ?? ''}|${el.rise ?? ''}`;
     } else if (el.kind === 'railing') {
       key = `rl|${el.levelId}|${el.typeId}|${segKey(el.a, el.b)}|${el.baseOffset ?? ''}`;
     } else if (el.kind === 'roof') {
@@ -267,7 +267,8 @@ export function lint(store: DocStore): LintFinding[] {
     } else if (el.kind === 'asset') {
       key = `ast|${el.levelId}|${el.assetKind}|${el.at[0]},${el.at[1]}|${el.height ?? ''}|${el.baseOffset ?? ''}`;
     } else {
-      key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${boundaryKey(el.boundary)}`;
+      // slab — zOffset 미포함이면 층층이 쌓인 실제 플레이트(z만 다름)가 "중복"으로 오탐 + 파괴적 퀵픽스
+      key = `s|${el.levelId}|${el.typeId}|${el.thicknessOverride ?? ''}|${el.zOffset ?? ''}|${boundaryKey(el.boundary)}`;
     }
     const first = dupKeys.get(key);
     if (first) {

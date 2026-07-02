@@ -611,12 +611,11 @@ namespace Figcad
             string snapBody = Http.GetStringAsync(Url(cfg, "pull")).GetAwaiter().GetResult();
             var snap = (Dictionary<string, object>)Json.Parse(snapBody);
             string levelId = null;
-            double levelElev = 0, levelHeight = 0;
+            double levelElev = 0;
             foreach (Dictionary<string, object> l in (List<object>)snap["levels"])
             {
                 levelId = (string)l["id"];
                 levelElev = Opt(l, "elevation", 0);
-                levelHeight = Opt(l, "height", 0); // 계단 실측상승 vs 층고 정직 카운트용
                 break; // 멀티레벨 배정 = v1.5(현행 first-level)
             }
             foreach (Dictionary<string, object> t in (List<object>)snap["types"])
@@ -723,7 +722,6 @@ namespace Figcad
             {
                 LevelId = levelId,
                 LevelElev = levelElev,
-                LevelHeight = levelHeight,
                 Tol = tol,
                 VolTol = volTolFraction,
                 SlabTypeId = result.FirstTypeOfKind.ContainsKey("slab") ? result.FirstTypeOfKind["slab"] : null,
@@ -806,7 +804,6 @@ namespace Figcad
         {
             public string LevelId;
             public double LevelElev; // 첫 레벨 elevation — baseOffset/zOffset 레벨 상대화
-            public double LevelHeight; // 첫 레벨 층고 — 계단 실측상승 대비(층고차 근사 카운트)
             public double Tol;
             public double VolTol;    // CheckFidelity 임계(패널 1~10%)
             public string SlabTypeId, StairTypeId, RailTypeId;
@@ -864,16 +861,18 @@ namespace Figcad
                 {
                     string skey = "w:" + sf.Width + "r:" + sf.Riser;
                     RegisterTypeNeed(result, "stair", skey, "ST-" + sf.Width, "\"width\":" + sf.Width + ",\"riser\":" + sf.Riser);
+                    // rise = 실측 총상승 — v0.6 core가 노출(종전 "층고 고정" 근사 해소). 구서버 = 조용히 무시.
                     string sjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
-                        R(sf.Ax) + "," + R(sf.Ay) + "],\"b\":[" + R(sf.Bx) + "," + R(sf.By) + "]" + baseOffJson + "}}";
-                    // core 계단 = 한 층 전체 상승(rise 파라미터 없음) — 실측 상승 ≠ 층고면 정직 카운트.
-                    bool riseGap = ctx.LevelHeight > 0 && Math.Abs(sf.Rise - ctx.LevelHeight) > Math.Max(ctx.Tol, 1.0);
-                    return new RecognizedOp { Kind = "stair", TypeKey = "stair|" + skey, JsonTemplate = sjson, Approx = true, ApproxReason = riseGap ? "계단(층고차)" : "계단(파라)" };
+                        R(sf.Ax) + "," + R(sf.Ay) + "],\"b\":[" + R(sf.Bx) + "," + R(sf.By) + "]" + baseOffJson +
+                        (sf.Rise >= 1 ? ",\"rise\":" + R(sf.Rise) : "") + "}}";
+                    return new RecognizedOp { Kind = "stair", TypeKey = "stair|" + skey, JsonTemplate = sjson, Approx = true, ApproxReason = "계단(파라)" };
                 }
 
                 if (ctx.StairTypeId == null) { fail = "계단 검출 실패 + 타입 없음(룸 시드 필요)"; bucket = "타입없음"; return null; }
+                double bbRise = bb.Max.Z - bb.Min.Z;
                 string fjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"" + ctx.StairTypeId +
-                    "\",\"a\":[" + R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) + "]" + baseOffJson + "}}";
+                    "\",\"a\":[" + R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) + "]" + baseOffJson +
+                    (bbRise >= 1 ? ",\"rise\":" + R(bbRise) : "") + "}}";
                 return new RecognizedOp { Kind = "stair", JsonTemplate = fjson, Approx = true, ApproxReason = "계단bbox" };
             }
 
@@ -1010,15 +1009,15 @@ namespace Figcad
                 var sb = new StringBuilder("[");
                 for (int i = 0; i < ring.Count; i++) { if (i > 0) sb.Append(","); sb.Append("[" + R(ring[i][0]) + "," + R(ring[i][1]) + "]"); }
                 sb.Append("]");
-                // 수직 위치 게이트 — core 슬라브 = *상면이 레벨 elevation* 고정(z 파라미터 없음, 표현불가).
-                // 상단 cap z가 레벨과 ±1mm 밖이면 z 유실 = "슬라브z" 근사로 정직 카운트(리프트는 유지).
+                // zOffset = 상면 실측 z(레벨 상대) — v0.6 core가 노출(종전 "슬라브z 유실" 근사 해소).
+                // 구서버는 인자 조용히 무시(상면=레벨) — create_type 폴백과 같은 세대 이슈.
                 double topZ = Math.Max(fit.Axis.From.Z, fit.Axis.To.Z);
-                bool zLost = Math.Abs(topZ - ctx.LevelElev) > 1;
+                double zOff = topZ - ctx.LevelElev;
                 // thicknessOverride = 프리즘 길이(실측) — 종전 "타입 두께 무시" 버그 수정 (create_slab이 노출)
                 string json = "{\"op\":\"create_slab\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"" + ctx.SlabTypeId +
-                    "\",\"boundary\":" + sb + ",\"thicknessOverride\":" + R(fit.Length) + "}}";
-                string reason = holes && zLost ? "슬라브개구·슬라브z" : holes ? "슬라브개구" : zLost ? "슬라브z" : null;
-                return new RecognizedOp { Kind = "slab", JsonTemplate = json, Approx = holes || zLost, ApproxReason = reason };
+                    "\",\"boundary\":" + sb + ",\"thicknessOverride\":" + R(fit.Length) +
+                    ",\"zOffset\":" + R(zOff) + "}}"; // 0 포함 무조건 방출 — "z 실측됨" 신호(충실도 리포트 오발 방지)
+                return new RecognizedOp { Kind = "slab", JsonTemplate = json, Approx = holes, ApproxReason = holes ? "슬라브개구" : null };
             }
 
             fail = "미지원 kind: " + kind; bucket = "기타"; return null;
@@ -1060,11 +1059,11 @@ namespace Figcad
 
             // z-클러스터 (같은 단의 쪼개진 면 병합) — 면적 가중 도심
             double clusterTol = Math.Max(tol * 5, 5.0);
-            var cz = new List<double>(); var cc = new List<Point3d>();
+            var cz = new List<double>(); var cc = new List<Point3d>(); var ca = new List<double>();
             double aSum = 0, zSum = 0, xSum = 0, ySum = 0, prevZ = double.NaN;
             void Flush()
             {
-                if (aSum > 0) { cz.Add(zSum / aSum); cc.Add(new Point3d(xSum / aSum, ySum / aSum, zSum / aSum)); }
+                if (aSum > 0) { cz.Add(zSum / aSum); cc.Add(new Point3d(xSum / aSum, ySum / aSum, zSum / aSum)); ca.Add(aSum); }
                 aSum = 0; zSum = 0; xSum = 0; ySum = 0;
             }
             foreach (var i in idx)
@@ -1099,19 +1098,33 @@ namespace Figcad
                 prevS = sp;
             }
 
-            // bbox를 주행축(s)/측방(l)으로 투영 → a/b(측방 중앙)·폭
-            var bb2 = b.GetBoundingBox(true);
+            if (maxLat > Math.Max(runLen / 10, 100)) return null; // 도심 측방 이탈 = 꺾임/L형
+            double going = runLen / (nc - 1);
+            if (going < 50 || going > 600) return null; // 비현실 디딤판 = 비계단
+
+            // 주행 프레임 oriented-extent — brep *정점 전체*를 주행축(s)/측방(l)에 투영.
+            // 월드 AABB 투영(비축정렬서 부풀어 오기각)·트레드-앵커 끝점(첫/끝 단 깊이 차로 ±13cm 오차)
+            // 둘 다 실측서 기각된 접근 — 정점 투영은 회전 불변 + 축정렬서 bbox와 동치(실모델 18계단 Δ0 유지).
             double sMin = double.MaxValue, sMax = double.MinValue, lMin = double.MaxValue, lMax = double.MinValue;
-            foreach (var p in bb2.GetCorners())
+            foreach (var bv in b.Vertices)
             {
+                var p = bv.Location;
                 double sp = p.X * ux + p.Y * uy;
                 double lp = -p.X * uy + p.Y * ux;
                 if (sp < sMin) sMin = sp; if (sp > sMax) sMax = sp;
                 if (lp < lMin) lMin = lp; if (lp > lMax) lMax = lp;
             }
-            double width = lMax - lMin;
-            if (width < 1 || maxLat > width) return null; // 진행 굴곡이 폭 초과 = 비직선
+            double runExt = sMax - sMin, width = lMax - lMin;
+            if (runExt < 1 || width < 1) return null;
+            // 면적비 자기검증 — 직선 장방 계단은 트레드 행이 풋프린트를 타일링(Σ면적 ≈ 주행×폭,
+            // 실측 실계단 ≥ ~0.9). 쐐기(0.5)·사다리꼴 객석(~0.7, 51cm 오차 리프트 실측)은 기각 → bbox 폴백.
+            double areaRatio = 0;
+            foreach (var av in ca) areaRatio += av;
+            areaRatio /= runExt * width;
+            if (areaRatio < 0.8 || areaRatio > 1.25) return null;
+
             double lc = (lMin + lMax) / 2;
+            var bb2 = b.GetBoundingBox(true);
             return new StairFit
             {
                 Ax = sMin * ux - lc * uy, Ay = sMin * uy + lc * ux,

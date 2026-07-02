@@ -79,7 +79,7 @@ export const CAPABILITIES: Capability[] = [
     titleKo: '슬라브',
     icon: 'slab',
     descriptionKo:
-      '슬라브(바닥판) 생성. boundary는 단순 폴리곤(자가교차 금지) 꼭짓점 목록, 상면이 레벨 elevation에 맞고 아래로 두께만큼 내려감.',
+      '슬라브(바닥판) 생성. boundary는 단순 폴리곤(자가교차 금지) 꼭짓점 목록, 상면이 레벨 elevation+zOffset에 맞고 아래로 두께만큼 내려감.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -91,6 +91,7 @@ export const CAPABILITIES: Capability[] = [
           description: '폴리곤 꼭짓점 [[x,y],...] mm — 3개 이상, 자가교차 금지',
         },
         thicknessOverride: { type: 'integer', description: '두께 오버라이드 mm' },
+        zOffset: { type: 'integer', description: '상면 높이 mm (레벨 elevation 상대, 음수 가능, 생략 시 0)' },
       },
       required: ['levelId', 'typeId', 'boundary'],
       additionalProperties: false,
@@ -107,6 +108,7 @@ export const CAPABILITIES: Capability[] = [
         ...(optNum(a['thicknessOverride']) !== undefined
           ? { thicknessOverride: optNum(a['thicknessOverride'])! }
           : {}),
+        ...(optNum(a['zOffset']) !== undefined ? { zOffset: optNum(a['zOffset'])! } : {}),
       });
     },
     summary: (a) => {
@@ -313,15 +315,16 @@ export const CAPABILITIES: Capability[] = [
     titleKo: '계단',
     icon: 'stair',
     descriptionKo:
-      '직선 계단 생성 — a(하단)→b(상단 평면 투영) 주행을 따라 한 층(level.height)을 오름. 단수는 주행÷타입 목표 단너비로 결정, 폭은 타입. baseOffset 생략 시 레벨 바닥.',
+      '직선 계단 생성 — a(하단)→b(상단 평면 투영) 주행을 따라 rise(생략 시 한 층 level.height)만큼 오름. 단수는 총상승÷타입 목표 단높이로 결정, 폭은 타입. baseOffset 생략 시 레벨 바닥.',
     inputSchema: {
       type: 'object',
       properties: {
-        levelId: { type: 'string', description: '배치할 레벨(층) id — 이 층 높이만큼 오름' },
+        levelId: { type: 'string', description: '배치할 레벨(층) id' },
         typeId: { type: 'string', description: '계단 타입 id (kind=stair)' },
         a: ptSchema('주행 시작점(하단)'),
         b: ptSchema('주행 끝점(상단 평면 투영) — 방향+주행 길이'),
         baseOffset: { type: 'integer', description: '하단 바닥 높이 mm (레벨 기준, 생략 시 0)' },
+        rise: { type: 'integer', description: '총상승 mm (>0, 생략 시 층고)' },
       },
       required: ['levelId', 'typeId', 'a', 'b'],
       additionalProperties: false,
@@ -335,6 +338,7 @@ export const CAPABILITIES: Capability[] = [
         a: asPt(a['a']),
         b: asPt(a['b']),
         ...(optNum(a['baseOffset']) !== undefined ? { baseOffset: optNum(a['baseOffset'])! } : {}),
+        ...(optNum(a['rise']) !== undefined ? { rise: optNum(a['rise'])! } : {}),
       }),
     summary: (a) => `계단 생성 ${fmtPt(a['a'])}→${fmtPt(a['b'])}${fmtLen(a['a'], a['b'])}`,
   },
@@ -847,7 +851,7 @@ export const CAPABILITIES: Capability[] = [
     titleKo: '요소 수정',
     icon: 'pencil',
     descriptionKo:
-      '요소 필드 수정. kind에 맞는 필드만 사용: 벽=a/b/height/typeId, 개구부=offset/widthOverride/heightOverride/sillOverride, 슬라브=boundary/thicknessOverride, 그리드=a/b/label, 기둥=at/height/typeId.',
+      '요소 필드 수정. kind에 맞는 필드만 사용: 벽=a/b/height/typeId, 개구부=offset/widthOverride/heightOverride/sillOverride, 슬라브=boundary/thicknessOverride/zOffset, 그리드=a/b/label, 기둥=at/height/typeId, 계단=a/b/baseOffset/rise.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -868,6 +872,8 @@ export const CAPABILITIES: Capability[] = [
           description: '슬라브 폴리곤 [[x,y],...]',
         },
         thicknessOverride: { type: 'integer' },
+        zOffset: { type: 'integer', description: '슬라브 상면/보 축 높이 mm (레벨 상대)' },
+        rise: { type: 'integer', description: '계단 총상승 mm (>0)' },
         label: { type: 'string', description: '그리드 라벨' },
       },
       required: ['id'],

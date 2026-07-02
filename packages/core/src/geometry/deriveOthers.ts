@@ -13,7 +13,7 @@ const MM = 0.001;
 export function deriveSlab(input: SlabDeriveInput): DerivedGeometry {
   const { slab, type, level } = input;
   const thickness = (slab.thicknessOverride ?? type.thickness) * MM;
-  const topY = level.elevation * MM;
+  const topY = (level.elevation + (slab.zOffset ?? 0)) * MM;
   const centerY = topY - thickness / 2;
 
   const profile: Profile = {
@@ -39,6 +39,7 @@ export function slabDeriveKey(input: SlabDeriveInput): string {
   return JSON.stringify([
     slab.boundary,
     slab.thicknessOverride ?? null,
+    slab.zOffset ?? null,
     type.thickness,
     type.color,
     level.elevation,

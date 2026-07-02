@@ -318,13 +318,13 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
       const ring = [...slab.boundary, slab.boundary[0]!];
       const poly = w(new I.IfcPolyline(ring.map((p) => pt2(p[0], p[1]) as never)));
       const profile = w(new I.IfcArbitraryClosedProfileDef(I.IfcProfileTypeEnum.AREA, null, poly as never));
-      // 상면이 레벨 elevation → 아래로 압출
+      // 상면이 레벨 elevation + zOffset → 아래로 압출
       const solid = w(
         new I.IfcExtrudedAreaSolid(profile as never, place3(pt3(0, 0, 0)) as never, dir3(0, 0, -1) as never, thickness as never),
       );
       const rep = w(new I.IfcShapeRepresentation(ctx as never, label('Body'), label('SweptSolid'), [solid as never]));
       const shape = w(new I.IfcProductDefinitionShape(null, null, [rep as never]));
-      const objPlace = local(storeyPlace, place3(pt3(0, 0, 0)));
+      const objPlace = local(storeyPlace, place3(pt3(0, 0, slab.zOffset ?? 0)));
       const slabEntity = w(
         new I.IfcSlab(guid(`slab-${slab.id}`), null, label(`슬라브 ${slab.id}`), null, null, objPlace as never, shape as never, null, null),
       );
@@ -397,7 +397,7 @@ export function exportIfc(ifcApi: WebIFC.IfcAPI, snap: DocSnapshot): Uint8Array 
       if (run === 0) continue;
       const ux = dx / run;
       const uy = dy / run;
-      const totalRise = level.height;
+      const totalRise = stair.rise ?? level.height; // 커넥터 실측 상승 보존 (deriveStair와 동일 규약)
       const nSteps = Math.max(1, Math.round(totalRise / Math.max(stype?.riser ?? 175, 1)));
       const tread = run / nSteps;
       const riser = totalRise / nSteps;

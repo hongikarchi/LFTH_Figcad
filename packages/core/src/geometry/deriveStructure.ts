@@ -204,7 +204,7 @@ function squareRing(size: number): Ring {
  * 계단 — a→b 직선 1주행. 측면 실루엣(주행 u × 높이 v 평면의 계단 폴리곤)을
  * 폭 방향으로 압출 → 내부면 0 (스텝 박스 합집합 대비 z-fight·삼각형 낭비 없음).
  * 핸디드니스: 압출축 w=폭(across)이라 보와 다름 — n=[-dir.y, dir.x] (e_u×e_v=dir×Y=+e_w 검증).
- * 총상승 = level.height (한 층 오름). 단수 = round(총상승/목표단높이 riser),
+ * 총상승 = rise ?? level.height (한 층 오름 기본, 커넥터 실측 상승 보존). 단수 = round(총상승/목표단높이 riser),
  * 실 단높이 = 총상승/단수, 디딤판(going) = 주행/단수 (a→b 길이를 단수로 분할).
  */
 export function deriveStair(input: StairDeriveInput): DerivedGeometry {
@@ -213,7 +213,7 @@ export function deriveStair(input: StairDeriveInput): DerivedGeometry {
   const [bx, by] = stair.b;
   const run = Math.hypot(bx - ax, by - ay);
   const baseElev = level.elevation + (stair.baseOffset ?? 0);
-  const totalRise = level.height;
+  const totalRise = stair.rise ?? level.height;
   const anchors = {
     a: [ax * MM, baseElev * MM, ay * MM] as [number, number, number],
     b: [bx * MM, (baseElev + totalRise) * MM, by * MM] as [number, number, number],
@@ -249,6 +249,7 @@ export function stairDeriveKey(input: StairDeriveInput): string {
     stair.a,
     stair.b,
     stair.baseOffset ?? null,
+    stair.rise ?? null,
     type.width,
     type.riser,
     type.color,

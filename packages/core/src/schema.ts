@@ -215,6 +215,7 @@ export const SlabElementSchema = z.object({
   typeId: z.string(),
   boundary: z.array(Pt).min(3), // 단순 폴리곤 (자가교차 금지 — ops에서 검증)
   thicknessOverride: mm.optional(),
+  zOffset: mm.optional(), // 상면 높이(레벨 elevation 상대, 음수 허용). 기본 0 — 커넥터 실측 z 보존
 });
 export type SlabElement = z.infer<typeof SlabElementSchema>;
 
@@ -253,7 +254,7 @@ export const BeamElementSchema = z.object({
 export type BeamElement = z.infer<typeof BeamElementSchema>;
 
 /** 계단 — 평면 두 점 사이 직선 1주행. 단면 윤곽(계단 실루엣)을 폭으로 압출.
- *  단높이·단너비=타입(목표값, 단수 결정), 위치·주행=인스턴스. 총상승 = level.height */
+ *  단높이·단너비=타입(목표값, 단수 결정), 위치·주행=인스턴스. 총상승 = rise ?? level.height */
 export const StairElementSchema = z.object({
   id: z.string(),
   kind: z.literal('stair'),
@@ -262,6 +263,7 @@ export const StairElementSchema = z.object({
   a: Pt, // 주행 시작 (하단 평면 mm)
   b: Pt, // 주행 끝 (상단 평면 투영) — 방향 + 주행 길이
   baseOffset: mm.optional(), // 하단 바닥 높이(레벨 기준). 기본 0
+  rise: mm.optional(), // 총상승(>0). 기본 = level.height — 커넥터 실측 상승 보존
 });
 export type StairElement = z.infer<typeof StairElementSchema>;
 

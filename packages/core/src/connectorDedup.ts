@@ -40,13 +40,14 @@ function posKey(cat: PositionalCategory, src: Record<string, unknown>): string {
 }
 
 /**
- * 수직 파라미터 키 (v0.4 리뷰) — zOffset(보)·baseOffset(기둥/벽…)·height가 있을 때만 폴드.
- * 같은 평면 좌표에 층층이 쌓인 부재(보 zOffset·기둥 baseOffset만 다른 2개)가 dedup에
- * 조용히 삭제되지 않게. 필드 없으면 빈 문자열 = 기존 요소/옵 키 불변(양쪽 동일 파생).
+ * 수직/치수 파라미터 키 (v0.4 리뷰, v0.6 확장) — zOffset(보/슬라브)·baseOffset(기둥/벽…)·height·
+ * rise(계단 총상승)·thicknessOverride(슬라브/지붕)가 있을 때만 폴드. 같은 평면 좌표에 층층이 쌓인
+ * 부재(상승만 다른 계단 2주행 등)가 dedup에 조용히 삭제되지 않게.
+ * 필드 없으면 빈 문자열 = 기존 요소/옵 키 불변(양쪽 동일 파생 — back-compat).
  */
 function vertKey(src: Record<string, unknown>): string {
   let out = '';
-  for (const k of ['zOffset', 'baseOffset', 'height']) {
+  for (const k of ['zOffset', 'baseOffset', 'height', 'rise', 'thicknessOverride']) {
     const v = src[k];
     if (typeof v === 'number') out += `|${k}:${Math.round(v)}`;
   }
