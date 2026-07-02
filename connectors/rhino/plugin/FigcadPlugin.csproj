@@ -11,7 +11,7 @@
 
   <PropertyGroup>
     <TargetFramework>net7.0-windows</TargetFramework>
-    <Version>0.1.0</Version>
+    <Version>0.4.0</Version>
     <Title>Figcad Connector</Title>
     <Company>LFTH</Company>
     <!-- Rhino 플러그인 = .rhp 확장자 + 동적 로딩 -->
@@ -26,13 +26,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Rhino가 런타임에 제공 → 복사 안 함(ExcludeAssets runtime) -->
+    <!-- Rhino가 런타임에 제공 → 복사 안 함(ExcludeAssets runtime). Eto.Forms = 라이노 네이티브 패널 툴킷
+         (자동 다크/라이트 테마). Rhino.UI(Panels)는 RhinoCommon에 포함. -->
     <PackageReference Include="RhinoCommon" Version="8.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Eto.Forms" Version="2.8.3" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 커넥터 코어(Pull/Push/PushBreps + Json) 재사용 — 상위 폴더의 단일 소스 링크 -->
+    <!-- 패널 탭 아이콘(브랜드 마크) — 런타임에 System.Drawing.Icon으로 로드 -->
+    <EmbeddedResource Include="figcad.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 커넥터 코어(Pull/Push/PushBreps + Json) + 분류/클린업 순수모듈 재사용 — 상위 폴더 단일 소스 링크 -->
     <Compile Include="..\FigcadConnector.cs" />
+    <Compile Include="..\FigcadClassify.cs" />
+    <Compile Include="..\FigcadFit.cs" />
+    <Compile Include="..\FigcadCleanup.cs" />
   </ItemGroup>
 
 </Project>

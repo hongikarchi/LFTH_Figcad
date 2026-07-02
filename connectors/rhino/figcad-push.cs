@@ -3,7 +3,7 @@
 // **옛 .rhp 우회** — 플러그인 재설치/재시작 없이 항상 현재 로직으로 푸시. FigcadConnector.cs와 동일 인식.
 //
 // 설정: ROOM(룸 id) + BASE(서버) 두 줄만 바꿔서 실행.
-//   로컬 테스트:  BASE = "http://localhost:8788"
+//   로컬 테스트:  BASE = "http://localhost:8787"
 //   배포(확정분): BASE = "https://lfthfigcad-production.up.railway.app"
 // 전제: 룸이 브라우저서 한 번 열려 시드됨(levelId L-001 · 타입 T-w200/T-s150/T-c400/T-b300/T-st1/T-rl1).
 //
@@ -12,7 +12,7 @@
 //   인식 → create_* ops 배치 POST(?op=apply). 미지 레이어=Lane-2(스킵).
 
 string ROOM = "lfth-rev2";
-string BASE = "http://localhost:8788";
+string BASE = "http://localhost:8787";
 
 double tol = System.Math.Max(doc.ModelAbsoluteTolerance, 0.01);
 string lv="L-001", wt="T-w200", st="T-s150", ct="T-c400", bt="T-b300", stairT="T-st1", railT="T-rl1";

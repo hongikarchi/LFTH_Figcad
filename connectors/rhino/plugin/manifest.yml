@@ -1,11 +1,15 @@
 ---
 name: Figcad
-version: 0.1.0
+version: 0.4.0
 authors:
   - LFTH
 description: >
-  Rhino ↔ Figcad 라이브 커넥터. 명령: FigcadPull(Figcad→Rhino) ·
-  FigcadPush(Rhino 곡선→Figcad) · FigcadPushBreps(Brep 기계적 리프트 — 기둥·벽·슬라브·보 인식).
+  Rhino ↔ Figcad 라이브 커넥터. Eto 도킹 패널(FigcadPanel) — 저장된 룸으로 push/pull,
+  레이어→kind 매핑, pre-push preview(리프트=색·근사=주황·잔여=회색), 결정적 클린업.
+  v0.4: Push 통합(커브 레인 + 브렙 형상충실 리프트 + Lane-2 잔여) — 단면 실측
+  (rect/circle/hsection/polygon, cap-pair 프리즘 추출), 타입 자동 생성(create_type 2단계 POST),
+  대각 보/벽 축 보존, 열린 brep·메시 Lane-2 동승, 부피 오차 게이트(패널 1~10%) + 충실도 보고 1장.
+  명령: FigcadPanel · FigcadPull(3D) · FigcadPush(통합) · FigcadPushBreps(레거시 별칭).
 url: "https://lfthfigcad-production.up.railway.app"
 keywords:
   - figcad
