@@ -19,10 +19,10 @@
     { "name": "slab", "boundaryBox": [0, 0, 8000, 6000], "points": 4 }
   ],
   "stairs": [
-    { "name": "stair", "abBox": [9000, 0, 11800, 1200] }
+    { "name": "stair", "abBox": [9000, 0, 11800, 1200], "type": { "width": 1200, "riser": 170 } }
   ],
   "railings": [
-    { "name": "railing", "abBox": [9000, 4000, 12000, 4050] }
+    { "name": "railing", "abBox": [9000, 4000, 12000, 4050], "type": { "height": 900 } }
   ],
   "federationMin": 1,
   "_lane2Note": "스크립트가 단언하지 않음(스냅샷에 버킷 없음) — MCP GoldenPush 리포트의 'Lane-2 잔여4(미분류1·스텁1·단면과대2)'로 확인. tilted→단면과대(측면 cap쌍 과대, 메시지에 기운보 병기) · plate→단면과대 · cube→스텁 · blob→미분류(레이어)"

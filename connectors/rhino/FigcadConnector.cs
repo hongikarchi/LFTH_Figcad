@@ -611,11 +611,12 @@ namespace Figcad
             string snapBody = Http.GetStringAsync(Url(cfg, "pull")).GetAwaiter().GetResult();
             var snap = (Dictionary<string, object>)Json.Parse(snapBody);
             string levelId = null;
-            double levelElev = 0;
+            double levelElev = 0, levelHeight = 0;
             foreach (Dictionary<string, object> l in (List<object>)snap["levels"])
             {
                 levelId = (string)l["id"];
                 levelElev = Opt(l, "elevation", 0);
+                levelHeight = Opt(l, "height", 0); // 계단 실측상승 vs 층고 정직 카운트용
                 break; // 멀티레벨 배정 = v1.5(현행 first-level)
             }
             foreach (Dictionary<string, object> t in (List<object>)snap["types"])
@@ -722,6 +723,7 @@ namespace Figcad
             {
                 LevelId = levelId,
                 LevelElev = levelElev,
+                LevelHeight = levelHeight,
                 Tol = tol,
                 VolTol = volTolFraction,
                 SlabTypeId = result.FirstTypeOfKind.ContainsKey("slab") ? result.FirstTypeOfKind["slab"] : null,
@@ -804,6 +806,7 @@ namespace Figcad
         {
             public string LevelId;
             public double LevelElev; // 첫 레벨 elevation — baseOffset/zOffset 레벨 상대화
+            public double LevelHeight; // 첫 레벨 층고 — 계단 실측상승 대비(층고차 근사 카운트)
             public double Tol;
             public double VolTol;    // CheckFidelity 임계(패널 1~10%)
             public string SlabTypeId, StairTypeId, RailTypeId;
@@ -834,19 +837,44 @@ namespace Figcad
                                         cy < ctx.ModelBB.Min.Y - 1000 || cy > ctx.ModelBB.Max.Y + 1000))
             { fail = "outlier(모델 bbox 밖)"; bucket = "outlier"; return null; }
 
-            // 계단/난간 — bbox 근사 유지(실기하 v1.5), NApprox 카운트. baseOffset은 레벨 상대(raw Z 버그 수정).
+            // 계단/난간 — v0.5 파라메트릭 리프트. 난간 = 실측 높이로 create_type(시드 불필요).
+            // 계단 = tread 검출(상향 수평면 z-클러스터·등간격·직선 진행) → width+riser 타입 + 실주행축 a/b.
+            // 검출 실패(곡선·나선·비정형) = 종전 bbox 근사 폴백(시드 타입 필요). baseOffset = 레벨 상대.
             if (kind == "stair" || kind == "railing")
             {
-                string t = kind == "stair" ? ctx.StairTypeId : ctx.RailTypeId;
-                if (t == null) { fail = kind + " 타입 없음(룸 시드 필요)"; bucket = "타입없음"; return null; }
                 double dxx = bb.Max.X - bb.Min.X, dyy = bb.Max.Y - bb.Min.Y;
-                bool xl = dxx >= dyy; // 수평 장축
+                bool xl = dxx >= dyy; // 수평 장축(폴백·난간 축)
                 double rax = xl ? bb.Min.X : cx, ray = xl ? cy : bb.Min.Y;
                 double rbx = xl ? bb.Max.X : cx, rby = xl ? cy : bb.Max.Y;
-                string json = "{\"op\":\"create_" + kind + "\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"" + t +
-                    "\",\"a\":[" + R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) +
-                    "],\"baseOffset\":" + R(bb.Min.Z - ctx.LevelElev) + "}}";
-                return new RecognizedOp { Kind = kind, JsonTemplate = json, Approx = true, ApproxReason = kind == "stair" ? "계단bbox" : "난간bbox" };
+                string baseOffJson = ",\"baseOffset\":" + R(bb.Min.Z - ctx.LevelElev);
+
+                if (kind == "railing")
+                {
+                    int h = (int)Math.Round(bb.Max.Z - bb.Min.Z);
+                    if (h < 1) { fail = "난간 높이 0(퇴화)"; bucket = "기타"; return null; }
+                    string rkey = "h:" + h;
+                    RegisterTypeNeed(result, "railing", rkey, "R-" + h, "\"height\":" + h + ",\"postSpacing\":1200");
+                    string rjson = "{\"op\":\"create_railing\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
+                        R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) + "]" + baseOffJson + "}}";
+                    return new RecognizedOp { Kind = "railing", TypeKey = "railing|" + rkey, JsonTemplate = rjson, Approx = true, ApproxReason = "난간(축bbox·포스트근사)" };
+                }
+
+                var sf = TryStairFit(b, ctx.Tol);
+                if (sf != null)
+                {
+                    string skey = "w:" + sf.Width + "r:" + sf.Riser;
+                    RegisterTypeNeed(result, "stair", skey, "ST-" + sf.Width, "\"width\":" + sf.Width + ",\"riser\":" + sf.Riser);
+                    string sjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
+                        R(sf.Ax) + "," + R(sf.Ay) + "],\"b\":[" + R(sf.Bx) + "," + R(sf.By) + "]" + baseOffJson + "}}";
+                    // core 계단 = 한 층 전체 상승(rise 파라미터 없음) — 실측 상승 ≠ 층고면 정직 카운트.
+                    bool riseGap = ctx.LevelHeight > 0 && Math.Abs(sf.Rise - ctx.LevelHeight) > Math.Max(ctx.Tol, 1.0);
+                    return new RecognizedOp { Kind = "stair", TypeKey = "stair|" + skey, JsonTemplate = sjson, Approx = true, ApproxReason = riseGap ? "계단(층고차)" : "계단(파라)" };
+                }
+
+                if (ctx.StairTypeId == null) { fail = "계단 검출 실패 + 타입 없음(룸 시드 필요)"; bucket = "타입없음"; return null; }
+                string fjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"" + ctx.StairTypeId +
+                    "\",\"a\":[" + R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) + "]" + baseOffJson + "}}";
+                return new RecognizedOp { Kind = "stair", JsonTemplate = fjson, Approx = true, ApproxReason = "계단bbox" };
             }
 
             // 이하 = FitPrisms 기반 (column/beam/wall/slab)
@@ -994,6 +1022,104 @@ namespace Figcad
             }
 
             fail = "미지원 kind: " + kind; bucket = "기타"; return null;
+        }
+
+        // 직선 계단 피팅 결과 — 주행축 끝점(a=하단→b=상단)·폭·단높이·실측 총상승.
+        sealed class StairFit
+        {
+            public double Ax, Ay, Bx, By;
+            public int Width, Riser;
+            public double Rise;
+        }
+
+        // 직선 계단 파라미터 추출. 상향 수평 tread 면 → z-클러스터(면적가중 도심) → 등간격 단높이 +
+        // 선형 진행(역행/과이탈 기각) 검증 → 주행축 a/b(bbox 투영)·폭. null = 비계단형 → bbox 폴백.
+        static StairFit TryStairFit(Brep b, double tol)
+        {
+            var dup = b.DuplicateBrep(); // 프로파일 압출은 측면이 킹크 단일면(FitPrisms와 동일) → 분할 필수
+            dup.Faces.SplitKinkyFaces(Rhino.RhinoMath.DefaultAngleTolerance, true);
+            var tz = new List<double>(); var tc = new List<Point3d>(); var ta = new List<double>();
+            for (int i = 0; i < dup.Faces.Count; i++)
+            {
+                var f = dup.Faces[i];
+                var s = f.UnderlyingSurface();
+                Plane pl;
+                if (s == null || !s.TryGetPlane(out pl, tol)) continue;
+                var n = pl.Normal; n.Unitize();
+                if (f.OrientationIsReversed) n.Reverse();
+                if (n.Z < 0.999) continue; // 상향 수평(tread)만
+                var amp = AreaMassProperties.Compute(f.DuplicateFace(false)); // 트림 존중(FitPrisms 함정과 동일)
+                if (amp == null || amp.Area <= 0) continue;
+                tz.Add(amp.Centroid.Z); tc.Add(amp.Centroid); ta.Add(amp.Area);
+            }
+            if (tz.Count < 3) return null;
+
+            var idx = new List<int>();
+            for (int i = 0; i < tz.Count; i++) idx.Add(i);
+            idx.Sort((x, y) => tz[x].CompareTo(tz[y]));
+
+            // z-클러스터 (같은 단의 쪼개진 면 병합) — 면적 가중 도심
+            double clusterTol = Math.Max(tol * 5, 5.0);
+            var cz = new List<double>(); var cc = new List<Point3d>();
+            double aSum = 0, zSum = 0, xSum = 0, ySum = 0, prevZ = double.NaN;
+            void Flush()
+            {
+                if (aSum > 0) { cz.Add(zSum / aSum); cc.Add(new Point3d(xSum / aSum, ySum / aSum, zSum / aSum)); }
+                aSum = 0; zSum = 0; xSum = 0; ySum = 0;
+            }
+            foreach (var i in idx)
+            {
+                if (!double.IsNaN(prevZ) && tz[i] - prevZ > clusterTol) Flush();
+                aSum += ta[i]; zSum += tz[i] * ta[i]; xSum += tc[i].X * ta[i]; ySum += tc[i].Y * ta[i];
+                prevZ = tz[i];
+            }
+            Flush();
+            int nc = cz.Count;
+            if (nc < 3) return null;
+
+            // 등간격 단높이 (실무 범위 50~400mm, 편차 max(5mm, 20%) 이내)
+            double riser = (cz[nc - 1] - cz[0]) / (nc - 1);
+            if (riser < 50 || riser > 400) return null;
+            for (int i = 1; i < nc; i++)
+                if (Math.Abs((cz[i] - cz[i - 1]) - riser) > Math.Max(5.0, riser * 0.2)) return null;
+
+            // 직선 진행 — 최저→최고 tread 방향, 각 tread 투영 단조증가 + 측방 이탈 폭 이내
+            double dx = cc[nc - 1].X - cc[0].X, dy = cc[nc - 1].Y - cc[0].Y;
+            double runLen = Math.Sqrt(dx * dx + dy * dy);
+            if (runLen < riser) return null; // 수직 퇴화(주행 없음)
+            double ux = dx / runLen, uy = dy / runLen;
+            double prevS = double.NegativeInfinity, maxLat = 0;
+            foreach (var c in cc)
+            {
+                double sx = c.X - cc[0].X, sy = c.Y - cc[0].Y;
+                double sp = sx * ux + sy * uy;
+                double lat = Math.Abs(-sx * uy + sy * ux);
+                if (sp < prevS - 1) return null; // 역행 = 꺾임/나선
+                if (lat > maxLat) maxLat = lat;
+                prevS = sp;
+            }
+
+            // bbox를 주행축(s)/측방(l)으로 투영 → a/b(측방 중앙)·폭
+            var bb2 = b.GetBoundingBox(true);
+            double sMin = double.MaxValue, sMax = double.MinValue, lMin = double.MaxValue, lMax = double.MinValue;
+            foreach (var p in bb2.GetCorners())
+            {
+                double sp = p.X * ux + p.Y * uy;
+                double lp = -p.X * uy + p.Y * ux;
+                if (sp < sMin) sMin = sp; if (sp > sMax) sMax = sp;
+                if (lp < lMin) lMin = lp; if (lp > lMax) lMax = lp;
+            }
+            double width = lMax - lMin;
+            if (width < 1 || maxLat > width) return null; // 진행 굴곡이 폭 초과 = 비직선
+            double lc = (lMin + lMax) / 2;
+            return new StairFit
+            {
+                Ax = sMin * ux - lc * uy, Ay = sMin * uy + lc * ux,
+                Bx = sMax * ux - lc * uy, By = sMax * uy + lc * ux,
+                Width = (int)Math.Max(1, Math.Round(width)),
+                Riser = (int)Math.Max(1, Math.Round(riser)),
+                Rise = cz[nc - 1] - bb2.Min.Z,
+            };
         }
 
         // 프레임 단면점 bbox 치수 — 타당성 상한 게이트의 단일 측정(기둥·보 공용, 핏 이전 raw).
@@ -1207,12 +1333,18 @@ namespace Figcad
         }
 
         // 스냅샷 타입 → canonical key (커넥터 단면 키와 동일 규약 — mm 정수 반올림 후).
-        // wall = 두께 키(t:{mm}). slab/roof/stair/railing 등은 키 없음(first-type 재사용 정책).
+        // wall=t:{mm} · stair=w:{}r:{} · railing=h:{} (RegisterTypeNeed 키와 반드시 일치 — 불일치 =
+        // 재푸시마다 타입 재생성 → 요소 dedup 연쇄 미스, v0.5 계단 파라 도입 시 실증). slab/roof = first-type.
         static string TypeKeyOf(Dictionary<string, object> t)
         {
             string kind = t.ContainsKey("kind") ? t["kind"] as string : null;
             if (kind == "wall")
                 return t.ContainsKey("thickness") && t["thickness"] != null ? "t:" + R(D(t["thickness"])) : null;
+            if (kind == "stair")
+                return t.ContainsKey("width") && t["width"] != null && t.ContainsKey("riser") && t["riser"] != null
+                    ? "w:" + R(D(t["width"])) + "r:" + R(D(t["riser"])) : null;
+            if (kind == "railing")
+                return t.ContainsKey("height") && t["height"] != null ? "h:" + R(D(t["height"])) : null;
             if (kind != "column" && kind != "beam") return null;
             if (!t.ContainsKey("section") || !(t["section"] is Dictionary<string, object> sec)) return null;
             string shape = sec.ContainsKey("shape") ? sec["shape"] as string : null;

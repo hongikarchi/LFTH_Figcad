@@ -153,10 +153,24 @@ if (mode === 'seed') {
     const inb = (p) => p[0] >= x0 - 2 && p[0] <= x1 + 2 && p[1] >= y0 - 2 && p[1] <= y1 + 2;
     return inb(e.a) && inb(e.b);
   };
-  for (const s of exp.stairs)
-    ok(byKind('stair').filter((e) => abInBox(e, s.abBox)).length === 1, `계단 ${s.name}`, JSON.stringify(byKind('stair').map((e) => ({ a: e.a, b: e.b }))));
-  for (const r of exp.railings)
-    ok(byKind('railing').filter((e) => abInBox(e, r.abBox)).length === 1, `난간 ${r.name}`, JSON.stringify(byKind('railing').map((e) => ({ a: e.a, b: e.b }))));
+  for (const s of exp.stairs) {
+    const m = byKind('stair').filter((e) => {
+      if (!abInBox(e, s.abBox)) return false;
+      if (!s.type) return true;
+      const t = typeOf(e);
+      return t && near(t.width, s.type.width) && near(t.riser, s.type.riser);
+    });
+    ok(m.length === 1, `계단 ${s.name}`, JSON.stringify(byKind('stair').map((e) => ({ a: e.a, b: e.b, w: typeOf(e)?.width, r: typeOf(e)?.riser }))));
+  }
+  for (const r of exp.railings) {
+    const m = byKind('railing').filter((e) => {
+      if (!abInBox(e, r.abBox)) return false;
+      if (!r.type) return true;
+      const t = typeOf(e);
+      return t && near(t.height, r.type.height);
+    });
+    ok(m.length === 1, `난간 ${r.name}`, JSON.stringify(byKind('railing').map((e) => ({ a: e.a, b: e.b, h: typeOf(e)?.height }))));
+  }
 
   // Lane-2 잔여 → federation 소스
   ok((snap.federation?.length ?? 0) >= exp.federationMin, `federation 잔여 소스 ≥ ${exp.federationMin}`, `실제 ${snap.federation?.length ?? 0}`);
