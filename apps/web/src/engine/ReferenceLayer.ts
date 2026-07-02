@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clipSegmentAabb, type DwgUnderlay } from '@figcad/interop/dwg-underlay';
+import type { MaterialOverride } from '@figcad/core';
 import type { Engine } from './Engine';
 
 /**
@@ -103,6 +104,14 @@ export class ReferenceLayer {
   /** 소스별 객체 정체성(range 평탄화) — AI 매니페스트·픽 정보 공용. 클라 로컬(Y.Doc 밖). */
   private identity = new Map<string, ReferenceMeshGroup[]>();
   private planFlipped = false; // plan 직교뷰 X 반사 상태 — 언더레이 텍스트 스프라이트 역-flip용
+  /** 재질 오버라이드 조회(주입) — MaterialReconciler가 store.listMaterialOverrides를 연결. 클라 로컬 읽기만. */
+  private overrideProvider: ((sourceId: string) => MaterialOverride[]) | null = null;
+  /**
+   * 소스별 오버라이드 재질 캐시 (`${color}|${opacity}` 키). **소스별 격리 필수** —
+   * disposeGroup(remove/clear)이 attached 재질을 전부 dispose하므로 교차 소스 공유 캐시는
+   * 한 소스 제거가 다른 소스 재질을 파괴한다.
+   */
+  private paintMats = new Map<string, Map<string, THREE.MeshLambertMaterial>>();
 
   constructor(private engine: Engine) {
     this.group.name = 'figcad-reference';
@@ -124,6 +133,7 @@ export class ReferenceLayer {
       color: CLAY_COLOR,
       side: THREE.DoubleSide,
     });
+    g.userData['clayMat'] = mat; // 오버라이드 해제(클레이 복원)·기본 재질 인덱스 0용 핸들
     const identity: ReferenceMeshGroup[] = [];
     for (const m of result.meshes) {
       const geo = new THREE.BufferGeometry();
@@ -163,6 +173,117 @@ export class ReferenceLayer {
     }
     this.sources.set(name, g);
     this.group.add(g);
+    // 재-add(리로드·projectOrigin 변경) 자가치유 — 새 클레이 재질 위에 오버라이드 즉시 재적용.
+    this.applyMaterialOverrides(name);
+    this.engine.requestRender();
+  }
+
+  /** MaterialReconciler가 주입 — 소스의 현재 오버라이드 목록 조회 함수. */
+  setOverrideProvider(fn: (sourceId: string) => MaterialOverride[]): void {
+    this.overrideProvider = fn;
+  }
+
+  /**
+   * 재질 오버라이드 적용 — 소스의 메시 재질을 현재 오버라이드로 재구성.
+   * 해석: category 오버라이드 > 소스 전체(category 부재) 오버라이드 > 클레이.
+   * .3dm 병합 메시 = geometry.addGroup + 재질 배열 (non-indexed → group 단위=정점 인덱스=tri×3).
+   * range는 interop이 레이어-연속으로 정렬해 방출 → 인접 동일 재질 coalesce = 레이어당 1 run
+   * (draw call ≈ 1 + 2×페인트레이어, 미페인트=단일 재질 1 draw call 현행 유지 — 예산 ≤100).
+   * faceIndex 정체성(refGroups 이진탐색)은 버퍼 불변이라 무손상.
+   */
+  applyMaterialOverrides(name: string): void {
+    const g = this.sources.get(name);
+    if (!g || g.userData['isUnderlay']) return;
+    const clay = g.userData['clayMat'] as THREE.MeshLambertMaterial | undefined;
+    if (!clay) return; // 언더레이/데모 외 메시 소스만 대상
+    const overrides = this.overrideProvider?.(name) ?? [];
+    const byCategory = new Map<string, MaterialOverride>();
+    let wholeSource: MaterialOverride | null = null;
+    for (const o of overrides) {
+      if (o.category === undefined) wholeSource = o;
+      else byCategory.set(o.category, o);
+    }
+    const resolve = (category?: string): MaterialOverride | null =>
+      (category !== undefined ? byCategory.get(category) : undefined) ?? wholeSource;
+
+    const cache = this.paintMats.get(name) ?? new Map<string, THREE.MeshLambertMaterial>();
+    this.paintMats.set(name, cache);
+    const used = new Set<string>();
+    const matFor = (o: MaterialOverride): THREE.MeshLambertMaterial => {
+      const key = `${o.color}|${o.opacity}`;
+      used.add(key);
+      let m = cache.get(key);
+      if (!m) {
+        m = new THREE.MeshLambertMaterial({
+          color: o.color,
+          side: THREE.DoubleSide,
+          transparent: o.opacity < 1,
+          opacity: o.opacity,
+          depthWrite: o.opacity >= 1, // 반투명만 off (유리 선례) — 전역 clippingPlanes는 자동 적용
+        });
+        cache.set(key, m);
+      }
+      return m;
+    };
+
+    for (const child of g.children) {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) continue; // 와이어 에지(LineSegments) 등 제외
+      const geo = mesh.geometry as THREE.BufferGeometry;
+      const groups = mesh.userData['refGroups'] as ReferenceMeshGroup[] | undefined;
+      if (!groups) {
+        // 메시 전체 = 한 객체 (glTF/IFC/figcad-room) — 카테고리(IFC=ifcType) 또는 소스 전체
+        const obj = mesh.userData['refObject'] as ReferenceMeshGroup | undefined;
+        const o = resolve(obj?.category);
+        mesh.material = o ? matFor(o) : clay;
+        continue;
+      }
+      // .3dm 병합 메시 — run 수집(coalesce) 후 전부 클레이면 단일 재질로 환원(그룹 오버헤드 0)
+      const totalTris = geo.getAttribute('position').count / 3;
+      const mats: THREE.Material[] = [clay];
+      const matIdx = new Map<THREE.Material, number>([[clay, 0]]);
+      const idxFor = (m: THREE.Material): number => {
+        let i = matIdx.get(m);
+        if (i === undefined) {
+          i = mats.length;
+          mats.push(m);
+          matIdx.set(m, i);
+        }
+        return i;
+      };
+      const runs: { start: number; count: number; idx: number }[] = [];
+      const pushSeg = (startTri: number, endTri: number, idx: number): void => {
+        if (endTri <= startTri) return;
+        const last = runs[runs.length - 1];
+        if (last && last.idx === idx && last.start + last.count === startTri) {
+          last.count += endTri - startTri; // 인접 동일 재질 coalesce
+        } else {
+          runs.push({ start: startTri, count: endTri - startTri, idx });
+        }
+      };
+      let cursor = 0;
+      for (const r of groups) {
+        if (r.start > cursor) pushSeg(cursor, r.start, 0); // range 틈(방어) = 클레이
+        const o = resolve(r.category);
+        pushSeg(r.start, r.start + r.count, o ? idxFor(matFor(o)) : 0);
+        cursor = Math.max(cursor, r.start + r.count);
+      }
+      if (cursor < totalTris) pushSeg(cursor, totalTris, 0); // 캡(MAX_GROUPS) 초과 잔여 = 클레이
+      geo.clearGroups();
+      if (mats.length === 1) {
+        mesh.material = clay; // 오버라이드 없음 — 현행 단일 재질 경로 그대로
+      } else {
+        for (const run of runs) geo.addGroup(run.start * 3, run.count * 3, run.idx);
+        mesh.material = mats;
+      }
+    }
+    // 이번 적용에 안 쓰인 캐시 재질 dispose (재도색 누수 방지 — attached는 전부 used에 있음)
+    for (const [key, m] of cache) {
+      if (!used.has(key)) {
+        m.dispose();
+        cache.delete(key);
+      }
+    }
     this.engine.requestRender();
   }
 
@@ -387,6 +508,7 @@ export class ReferenceLayer {
 
   remove(name: string): void {
     this.identity.delete(name);
+    this.paintMats.delete(name); // attached 재질은 disposeGroup이 dispose(미사용분은 apply 때 이미 정리)
     const g = this.sources.get(name);
     if (!g) return;
     this.disposeGroup(g);
@@ -403,6 +525,7 @@ export class ReferenceLayer {
     }
     this.sources.clear();
     this.identity.clear();
+    this.paintMats.clear();
     this.updateGridVisibility();
     this.engine.requestRender();
   }

@@ -33,6 +33,7 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
       { label: '커튼월', icon: 'window', tool: 'curtainwall' },
       { label: '존', icon: 'box', tool: 'zone' },
       { label: '오브젝트', icon: 'tree', tool: 'asset' }, // 엔투라지(나무·사람·차·관목) 배치(항목7)
+      { label: '페인트', icon: 'paint', tool: 'paint' }, // 재질(색+투명도) — 네이티브=타입, 임포트=레이어
     ],
   },
   {

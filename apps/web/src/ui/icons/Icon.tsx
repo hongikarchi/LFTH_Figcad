@@ -10,7 +10,11 @@ import {
   MousePointer2,
   Move,
   MoveHorizontal,
+  PaintBucket,
   Pencil,
+  Pipette,
+  Eraser,
+  List,
   Plus,
   RotateCw,
   Scissors,
@@ -67,6 +71,10 @@ const LUCIDE: Record<string, LucideIcon> = {
   fit: Maximize,
   'fit-selection': Focus,
   tree: TreePine,
+  paint: PaintBucket,
+  eyedropper: Pipette,
+  eraser: Eraser,
+  list: List,
 };
 
 // 건축 요소 = 커스텀 라인 글리프 (24×24, fill none, stroke=currentColor)

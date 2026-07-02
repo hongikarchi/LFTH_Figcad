@@ -8,6 +8,9 @@ import { z } from 'zod';
  */
 
 export const CORE_SCHEMA_VERSION = 6; // v2 코멘트 · v3 도면뷰 · v4 federation · v5 projectOrigin · v6 viewpoints(저장 단면) (구버전 부재→없음 호환)
+// additive 확장 (bump 없음, federation 'dxf' 전례): 타입 opacity 렌더힌트 + 'materials' 채널(임포트 재질 오버라이드).
+// ⚠ 알려진 롤아웃 창 한계: 타입=whole-object LWW라 **구빌드 탭이 타입을 편집하면 opacity가 strip**되어
+// 전원에게서 소실(dxf 전례는 fail-parse=쓰기 불가였지만 unknown key는 strip=fail-open). 배포 후 열린 탭 새로고침 권장.
 
 export type Id = string;
 
@@ -66,6 +69,7 @@ export const WallTypeSchema = z.object({
   name: z.string(),
   thickness: mm,
   color: z.string(), // 렌더 힌트 (#rrggbb)
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — SketchStyle 선례(mm-정수 예외), 부재=1(불투명)
   // IFC 무손실 export용 예약: materialLayers, axisCurve('line'|'arc')
 });
 export type WallType = z.infer<typeof WallTypeSchema>;
@@ -75,6 +79,7 @@ export const OpeningTypeSchema = z.object({
   kind: z.literal('opening'),
   name: z.string(),
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
   opening: z.object({
     kind: z.enum(['door', 'window']),
     width: mm,
@@ -90,6 +95,7 @@ export const SlabTypeSchema = z.object({
   name: z.string(),
   thickness: mm,
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
 });
 export type SlabType = z.infer<typeof SlabTypeSchema>;
 
@@ -99,6 +105,7 @@ export const ColumnTypeSchema = z.object({
   name: z.string(),
   section: SectionSchema,
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
 });
 export type ColumnType = z.infer<typeof ColumnTypeSchema>;
 
@@ -108,6 +115,7 @@ export const BeamTypeSchema = z.object({
   name: z.string(),
   section: SectionSchema, // width=수평(축 직각), depth=수직(춤)
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
 });
 export type BeamType = z.infer<typeof BeamTypeSchema>;
 
@@ -118,6 +126,7 @@ export const StairTypeSchema = z.object({
   width: mm, // 계단 폭
   riser: mm, // 목표 단높이 — 단수 결정 (단수 = round(총상승/riser), 실 단높이 = 총상승/단수)
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
   // 디딤판 깊이(going)는 파생: 주행/단수 (a→b 길이를 단수로 나눔)
 });
 export type StairType = z.infer<typeof StairTypeSchema>;
@@ -129,6 +138,7 @@ export const RailingTypeSchema = z.object({
   height: mm, // 난간 높이 (상부레일 윗면)
   postSpacing: mm, // 포스트 간격 목표 — 끝맞춤 균등 재계산
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
 });
 export type RailingType = z.infer<typeof RailingTypeSchema>;
 
@@ -138,6 +148,7 @@ export const RoofTypeSchema = z.object({
   name: z.string(),
   thickness: mm,
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
 });
 export type RoofType = z.infer<typeof RoofTypeSchema>;
 
@@ -147,6 +158,7 @@ export const CurtainWallTypeSchema = z.object({
   name: z.string(),
   mullionSection: SectionSchema, // 멀리언 단면 (보통 rect 50×100 등)
   color: z.string(),
+  opacity: z.number().min(0).max(1).optional(), // 렌더 힌트 float — 부재=1
 });
 export type CurtainWallType = z.infer<typeof CurtainWallTypeSchema>;
 
@@ -600,6 +612,31 @@ export const FederationSourceSchema = z.object({
     .optional(),
 });
 export type FederationSource = z.infer<typeof FederationSourceSchema>;
+
+/**
+ * 임포트(연동) 모델 재질 오버라이드 — 요소 아닌 별도 채널(ydoc 'materials' 맵). 페인트 도구가
+ * 연동 모델을 그룹 단위로 도색: .3dm=Rhino 레이어(fullPath) · IFC=ifcType 카테고리 · 그 외(glTF 등)=소스 전체.
+ * 키 = materialOverrideKey(sourceId, category) — **결정적**: 두 사용자가 같은 레이어를 칠하면
+ * 같은 키에 수렴(엔트리별 LWW, 중복 엔트리 없음). category 없는 키 = 소스 전체(카테고리 오버라이드의 fallback).
+ * **키 파싱 금지** — 소비자는 항상 sourceId/category 필드를 읽는다(키는 수렴용 정체성일 뿐).
+ * 렌더 힌트라 float opacity 허용(SketchStyle 선례). 네이티브 요소 도색은 이 채널이 아니라 type.color/opacity.
+ * 소스 제거 시 오버라이드는 비추적 origin으로 연쇄 정리(undo 스코프 밖 — store.removeFederationSource 참조).
+ */
+export const MaterialOverrideSchema = z.object({
+  id: z.string(), // = materialOverrideKey(sourceId, category)
+  sourceId: z.string(), // FederationSource id
+  category: z.string().optional(), // .3dm=Rhino 레이어 fullPath · IFC=ifcType · 부재=소스 전체
+  color: z.string(), // #rrggbb
+  opacity: z.number().min(0).max(1),
+  author: z.string().optional(),
+  ts: z.number().int(), // epoch ms
+});
+export type MaterialOverride = z.infer<typeof MaterialOverrideSchema>;
+
+/** 오버라이드 결정적 키 — 구분자 U+001F(unit separator): Rhino fullPath에 '|'·'::' 가능, nanoid엔 제어문자 없음 */
+export function materialOverrideKey(sourceId: string, category?: string): string {
+  return category === undefined ? sourceId : `${sourceId}${category}`;
+}
 
 export interface DocMeta {
   schemaVersion: number;

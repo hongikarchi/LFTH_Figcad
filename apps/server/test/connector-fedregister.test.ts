@@ -46,6 +46,25 @@ describe('커넥터 ?op=fed-register (Lane-2 통과)', () => {
     expect(srcs[0].ref).toBe(REF2); // 최신으로 교체
   });
 
+  it('replace: 사용자 재질 도색(materials)이 새 소스 id로 이관 — 재푸시가 도색 안 날림', async () => {
+    const store = new DocStore();
+    const r1 = await fedRegister(store, { name: 'Lane-2 잔여 · PushBreps', sourceType: '3dm', ref: REF, replace: 'lane2' });
+    store.setMaterialOverride({ sourceId: r1.json.id, category: '3F::Walls', color: '#ff0000', opacity: 0.5, author: '나' });
+    store.setMaterialOverride({ sourceId: r1.json.id, color: '#0000ff', opacity: 1 }); // 소스 전체
+    const REF2 = `https://x/parties/doc/${ROOM}?op=fed-blob&key=${encodeURIComponent(`federation/${ROOM}/def456.3dm`)}`;
+    const r2 = await fedRegister(store, { name: 'Lane-2 잔여 · PushBreps', sourceType: '3dm', ref: REF2, replace: 'lane2' });
+    expect(store.listFederationSources().length).toBe(1);
+    // 구 id 오버라이드 = 캐스케이드로 정리, 새 id로 동일 category·색 이관
+    expect(store.listMaterialOverrides(r1.json.id).length).toBe(0);
+    const carried = store.listMaterialOverrides(r2.json.id);
+    expect(carried.length).toBe(2);
+    const layer = store.getMaterialOverride(r2.json.id, '3F::Walls');
+    expect(layer?.color).toBe('#ff0000');
+    expect(layer?.opacity).toBe(0.5);
+    expect(layer?.author).toBe('나');
+    expect(store.getMaterialOverride(r2.json.id)?.color).toBe('#0000ff');
+  });
+
   it('다른 이름은 교체 안 함(각각 등록)', async () => {
     const store = new DocStore();
     await fedRegister(store, { name: 'Lane-2 A', sourceType: '3dm', ref: REF, replace: 'lane2' });

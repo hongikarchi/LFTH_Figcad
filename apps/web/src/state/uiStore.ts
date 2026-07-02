@@ -23,7 +23,8 @@ export type ToolName =
   | 'sketch-pen'
   | 'comment'
   | 'section'
-  | 'elevation';
+  | 'elevation'
+  | 'paint';
 export type TypeKind =
   | 'wall'
   | 'door'
@@ -54,10 +55,10 @@ export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
  * AI 도구(스케치)는 mode 아닌 AI dock서 무장. 도면(단면·입면)은 DrawingPanel서 진입.
  */
 export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
-  review: ['select', 'measure', 'sketch', 'sketch-pen', 'comment', 'label'],
+  review: ['select', 'measure', 'paint', 'sketch', 'sketch-pen', 'comment', 'label'],
   model: [
     'select', 'wall', 'door', 'window', 'slab', 'grid', 'column', 'beam',
-    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'asset', 'measure', 'label', 'sketch-pen',
+    'stair', 'railing', 'roof', 'curtainwall', 'zone', 'asset', 'measure', 'label', 'sketch-pen', 'paint',
   ],
   hub: ['select'],
 };
@@ -69,6 +70,13 @@ export const DEFAULT_SKETCH_STYLE: SketchStyle = {
   width: 3,
   lineType: 'solid',
 };
+
+/** 페인트(재질) 도구 스타일 — 색+불투명도만 v1 (텍스처 v2). PaintTool·PaintContext가 소비. */
+export interface PaintStyle {
+  color: string;
+  opacity: number;
+}
+export const DEFAULT_PAINT_STYLE: PaintStyle = { color: '#b08d57', opacity: 1 };
 
 /** AI 모델 선택 (서버 allowlist와 동기) — 정확(opus)/균형(sonnet)/빠름(haiku). */
 export type AiModelId = 'claude-opus-4-8' | 'claude-sonnet-4-6' | 'claude-haiku-4-5-20251001';
@@ -125,6 +133,10 @@ interface UiState {
   sketchMode: 'line' | 'zone';
   /** 오브젝트(엔투라지) 배치 종류 (항목7) — AssetTool이 createAsset에 사용 */
   assetKind: AssetKind;
+  /** 페인트(재질) 도구 — 색+불투명도·모드(칠하기/지우기)·스포이드 (PaintTool이 소비) */
+  paintStyle: PaintStyle;
+  paintMode: 'paint' | 'erase';
+  paintEyedropper: boolean;
   /** 디바이스 클래스 (모바일 반응형) — 폰이면 모바일 셸(바텀바·시트), 아니면 현행 레일 */
   device: DeviceClass;
   /** 폰 바텀시트 콘텐츠 (폰 전용) */
@@ -138,6 +150,9 @@ interface UiState {
   setSketchStyle: (patch: Partial<SketchStyle>) => void;
   setSketchMode: (m: 'line' | 'zone') => void;
   setAssetKind: (k: AssetKind) => void;
+  setPaintStyle: (patch: Partial<PaintStyle>) => void;
+  setPaintMode: (m: 'paint' | 'erase') => void;
+  setPaintEyedropper: (v: boolean) => void;
   setSelection: (ids: Id[]) => void;
   setEditAction: (a: EditAction | null) => void;
   setArrayCount: (n: number) => void;
@@ -196,6 +211,9 @@ export const useUiStore = create<UiState>((set) => ({
   sketchStyle: { ...DEFAULT_SKETCH_STYLE },
   sketchMode: 'line',
   assetKind: 'tree',
+  paintStyle: { ...DEFAULT_PAINT_STYLE },
+  paintMode: 'paint',
+  paintEyedropper: false,
   device: 'desktop', // useDeviceClass가 mount 전 matchMedia로 교정(폰이면 'phone')
   phoneSheet: null,
   clip: null,
@@ -229,6 +247,9 @@ export const useUiStore = create<UiState>((set) => ({
   setSketchStyle: (patch) => set((s) => ({ sketchStyle: { ...s.sketchStyle, ...patch } })),
   setSketchMode: (sketchMode) => set({ sketchMode }),
   setAssetKind: (assetKind) => set({ assetKind }),
+  setPaintStyle: (patch) => set((s) => ({ paintStyle: { ...s.paintStyle, ...patch } })),
+  setPaintMode: (paintMode) => set({ paintMode }),
+  setPaintEyedropper: (paintEyedropper) => set({ paintEyedropper }),
   setViewMode: (viewMode) => set({ viewMode }),
   // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor)
   setMode: (activeMode) =>

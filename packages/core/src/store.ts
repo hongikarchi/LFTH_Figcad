@@ -6,6 +6,8 @@ import {
   CORE_SCHEMA_VERSION,
   DrawingViewSchema,
   FederationSourceSchema,
+  MaterialOverrideSchema,
+  materialOverrideKey,
   ElementSchema,
   ElemTypeSchema,
   LevelSchema,
@@ -31,6 +33,7 @@ import {
   type Viewpoint,
   type DrawingView,
   type FederationSource,
+  type MaterialOverride,
   type ZoneElement,
   type StairElement,
   type TextElement,
@@ -206,6 +209,8 @@ export interface DocSnapshot {
   federation?: FederationSource[];
   /** 뷰포인트(저장 단면) (v6). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
   viewpoints?: Viewpoint[];
+  /** 임포트 재질 오버라이드 (additive, v6 유지). 구버전 스냅샷엔 부재 — 읽을 때 [] 기본 */
+  materials?: MaterialOverride[];
 }
 
 export type DocObserver = (change: DocChange) => void;
@@ -219,6 +224,13 @@ export type ElemTypeInput = ElemType extends infer T
 
 /** 이 클라이언트의 로컬 변경 origin — UndoManager trackedOrigins와 일치 */
 export const LOCAL_ORIGIN: object = { figcad: 'local' };
+
+/**
+ * 연쇄 정리 origin — undo **비추적**. 소스 제거(removeFederationSource, federation은 undo 밖)에
+ * 딸린 재질 오버라이드 정리가 LOCAL_ORIGIN이면 undo 스택에 정리만 남아 Ctrl+Z가
+ * "소스는 안 돌아오고 오버라이드만 부활"하는 좀비 스텝이 됨.
+ */
+const CLEANUP_ORIGIN: object = { figcad: 'cleanup' };
 
 /**
  * 문서 스토어 — 앱 코드가 문서를 만지는 유일한 표면 (불변 규칙 2).
@@ -243,6 +255,7 @@ export class DocStore {
   private yViewpoints: Y.Map<unknown>;
   private yViews: Y.Map<unknown>;
   private yFederation: Y.Map<unknown>;
+  private yMaterials: Y.Map<unknown>;
 
   // 읽기 미러 (Yjs 이벤트로만 갱신)
   private levels = new Map<Id, Level>();
@@ -252,6 +265,7 @@ export class DocStore {
   private viewpoints = new Map<Id, Viewpoint>();
   private views = new Map<Id, DrawingView>();
   private federationSources = new Map<Id, FederationSource>();
+  private materials = new Map<Id, MaterialOverride>();
   private observers = new Set<DocObserver>();
 
   // 원격 머지 판별(M13-B): "원격"=다른 사용자의 라이브 편집. 로컬 출신(LOCAL_ORIGIN ops·undo·
@@ -269,6 +283,7 @@ export class DocStore {
     this.yViewpoints = this.ydoc.getMap('viewpoints');
     this.yViews = this.ydoc.getMap('views');
     this.yFederation = this.ydoc.getMap('federation');
+    this.yMaterials = this.ydoc.getMap('materials');
 
     // 기존 콘텐츠(프로바이더/캐시에서 온 doc) 미러 초기화
     for (const id of this.yLevels.keys()) this.mirrorLevel(id);
@@ -278,6 +293,7 @@ export class DocStore {
     for (const id of this.yViewpoints.keys()) this.mirrorViewpoint(id);
     for (const id of this.yViews.keys()) this.mirrorView(id);
     for (const id of this.yFederation.keys()) this.mirrorFederationSource(id);
+    for (const id of this.yMaterials.keys()) this.mirrorMaterial(id);
 
     this.yLevels.observe((e) => {
       const change: DocChange = { added: [], updated: [], removed: [] };
@@ -371,6 +387,15 @@ export class DocStore {
       }
       this.notifyAll();
     });
+    // 임포트 재질 오버라이드 = 평면 JSON 엔트리(요소 아님). 변경 시 빈 통지 →
+    // MaterialReconciler가 ReferenceLayer 재질 재적용. 요소 재파생엔 안 섞임.
+    this.yMaterials.observe((e) => {
+      for (const [id, c] of e.changes.keys) {
+        if (c.action === 'delete') this.materials.delete(id);
+        else this.mirrorMaterial(id);
+      }
+      this.notifyAll();
+    });
   }
 
   private mirrorComment(id: Id): void {
@@ -391,6 +416,11 @@ export class DocStore {
   private mirrorFederationSource(id: Id): void {
     const parsed = FederationSourceSchema.safeParse(this.yFederation.get(id));
     if (parsed.success) this.federationSources.set(id, parsed.data);
+  }
+
+  private mirrorMaterial(id: Id): void {
+    const parsed = MaterialOverrideSchema.safeParse(this.yMaterials.get(id));
+    if (parsed.success) this.materials.set(id, parsed.data);
   }
 
   private mirrorLevel(id: Id): void {
@@ -560,6 +590,8 @@ export class DocStore {
     const prev = this.types.get(id);
     if (!prev) return;
     const next: Record<string, unknown> = { ...prev, ...patch, id, kind: prev.kind };
+    // opacity: undefined 패치 = 키 제거(불투명 복원) — undefined를 Y.Map JSON에 남기지 않음
+    if ('opacity' in next && next['opacity'] === undefined) delete next['opacity'];
     if (typeof next['thickness'] === 'number') next['thickness'] = quantize(next['thickness']);
     for (const k of ['section', 'mullionSection'] as const) {
       if (next[k] && typeof next[k] === 'object') {
@@ -1302,10 +1334,18 @@ export class DocStore {
     return id;
   }
 
-  /** 소스 제거 — reconciler가 ReferenceLayer에서 해당 메시 unload */
+  /** 소스 제거 — reconciler가 ReferenceLayer에서 해당 메시 unload. 재질 오버라이드 연쇄 정리(비추적) */
   removeFederationSource(id: Id): void {
     if (!this.federationSources.has(id)) return;
     this.transact(() => this.yFederation.delete(id));
+    // CLEANUP_ORIGIN 별도 transact — undo 좀비 방지(상단 상수 주석). 동시 페인트와 경합하면
+    // 고아 엔트리가 남을 수 있음 — 렌더는 미로드 소스 방어적 스킵, clearMaterialOverrides()로 정리 가능.
+    const orphans = [...this.materials.values()].filter((m) => m.sourceId === id).map((m) => m.id);
+    if (orphans.length) {
+      this.ydoc.transact(() => {
+        for (const k of orphans) this.yMaterials.delete(k);
+      }, CLEANUP_ORIGIN);
+    }
   }
 
   /** 가시성 토글 (글로벌 동기화 — 엔트리별 LWW) */
@@ -1335,6 +1375,64 @@ export class DocStore {
   }
   getFederationSource(id: Id): FederationSource | undefined {
     return this.federationSources.get(id);
+  }
+
+  // ===== 임포트 재질 오버라이드 — 별도 'materials' 채널(additive). 페인트 도구가 연동 모델을
+  // 그룹 단위(.3dm=레이어·IFC=ifcType·그 외=소스 전체) 도색. 엔트리별 LWW + 결정적 키(수렴).
+  // 코멘트/뷰와 달리 undo **추적**(yMaterials가 UndoManager 배열에 포함 — 타입 도색과 일관). =====
+
+  /** 오버라이드 설정/갱신 — 같은 (sourceId, category)는 같은 키에 수렴. 반환 = 키 */
+  setMaterialOverride(params: {
+    sourceId: Id;
+    category?: string;
+    color: string;
+    opacity: number;
+    author?: string;
+  }): Id {
+    const id = materialOverrideKey(params.sourceId, params.category);
+    // no-op 가드 — 같은 색·불투명도 재도색은 무기록(ts만 다른 죽은 undo 스텝 + 시그니처 불변이라
+    // 렌더 무변화 = "undo가 안 먹는" 착시 방지. MaterialReconciler 시그니처가 ts 제외인 것과 짝).
+    const prev = this.materials.get(id);
+    if (prev && prev.color === params.color && prev.opacity === params.opacity) return id;
+    const v = MaterialOverrideSchema.parse({
+      id,
+      sourceId: params.sourceId,
+      ...(params.category !== undefined ? { category: params.category } : {}),
+      color: params.color,
+      opacity: params.opacity,
+      ...(params.author !== undefined ? { author: params.author } : {}),
+      ts: Date.now(),
+    });
+    this.transact(() => this.yMaterials.set(id, v));
+    return id;
+  }
+
+  /** 오버라이드 제거(클레이 복원) — 없으면 no-op. 반환 = 제거 여부 */
+  clearMaterialOverride(sourceId: Id, category?: string): boolean {
+    const id = materialOverrideKey(sourceId, category);
+    if (!this.materials.has(id)) return false;
+    this.transact(() => this.yMaterials.delete(id));
+    return true;
+  }
+
+  /** 일괄 제거 — sourceId 지정 시 그 소스만, 생략 시 전부. 단일 transact = undo 1스텝. 반환 = 제거 수 */
+  clearMaterialOverrides(sourceId?: Id): number {
+    const keys = [...this.materials.values()]
+      .filter((m) => sourceId === undefined || m.sourceId === sourceId)
+      .map((m) => m.id);
+    if (!keys.length) return 0;
+    this.transact(() => {
+      for (const k of keys) this.yMaterials.delete(k);
+    });
+    return keys.length;
+  }
+
+  listMaterialOverrides(sourceId?: Id): MaterialOverride[] {
+    const all = [...this.materials.values()];
+    return sourceId === undefined ? all : all.filter((m) => m.sourceId === sourceId);
+  }
+  getMaterialOverride(sourceId: Id, category?: string): MaterialOverride | undefined {
+    return this.materials.get(materialOverrideKey(sourceId, category));
   }
 
   // ===== 편집 ops (M3.5) — 전부 단일 transact = undo 1스텝, 협업 원자적 =====
@@ -1679,6 +1777,7 @@ export class DocStore {
       viewpoints: [...this.viewpoints.values()],
       views: [...this.views.values()],
       federation: [...this.federationSources.values()],
+      materials: [...this.materials.values()],
     };
   }
 
@@ -1728,6 +1827,11 @@ export class DocStore {
       const p = FederationSourceSchema.safeParse(v);
       if (p.success) federation.push(p.data);
     }
+    const materials: MaterialOverride[] = [];
+    for (const v of ydoc.getMap('materials').values()) {
+      const p = MaterialOverrideSchema.safeParse(v);
+      if (p.success) materials.push(p.data);
+    }
     const po = yMeta.get('projectOrigin');
     const cp = yMeta.get('connectorPush');
     return {
@@ -1745,6 +1849,7 @@ export class DocStore {
       viewpoints,
       views,
       federation,
+      materials,
     };
   }
 
@@ -1770,6 +1875,8 @@ export class DocStore {
       for (const v of snap.views ?? []) store.yViews.set(v.id, DrawingViewSchema.parse(v));
       for (const s of snap.federation ?? [])
         store.yFederation.set(s.id, FederationSourceSchema.parse(s));
+      for (const m of snap.materials ?? [])
+        store.yMaterials.set(m.id, MaterialOverrideSchema.parse(m));
     }, LOCAL_ORIGIN);
     return store;
   }
@@ -1804,6 +1911,11 @@ export class DocStore {
     const federation = replaceFederation
       ? snap.federation!.map((s) => FederationSourceSchema.parse(s))
       : [];
+    // 재질 오버라이드도 직교 채널 — 커밋 복원(materials 부재, canonical 미포함)은 보존, JSON 백업만 교체
+    const replaceMaterials = snap.materials !== undefined;
+    const materials = replaceMaterials
+      ? snap.materials!.map((m) => MaterialOverrideSchema.parse(m))
+      : [];
     this.transact(() => {
       for (const k of [...this.yElements.keys()]) this.yElements.delete(k);
       for (const k of [...this.yLevels.keys()]) this.yLevels.delete(k);
@@ -1837,6 +1949,10 @@ export class DocStore {
       if (replaceFederation) {
         for (const k of [...this.yFederation.keys()]) this.yFederation.delete(k);
         for (const s of federation) this.yFederation.set(s.id, s);
+      }
+      if (replaceMaterials) {
+        for (const k of [...this.yMaterials.keys()]) this.yMaterials.delete(k);
+        for (const m of materials) this.yMaterials.set(m.id, m);
       }
     });
   }
@@ -2020,10 +2136,15 @@ export class DocStore {
   /** 사용자별 undo — 이 클라이언트(LOCAL_ORIGIN)의 변경만 되돌린다 (Figma 의미론) */
   private undoManager?: Y.UndoManager;
   createUndoManager(): Y.UndoManager {
-    this.undoManager = new Y.UndoManager([this.yElements, this.yLevels, this.yTypes], {
-      trackedOrigins: new Set([LOCAL_ORIGIN]),
-      captureTimeout: 350,
-    });
+    // yMaterials 포함 — 임포트 페인트도 undo (타입 페인트=yTypes와 일관. 소스 제거 연쇄 정리는
+    // CLEANUP_ORIGIN이라 비추적). comments/views/federation은 의도적 제외(config 채널).
+    this.undoManager = new Y.UndoManager(
+      [this.yElements, this.yLevels, this.yTypes, this.yMaterials],
+      {
+        trackedOrigins: new Set([LOCAL_ORIGIN]),
+        captureTimeout: 350,
+      },
+    );
     return this.undoManager;
   }
 

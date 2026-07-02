@@ -15,6 +15,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { FederationReconciler } from './engine/FederationReconciler';
+import { MaterialReconciler } from './engine/MaterialReconciler';
 import { FEDERATION_EXTRACTORS, fetchDwgUnderlay } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
 import { HudLayer } from './hud/HudLayer';
@@ -33,6 +34,7 @@ import { MeasureTool } from './tools/MeasureTool';
 import { LabelTool } from './tools/LabelTool';
 import { SketchTool } from './tools/SketchTool';
 import { MarkupTool } from './tools/MarkupTool';
+import { PaintTool } from './tools/PaintTool';
 import { CommentTool } from './tools/CommentTool';
 import { SectionTool } from './tools/SectionTool';
 import { ZoneTool } from './tools/ZoneTool';
@@ -111,6 +113,8 @@ const sceneManager = new SceneManager(store, engine, hud);
 const referenceLayer = new ReferenceLayer(engine);
 referenceLayer.setPlanFlipped(useUiStore.getState().viewMode === 'plan'); // 초기 모드 반영(뷰모드 변경 훅이 init엔 안 불림 → 평면서 업로드 시 텍스트 미러 방지)
 const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS, fetchDwgUnderlay);
+// 재질 오버라이드(materials 채널) → ReferenceLayer 재질 재적용 (페인트 도구 — 임포트 레이어/카테고리 도색)
+new MaterialReconciler(store, referenceLayer);
 const diffOverlay = new DiffOverlay(engine.scene); // 버전 비교 3D 오버레이(항목4) — VersionPanel이 previewDiff로 구동
 
 // 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.
@@ -309,6 +313,7 @@ tools.register('sketch-pen', new MarkupTool(ctx));
 tools.register('comment', new CommentTool(ctx));
 tools.register('section', new SectionTool(ctx, 'section'));
 tools.register('elevation', new SectionTool(ctx, 'elevation'));
+tools.register('paint', new PaintTool(ctx)); // 재질 페인트 — 네이티브=타입, 임포트=레이어/카테고리 도색
 tools.setActive(useUiStore.getState().activeTool);
 
 // --- 협업: 프로바이더 + presence + 사용자별 undo ---

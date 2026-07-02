@@ -584,6 +584,7 @@ export const CAPABILITIES: Capability[] = [
         riser: { type: 'integer', description: '계단 목표 단높이 mm (kind=stair 필수)' },
         height: { type: 'integer', description: '난간 높이 mm (kind=railing 필수)' },
         postSpacing: { type: 'integer', description: '난간 포스트 간격 mm (kind=railing 필수)' },
+        opacity: { type: 'number', description: '렌더 불투명도 0~1 float (생략=1 불투명)' },
       },
       required: ['kind', 'name'],
       additionalProperties: false,
@@ -655,9 +656,131 @@ export const CAPABILITIES: Capability[] = [
             throw new Error(`unknown type kind: ${String(kind)}`);
         }
       })();
-      return store.addType(input); // id 반환 → applyOpLog createdIds/placeholder 리맵 자동
+      const op = optNum(a['opacity']);
+      const withOpacity = (op !== undefined ? { ...input, opacity: op } : input) as ElemTypeInput;
+      return store.addType(withOpacity); // id 반환 → applyOpLog createdIds/placeholder 리맵 자동
     },
     summary: (a) => `타입 생성 ${a['kind'] ?? '?'} '${a['name'] ?? ''}'`,
+  },
+  {
+    id: 'paint_type',
+    category: 'type',
+    titleKo: '타입 도색',
+    icon: 'paint',
+    descriptionKo:
+      '요소 타입(패밀리)의 렌더 색/불투명도 변경 — 그 타입을 쓰는 모든 요소에 즉시 반영. color 생략=유지, opacity 생략=유지 (1=불투명, 0.5=반투명 — 불투명 복원은 opacity:1).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        typeId: { type: 'string', description: '대상 타입 id (문서 types에서)' },
+        color: { type: 'string', description: '렌더 색 #rrggbb (생략=유지)' },
+        opacity: { type: 'number', description: '불투명도 0~1 float (생략=유지)' },
+      },
+      required: ['typeId'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) => {
+      const typeId = asStr(a['typeId'], 'typeId');
+      if (!store.getType(typeId)) throw new Error(`unknown typeId: ${typeId}`);
+      const patch: Record<string, unknown> = {};
+      if (typeof a['color'] === 'string') patch['color'] = a['color'];
+      const op = optNum(a['opacity']);
+      if (op !== undefined) patch['opacity'] = op;
+      if (!Object.keys(patch).length) throw new Error('color 또는 opacity 중 하나는 필요');
+      store.updateType(typeId, patch);
+    },
+    summary: (a) =>
+      `타입 도색${typeof a['color'] === 'string' ? ` ${a['color']}` : ''}${optNum(a['opacity']) !== undefined ? ` 불투명도 ${a['opacity']}` : ''}`,
+  },
+  {
+    id: 'paint_import_material',
+    category: 'edit',
+    titleKo: '연동 모델 도색',
+    icon: 'paint',
+    descriptionKo:
+      '연동(임포트) 모델 재질 오버라이드 — 그룹 단위 색/불투명도. category: .3dm=Rhino 레이어 fullPath(연동 모델 매니페스트의 레이어명), IFC=ifcType(예 IFCWALL), 생략=소스 전체. sourceId는 get_document의 federation에서.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceId: { type: 'string', description: '연동 모델(federation 소스) id' },
+        category: {
+          type: 'string',
+          description: 'Rhino 레이어 fullPath / IFC ifcType (생략=소스 전체)',
+        },
+        color: { type: 'string', description: '렌더 색 #rrggbb' },
+        opacity: { type: 'number', description: '불투명도 0~1 float (생략=1 불투명)' },
+      },
+      required: ['sourceId', 'color'],
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) => {
+      const sourceId = asStr(a['sourceId'], 'sourceId');
+      const src = store.getFederationSource(sourceId);
+      if (!src) throw new Error(`unknown sourceId: ${sourceId}`);
+      // 2D 언더레이/래스터는 클레이 메시가 아님 — 오버라이드가 렌더에 무시되는 죽은 엔트리만 생김
+      if (['dwg', 'dxf', 'image', 'pdf'].includes(src.sourceType))
+        throw new Error(`2D 언더레이 소스(${src.sourceType})는 도색 대상 아님 — 메시 소스(3dm/ifc/gltf/figcad-room)만`);
+      return store.setMaterialOverride({
+        sourceId,
+        ...(typeof a['category'] === 'string' ? { category: a['category'] as string } : {}),
+        color: asStr(a['color'], 'color'),
+        opacity: optNum(a['opacity']) ?? 1,
+      });
+    },
+    summary: (a) => `연동 모델 도색 ${a['category'] ?? '(소스 전체)'} ${a['color'] ?? ''}`,
+  },
+  {
+    id: 'clear_import_material',
+    category: 'edit',
+    titleKo: '연동 모델 도색 지우기',
+    icon: 'eraser',
+    descriptionKo:
+      '연동 모델 재질 오버라이드 제거(클레이 복원). category 지정=그 그룹만, all:true=그 소스 전체(sourceId 생략 시 문서 전체).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceId: { type: 'string', description: '연동 모델 소스 id (all:true+생략 = 문서 전체)' },
+        category: { type: 'string', description: '지울 그룹 (생략=소스 전체 오버라이드 키)' },
+        all: { type: 'boolean', description: 'true=일괄 제거' },
+      },
+      additionalProperties: false,
+    },
+    mutating: true,
+    aiExposed: true,
+    run: (store, a) => {
+      const sourceId = typeof a['sourceId'] === 'string' ? (a['sourceId'] as string) : undefined;
+      if (a['all'] === true) return store.clearMaterialOverrides(sourceId);
+      if (!sourceId) throw new Error('sourceId 필요 (all:true 없이 개별 제거 시)');
+      return store.clearMaterialOverride(
+        sourceId,
+        typeof a['category'] === 'string' ? (a['category'] as string) : undefined,
+      );
+    },
+    summary: (a) => `연동 모델 도색 지우기 ${a['category'] ?? (a['all'] ? '(일괄)' : '(소스 전체)')}`,
+  },
+  {
+    id: 'list_import_materials',
+    category: 'query',
+    titleKo: '연동 모델 도색 목록',
+    icon: 'list',
+    descriptionKo: '연동 모델 재질 오버라이드 목록 조회 (sourceId 생략=전체).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceId: { type: 'string', description: '연동 모델 소스 id (생략=전체)' },
+      },
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (store, a) =>
+      store.listMaterialOverrides(
+        typeof a['sourceId'] === 'string' ? (a['sourceId'] as string) : undefined,
+      ),
   },
 
   // ===== level =====

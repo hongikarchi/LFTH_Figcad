@@ -94,4 +94,51 @@ describe('import3dmRefs — 블록(InstanceReference) Mesh 정의 멤버 (회귀
     expect(groups[0]!.layer).toBe('L-STRUCT');
     expect(typeof groups[0]!.id).toBe('string'); // uuid 발급됨
   });
+
+  it('레이어별 연속 배치 — 흩어진 객체가 레이어 정렬로 뭉치고 정체성(range↔지오) 무손상', async () => {
+    // 재질 오버라이드(레이어 도색)가 레이어당 1 run으로 coalesce되려면 삼각형이 레이어-연속이어야 함.
+    // 문서 순서 = L-B('b1'@0m), L-A('a1'@동10m), L-B('b2'@동20m) — 인터리브.
+    const rhino = await rhino3dm();
+    const doc = new rhino.File3dm();
+    for (const nm of ['L-B', 'L-A']) {
+      const layer = new rhino.Layer();
+      layer.name = nm;
+      doc.layers().add(layer);
+    }
+    const put = (name: string, layerIndex: number, xMm: number): void => {
+      const at = new rhino.ObjectAttributes();
+      at.name = name;
+      at.layerIndex = layerIndex;
+      const mesh = unitQuad(rhino);
+      // 정점 x 이동(mm) — 그룹↔지오 대응 검증용 시그니처
+      const vl = mesh.vertices();
+      for (let i = 0; i < vl.count; i++) {
+        const p = vl.get(i);
+        vl.set(i, [p[0]! + xMm, p[1]!, p[2]!]);
+      }
+      // @ts-expect-error 런타임 (mesh, attributes)
+      doc.objects().addMesh(mesh, at);
+    };
+    put('b1', 0, 0);
+    put('a1', 1, 10000);
+    put('b2', 0, 20000);
+    const { meshes } = await import3dmRefs(new Uint8Array(doc.toByteArray()));
+    const m = meshes[0]!;
+    const groups = m.groups!;
+    expect(groups.map((g) => g.layer)).toEqual(['L-A', 'L-B', 'L-B']); // 레이어-연속 (stable: b1 < b2)
+    expect(groups.map((g) => g.name)).toEqual(['a1', 'b1', 'b2']);
+    // 정렬·연속·전체 커버 (이진탐색 전제)
+    let cursor = 0;
+    for (const g of groups) {
+      expect(g.start).toBe(cursor);
+      cursor += g.count;
+    }
+    expect(cursor).toBe(m.positions.length / 9);
+    // range↔지오 대응: 각 그룹 삼각형의 world x가 그 객체 오프셋과 일치 (a1=10m, b1=0m, b2=20m)
+    const xOf = (g: (typeof groups)[number]): number => m.positions[g.start * 9]!;
+    expect(xOf(groups[0]!)).toBeGreaterThanOrEqual(10); // a1
+    expect(xOf(groups[0]!)).toBeLessThanOrEqual(11);
+    expect(xOf(groups[1]!)).toBeLessThanOrEqual(1); // b1
+    expect(xOf(groups[2]!)).toBeGreaterThanOrEqual(20); // b2
+  });
 });

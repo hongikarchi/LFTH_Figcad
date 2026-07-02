@@ -133,9 +133,15 @@ export async function handleConnectorRequest(
 
     // replace(멱등 재푸시) — 같은 그룹(MVP: name+sourceType 매칭)의 기존 소스 제거 후 재등록.
     // 재-PushBreps가 잔여 오버레이를 중복 쌓지 않게(정확중첩 차단 = apply ?dedup=1의 오버레이 등가물).
+    // 사용자 재질 도색(materials 채널, sourceId 키)은 제거 전에 걷어서 새 id로 이관 —
+    // 안 하면 removeFederationSource 캐스케이드가 루틴 재푸시마다 전원 도색을 영구 소실시킴(비undo).
+    const carriedPaint: ReturnType<typeof store.listMaterialOverrides> = [];
     if (replace !== undefined) {
       for (const s of store.listFederationSources())
-        if (s.name === name && s.sourceType === sourceType) store.removeFederationSource(s.id);
+        if (s.name === name && s.sourceType === sourceType) {
+          carriedPaint.push(...store.listMaterialOverrides(s.id));
+          store.removeFederationSource(s.id);
+        }
     }
     let id: string;
     try {
@@ -150,6 +156,16 @@ export async function handleConnectorRequest(
       // addFederationSource 내부 FederationSourceSchema.parse 실패(주로 sourceType enum 밖) = 400, not 500.
       return json(400, { error: 'federation 소스 검증 실패 (sourceType enum 확인)' });
     }
+    // 도색 이관 — 같은 category(레이어/ifcType) 키가 새 소스 id로 재키됨. 레이어 구성이 바뀐
+    // 재푸시면 안 맞는 category는 무해한 미적용 엔트리(렌더는 미매칭 스킵, clear로 정리 가능).
+    for (const m of carriedPaint)
+      store.setMaterialOverride({
+        sourceId: id,
+        ...(m.category !== undefined ? { category: m.category } : {}),
+        color: m.color,
+        opacity: m.opacity,
+        ...(m.author !== undefined ? { author: m.author } : {}),
+      });
     await persist();
     return json(200, { id });
   }

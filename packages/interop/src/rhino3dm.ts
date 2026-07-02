@@ -633,6 +633,14 @@ export function import3dmRefs(
       skipped++; // annotation·point 등
     };
 
+    // 레이어별 삼각형 연속 배치 — 재질 오버라이드(레이어 도색)가 레이어당 1 group run으로
+    // coalesce되게(드로우콜 예산 ≤100 가드: 오브젝트 단위 흩어지면 페인트 시 run 폭발).
+    // stable sort(같은 레이어 내 문서 순서 유지) + 이후 tris 단조 증가 → groups 정렬·연속 불변(이진탐색 무손상).
+    top.sort((a, b) => {
+      const la = a.layer ?? '';
+      const lb = b.layer ?? '';
+      return la < lb ? -1 : la > lb ? 1 : 0;
+    });
     // 객체별 삼각형 range 수집 — tris 단조 증가라 groups는 정렬·연속 보장(이진탐색 가능).
     // 무명 InstanceReference는 인스턴스 정의(블록) 이름 폴백. 캡 초과분 = 소스레벨 이름으로 열화.
     const groups: Rhino3dmObjectRange[] = [];

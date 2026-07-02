@@ -17,14 +17,17 @@ import { ReviewInspector } from './ReviewInspector';
 export function Inspector({ store }: { store: DocStore }) {
   const activeMode = useUiStore((s) => s.activeMode);
   const selection = useUiStore((s) => s.selection);
+  const activeTool = useUiStore((s) => s.activeTool);
   // mode-gated(사용자 결정): 협업 = 선택 요소의 코멘트 스레드, 모델 = 속성. 한 곳서 분기.
   if (activeMode === 'review') {
     // 협업·리뷰에도 주석(치수·레이블) 편집 노출(iter-2 3-1) — 선택이 주석이면 InfoBox 에디터 + 코멘트.
+    // 페인트 도구는 컨텍스트 패널(색·투명도·지우기·스포이드)이 필수라 리뷰에도 InfoBox 마운트
+    // (setTool이 selection을 비우므로 도구 컨텍스트가 렌더됨 — isAnnot과 상호배타).
     const el = selection.length === 1 ? store.getElement(selection[0]!) : undefined;
     const isAnnot = el && (el.kind === 'dimension' || el.kind === 'label' || el.kind === 'text');
     return (
       <div className="inspector">
-        {isAnnot && <InfoBox store={store} />}
+        {(isAnnot || activeTool === 'paint') && <InfoBox store={store} />}
         <ReviewInspector store={store} />
       </div>
     );

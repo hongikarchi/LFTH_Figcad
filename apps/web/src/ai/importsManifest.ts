@@ -57,6 +57,9 @@ export const MANIFEST_CAPS = {
   detailedSources: 8, // objects/layers/textSamples까지 싣는 소스 수 (정렬 후 앞에서부터)
   objects: 30,
   nameChars: 40,
+  // category(Rhino 레이어 fullPath·ifcType)는 paint_import_material의 **정확 일치 키** — 40자 클립이면
+  // 긴 중첩 레이어('A::B::Level 02::…')가 죽은 오버라이드(성공 보고+무변화)가 됨. 별도 넉넉한 캡.
+  categoryChars: 120,
   layers: 30,
   textSamples: 20,
   textChars: 32,
@@ -134,7 +137,7 @@ export function buildImportsManifest(store: DocStore, fed: ImportsProvider): Imp
           const key = clip(nm, MANIFEST_CAPS.nameChars);
           const hit = byName.get(key);
           if (hit) hit.count++;
-          else byName.set(key, { name: key, ...(o.category ? { category: clip(o.category, MANIFEST_CAPS.nameChars) } : {}), count: 1 });
+          else byName.set(key, { name: key, ...(o.category ? { category: clip(o.category, MANIFEST_CAPS.categoryChars) } : {}), count: 1 });
         }
         const summaries = [...byName.values()].sort((a, b2) => b2.count - a.count || a.name.localeCompare(b2.name));
         if (summaries.length) {

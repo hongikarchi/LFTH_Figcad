@@ -83,6 +83,66 @@ function SketchPenContext() {
   );
 }
 
+/**
+ * 페인트 컨텍스트 — 색+불투명도(v1)·모드(칠하기/지우기)·스포이드·전체 지우기. PaintTool이 소비.
+ * 적용 단위: 네이티브 클릭=타입(패밀리) 전체, 임포트 클릭=.3dm 레이어/IFC 카테고리/그 외 소스 전체.
+ */
+function PaintContext({ store }: { store: DocStore }) {
+  const style = useUiStore((s) => s.paintStyle);
+  const mode = useUiStore((s) => s.paintMode);
+  const eyedropper = useUiStore((s) => s.paintEyedropper);
+  const setStyle = useUiStore((s) => s.setPaintStyle);
+  const setMode = useUiStore((s) => s.setPaintMode);
+  const setEyedropper = useUiStore((s) => s.setPaintEyedropper);
+  return (
+    <div className="infobox">
+      <span className="infobox-title">페인트</span>
+      <span className="infobox-field">
+        <label>모드</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value as 'paint' | 'erase')}>
+          <option value="paint">칠하기</option>
+          <option value="erase">지우기 (클레이 복원)</option>
+        </select>
+      </span>
+      <span className="infobox-field">
+        <label>색</label>
+        <input type="color" value={style.color} onChange={(e) => setStyle({ color: e.target.value })} />
+      </span>
+      <span className="infobox-field">
+        <label>투명도</label>
+        <input
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.05}
+          value={style.opacity}
+          onChange={(e) => setStyle({ opacity: Number(e.target.value) })}
+        />
+        <span className="ro">{Math.round(style.opacity * 100)}%</span>
+      </span>
+      <span className="infobox-field">
+        <button
+          className={eyedropper ? 'active' : ''}
+          title="클릭한 대상의 색을 흡수 (Alt+클릭)"
+          onClick={() => setEyedropper(!eyedropper)}
+        >
+          스포이드
+        </button>
+        <button
+          title="연동 모델 도색 전부 제거 (타입 색은 실행취소로)"
+          onClick={() => {
+            if (window.confirm('연동 모델 도색을 전부 지울까요? (클레이 복원)'))
+              store.clearMaterialOverrides();
+          }}
+        >
+          전체 지우기
+        </button>
+      </span>
+      <span className="infobox-hint">요소 클릭=타입 전체 · 연동 모델 클릭=레이어/카테고리 단위</span>
+    </div>
+  );
+}
+
 /** 오브젝트(엔투라지) 컨텍스트 — 종류 선택(나무·사람·차·관목). 배치는 클릭(AssetTool). 항목7. */
 const ASSET_LABELS: { v: 'tree' | 'person' | 'car' | 'bush'; label: string }[] = [
   { v: 'tree', label: '나무' },
@@ -237,6 +297,10 @@ export function renderToolContext(
 
   if (activeTool === 'asset') {
     return <AssetContext />;
+  }
+
+  if (activeTool === 'paint') {
+    return <PaintContext store={store} />;
   }
 
   return null;

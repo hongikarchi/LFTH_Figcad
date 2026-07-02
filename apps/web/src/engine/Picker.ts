@@ -54,6 +54,7 @@ export function raycastHit(
   camera: THREE.Camera,
   roots: THREE.Object3D[],
   skipAnnotation = false,
+  skip?: (o: THREE.Object3D) => boolean,
 ): THREE.Intersection | null {
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -68,12 +69,14 @@ export function raycastHit(
   };
   // skipAnnotation: 주석 픽 프록시(투명 리본 — userData.annotation)는 통과해 뒤의 실지오메트리를 맞춘다
   // (피처 스냅이 보이지 않는 프록시 모서리에 붙는 것 방지 — refSnap 전용, 코멘트 raycastPoint는 기존 유지).
+  // skip: 호출자 추가 통과 조건(예: 페인트 도구 — 언더레이 쿼드·plan 고스트 통과). 미지정=기존 동작.
   return (
     hits.find(
       (h) =>
         (h.object as THREE.Mesh).isMesh &&
         isVisible(h.object) &&
-        (!skipAnnotation || !h.object.userData['annotation']),
+        (!skipAnnotation || !h.object.userData['annotation']) &&
+        (!skip || !skip(h.object)),
     ) ?? null
   ); // 솔리드·보이는 면만
 }

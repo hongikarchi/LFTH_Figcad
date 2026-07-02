@@ -22,6 +22,7 @@ interface SceneEntry {
   mesh: THREE.Mesh;
   edges: THREE.LineSegments;
   baseColor: string;
+  baseOpacity: number; // 타입 도색 opacity (elType.opacity ?? 1) — applyGhosting 복원값의 단일 소스
   kind: string;
   levelId: Id | null; // 그리드 = null (전 층 공통, 고스팅 제외)
   labelKey: string; // 라벨 채널 직렬화 (텍스트+스타일 변경 시만 스프라이트 재생성)
@@ -438,9 +439,12 @@ export class SceneManager {
       entry.levelId !== null &&
       entry.levelId !== this.activeLevelId;
     const mat = entry.mesh.material as THREE.MeshLambertMaterial;
-    const baseOpacity = entry.kind === 'opening:window' ? 0.55 : 1;
+    // 타입 도색 opacity(entry.baseOpacity) 곱 — 복원값을 1/0.55로 하드코딩하면 레벨 전환·고스트
+    // 사이클에서 페인트 불투명도가 소실된다. 미도색(baseOpacity=1)이면 기존 동작과 비트 동일.
+    const baseOpacity = (entry.kind === 'opening:window' ? 0.55 : 1) * entry.baseOpacity;
     mat.transparent = ghosted || baseOpacity < 1;
     mat.opacity = ghosted ? GHOST_OPACITY : baseOpacity;
+    mat.depthWrite = entry.baseOpacity >= 1; // 도색 반투명만 off(유리 선례) — 창 0.55는 기존대로 on
     mat.needsUpdate = true;
     entry.edges.material = ghosted ? this.ghostEdgeMat : this.edgeMat;
     if (entry.glassMesh) {
@@ -471,6 +475,8 @@ export class SceneManager {
             : elType && 'color' in elType
               ? elType.color
               : '#cccccc';
+    // 타입 도색 불투명도 — 타입 없는 kind(grid/sketch/asset/주석)는 elType=undefined → 1(기존 경로 불변)
+    const opacity = elType?.opacity ?? 1;
     const kind =
       el.kind === 'opening' && elType?.kind === 'opening'
         ? `opening:${elType.opening.kind}`
@@ -511,6 +517,7 @@ export class SceneManager {
         mesh,
         edges,
         baseColor: color,
+        baseOpacity: opacity,
         kind,
         levelId,
         labelKey: '',
@@ -526,6 +533,10 @@ export class SceneManager {
     if (entry.baseColor !== color) {
       (entry.mesh.material as THREE.MeshLambertMaterial).color.set(color);
       entry.baseColor = color;
+    }
+    if (entry.baseOpacity !== opacity) {
+      entry.baseOpacity = opacity;
+      this.applyGhosting(entry); // 불투명도 단일 작성자 = applyGhosting (고스트 상태와 합성)
     }
     if (entry.levelId !== levelId || entry.kind !== kind) {
       entry.levelId = levelId;
