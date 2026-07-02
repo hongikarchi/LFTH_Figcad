@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { deriveColumn, snapPoint, type ColumnElement, type ColumnType, type Pt, type SnapResult } from '@figcad/core';
+import { deriveAsset, snapPoint, type AssetElement, type AssetKind, type Pt, type SnapResult } from '@figcad/core';
 import { setBufferGeometry, setLineGeometry } from '../engine/SceneManager';
 import { createSnapMarker, updateSnapMarker } from './snapMarker';
+import { useUiStore } from '../state/uiStore';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 
 const SNAP_PX = 12;
 const GRID_MM = 100;
 
-/** 기둥 배치: 한 점 클릭 (그리드 교차점에 스냅). 호버 = 고스트 + 마커. */
-export class ColumnTool implements Tool {
+/** 오브젝트(엔투라지) 배치(항목7): 한 점 클릭. 종류(assetKind)는 uiStore(InfoBox 셀렉트). 호버=고스트+마커. */
+export class AssetTool implements Tool {
   private ghostMesh: THREE.Mesh;
   private ghostEdges: THREE.LineSegments;
   private marker: THREE.Mesh;
@@ -28,14 +29,14 @@ export class ColumnTool implements Tool {
     ctx.engine.scene.add(this.ghostMesh, this.ghostEdges, this.marker);
   }
 
+  private assetKind(): AssetKind {
+    return useUiStore.getState().assetKind;
+  }
+
   down(info: ToolPointerInfo): void {
     if (!info.doc) return;
     const at = this.snap(info).point;
-    this.ctx.store.createColumn({
-      levelId: this.ctx.levelId(),
-      typeId: this.ctx.typeId('column'),
-      at,
-    });
+    this.ctx.store.createAsset({ levelId: this.ctx.levelId(), assetKind: this.assetKind(), at });
     this.ctx.engine.requestRender();
   }
 
@@ -70,20 +71,19 @@ export class ColumnTool implements Tool {
   }
 
   private updateGhost(at: Pt): void {
-    const type = this.ctx.store.getType(this.ctx.typeId('column')) as ColumnType | undefined;
     const level = this.ctx.store.getLevel(this.ctx.levelId());
-    if (type?.kind !== 'column' || !level) {
+    if (!level) {
       this.ghostMesh.visible = this.ghostEdges.visible = false;
       return;
     }
-    const ghost: ColumnElement = {
+    const ghost: AssetElement = {
       id: '__ghost__',
-      kind: 'column',
+      kind: 'asset',
       levelId: level.id,
-      typeId: type.id,
+      assetKind: this.assetKind(),
       at,
     };
-    const geo = deriveColumn({ column: ghost, type, level });
+    const geo = deriveAsset({ asset: ghost, level });
     setBufferGeometry(this.ghostMesh.geometry, geo.positions, geo.normals);
     setLineGeometry(this.ghostEdges.geometry, geo.edges);
     this.ghostMesh.visible = this.ghostEdges.visible = true;

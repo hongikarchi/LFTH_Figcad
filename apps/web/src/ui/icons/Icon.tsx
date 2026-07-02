@@ -25,6 +25,8 @@ import {
   Undo2,
   Redo2,
   Maximize,
+  Focus,
+  TreePine,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -63,6 +65,8 @@ const LUCIDE: Record<string, LucideIcon> = {
   undo: Undo2,
   redo: Redo2,
   fit: Maximize,
+  'fit-selection': Focus,
+  tree: TreePine,
 };
 
 // 건축 요소 = 커스텀 라인 글리프 (24×24, fill none, stroke=currentColor)

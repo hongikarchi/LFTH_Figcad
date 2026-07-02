@@ -2,7 +2,7 @@ import type { DocStore, Id } from '@figcad/core';
 import { useUiStore, type TypeKind } from '../state/uiStore';
 import { TypeSelect } from './InfoBoxTypeSelect';
 
-/** 펜 종류 선택 — 마크업(영속 저장) vs AI 스케치(손그림→모델 생성). iter-3 S5. */
+/** 펜 종류 선택 — 스케치(영속 저장) vs AI 스케치(손그림→모델 생성). iter-3 S5. (내부 키 'markup' 유지.) */
 function PenTypeSelect({ current }: { current: 'markup' | 'ai' }) {
   return (
     <span className="infobox-field">
@@ -20,14 +20,14 @@ function PenTypeSelect({ current }: { current: 'markup' | 'ai' }) {
           }
         }}
       >
-        <option value="markup">마크업 (저장·공유)</option>
+        <option value="markup">스케치 (저장·공유)</option>
         <option value="ai">AI 스케치 (모델 생성)</option>
       </select>
     </span>
   );
 }
 
-/** 마크업 펜 컨텍스트 — 펜종류 + 색·투명도·굵기·선종류·모드(uiStore). MarkupTool이 createSketch에 사용. */
+/** 스케치 펜 컨텍스트 — 펜종류 + 색·투명도·굵기·선종류·모드(uiStore). MarkupTool이 createSketch에 사용. */
 function SketchPenContext() {
   const style = useUiStore((s) => s.sketchStyle);
   const mode = useUiStore((s) => s.sketchMode);
@@ -35,7 +35,7 @@ function SketchPenContext() {
   const setMode = useUiStore((s) => s.setSketchMode);
   return (
     <div className="infobox">
-      <span className="infobox-title">마크업 펜</span>
+      <span className="infobox-title">스케치 펜</span>
       <PenTypeSelect current="markup" />
       <span className="infobox-field">
         <label>모드</label>
@@ -79,6 +79,34 @@ function SketchPenContext() {
         </select>
       </span>
       <span className="infobox-hint">드래그로 그리기 — 저장·공유됨 (3D서도 가능)</span>
+    </div>
+  );
+}
+
+/** 오브젝트(엔투라지) 컨텍스트 — 종류 선택(나무·사람·차·관목). 배치는 클릭(AssetTool). 항목7. */
+const ASSET_LABELS: { v: 'tree' | 'person' | 'car' | 'bush'; label: string }[] = [
+  { v: 'tree', label: '나무' },
+  { v: 'person', label: '사람' },
+  { v: 'car', label: '자동차' },
+  { v: 'bush', label: '관목' },
+];
+function AssetContext() {
+  const assetKind = useUiStore((s) => s.assetKind);
+  const setAssetKind = useUiStore((s) => s.setAssetKind);
+  return (
+    <div className="infobox">
+      <span className="infobox-title">오브젝트</span>
+      <span className="infobox-field">
+        <label>종류</label>
+        <select value={assetKind} onChange={(e) => setAssetKind(e.target.value as 'tree' | 'person' | 'car' | 'bush')}>
+          {ASSET_LABELS.map((a) => (
+            <option key={a.v} value={a.v}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+      </span>
+      <span className="infobox-hint">배치할 점 클릭 — 스케일·맥락 참고물</span>
     </div>
   );
 }
@@ -205,6 +233,10 @@ export function renderToolContext(
 
   if (activeTool === 'sketch-pen') {
     return <SketchPenContext />;
+  }
+
+  if (activeTool === 'asset') {
+    return <AssetContext />;
   }
 
   return null;

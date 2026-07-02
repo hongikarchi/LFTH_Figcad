@@ -7,6 +7,8 @@ import type { ToolController, ToolPointerInfo } from '../tools/ToolController';
 export interface InputOptions extends TapCallbacks {
   /** 포인터의 지면 위치 발행 (presence 커서) — null = 화면 밖/교차 없음 */
   onCursor?: (doc: Pt | null) => void;
+  /** RMB 오빗 시작 시 피벗(월드 m [x,y,z]) 해석 — 선택중심/커서히트. null=피벗 유지(현재 target). 항목3. */
+  resolvePivot?: (clientX: number, clientY: number) => [number, number, number] | null;
 }
 
 /**
@@ -90,6 +92,11 @@ export class InputManager {
       this.cameraPointerId = e.pointerId;
       this.lastMouse = { x: e.clientX, y: e.clientY };
       this.cameraMoved = 0;
+      // 항목3: 무수식 RMB 오빗 시작 시 피벗을 선택중심/커서히트로 (원점 고정 오빗 회귀 수정). 3D·무수식만.
+      if (e.button === 2 && this.rig.mode === '3d' && !e.ctrlKey && !e.shiftKey) {
+        const p = this.opts.resolvePivot?.(e.clientX, e.clientY);
+        if (p) this.rig.setPivot(p[0], p[1], p[2]);
+      }
       return;
     }
     this.toolPointerId = e.pointerId;

@@ -21,8 +21,10 @@ export function buildScene(scene: THREE.Scene): void {
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.01;
   scene.add(ground);
+  scene.userData['ground'] = ground; // 항목1: 모델이 원점서 멀면 그리드와 함께 모델 밑으로 recenter
 
-  // 1m 간격 그리드 (스냅 그리드 100mm의 시각 보조) — 연한 회색
+  // 1m 간격 그리드 (스냅 그리드 100mm의 시각 보조, z=0 평면 표시) — 연한 회색.
+  // 범위 100m 유지(1m 간격서 확대 시 moiré) — 원점서 먼 모델은 main이 모델중심으로 recenter(항목1).
   const grid = new THREE.GridHelper(100, 100, 0xc4c8cd, 0xe2e4e8);
   scene.add(grid);
   scene.userData['grid'] = grid; // ReferenceLayer가 DWG 언더레이 표시 시 숨김(평면 클러터 방지)

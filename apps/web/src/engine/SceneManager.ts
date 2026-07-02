@@ -7,6 +7,7 @@ import {
   type DocStore,
   type Id,
   type SketchElement,
+  type AssetKind,
 } from '@figcad/core';
 import type { Engine } from './Engine';
 import type { HudLayer, CommentBubble } from '../hud/HudLayer';
@@ -33,6 +34,14 @@ interface SceneEntry {
 
 const GLASS_COLOR = 0x88ccee;
 const GLASS_OPACITY = 0.3;
+
+/** 오브젝트(엔투라지) 종류별 메시 색 (항목7) — 타입 없어 여기서 지정. */
+const ASSET_COLOR: Record<AssetKind, string> = {
+  tree: '#4a7c3f',
+  person: '#5b8def',
+  car: '#8a909a',
+  bush: '#6aa84f',
+};
 
 type LabelStyle = 'grid' | 'text' | 'dim';
 
@@ -258,6 +267,18 @@ export class SceneManager {
     return out;
   }
 
+  /** 주어진 요소 id들의 월드 bbox (줌-선택용). 매칭 없으면 빈 Box3(호출측이 isEmpty 가드). */
+  boundsOf(ids: Id[]): THREE.Box3 {
+    const box = new THREE.Box3();
+    for (const id of ids) {
+      const e = this.entries.get(id);
+      if (!e) continue;
+      box.expandByObject(e.mesh);
+      if (e.glassMesh) box.expandByObject(e.glassMesh);
+    }
+    return box;
+  }
+
   setSelected(ids: Id[]): void {
     const affected = new Set<Id>([...this.selected, ...ids]);
     this.selected = new Set(ids);
@@ -445,9 +466,11 @@ export class SceneManager {
         ? '#c0392b'
         : el.kind === 'sketch'
           ? el.style.color
-          : elType && 'color' in elType
-            ? elType.color
-            : '#cccccc';
+          : el.kind === 'asset'
+            ? ASSET_COLOR[el.assetKind]
+            : elType && 'color' in elType
+              ? elType.color
+              : '#cccccc';
     const kind =
       el.kind === 'opening' && elType?.kind === 'opening'
         ? `opening:${elType.opening.kind}`

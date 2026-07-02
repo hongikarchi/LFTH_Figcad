@@ -9,6 +9,7 @@ import {
 } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
 import { commitVersion, fetchCommit, fetchLog, type CommitMeta } from '../version/versionClient';
+import type { ViewActions } from './App';
 
 /**
  * M6 버전 타임라인 패널 — 좌하단 (검사 패널과 같은 슬롯, 동시 열림 없음).
@@ -24,13 +25,22 @@ function relTime(ts: number): string {
   return new Date(ts).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }
 
-export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: boolean }) {
+export function VersionPanel({
+  store,
+  actions,
+  embedded,
+}: {
+  store: DocStore;
+  actions: ViewActions;
+  embedded?: boolean;
+}) {
   const versionOpen = useUiStore((s) => s.versionOpen);
   const [commits, setCommits] = useState<CommitMeta[]>([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [diffs, setDiffs] = useState<Record<string, SnapshotDiff>>({}); // 항목 키 → 현재와의 구조화 diff
+  const [shownKey, setShownKey] = useState<string | null>(null); // 3D 오버레이 표시 중인 커밋(1개만)
 
   // 복원→재커밋이면 같은 해시가 타임라인에 두 번 등장할 수 있다 — ts와 합성해 유일화
   const itemKey = (c: CommitMeta): string => `${c.hash}:${c.ts}`;
@@ -48,8 +58,11 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
   useEffect(() => {
     if (embedded || versionOpen) {
       setDiffs({}); // 닫혀 있는 동안의 편집으로 stale — 다시 열 때 비교 캐시 비움
+      setShownKey(null);
+      actions.previewDiff(null); // 열 때 스테일 오버레이 정리
       void refresh();
     }
+    return () => actions.previewDiff(null); // 닫기/언마운트(레일 전환) 시 3D 오버레이 정리
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [versionOpen, embedded]);
 
@@ -63,6 +76,7 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
       const r = await commitVersion(message.trim());
       setMessage('');
       setDiffs({}); // 새 커밋으로 비교 기준이 바뀜
+      clearOverlay();
       setNotice(r.skipped ? '변경 없음 — 마지막 커밋과 동일해 스킵' : `✓ 커밋됨 (${r.meta!.hash.slice(0, 7)})`);
       await refresh();
     } catch (e) {
@@ -76,6 +90,10 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
     const key = itemKey(c);
     if (diffs[key]) {
       setDiffs(({ [key]: _, ...rest }) => rest); // 토글 닫기
+      if (shownKey === key) {
+        setShownKey(null);
+        actions.previewDiff(null); // 3D 오버레이 끄기
+      }
       return;
     }
     try {
@@ -83,8 +101,16 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
       // 커밋 → 현재 방향: "그때 이후 무엇이 달라졌나". 구조화 객체 보존(요약 버리지 않음).
       const d = diffSnapshots(snap, store.snapshot());
       setDiffs((prev) => ({ ...prev, [key]: d }));
+      setShownKey(key);
+      actions.previewDiff(snap); // 3D 오버레이 켜기 — 추가(초록)/삭제(빨강 고스트)/변경(주황)
     } catch (e) {
       setNotice(`비교 실패: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+  const clearOverlay = () => {
+    if (shownKey) {
+      setShownKey(null);
+      actions.previewDiff(null);
     }
   };
 
@@ -104,6 +130,7 @@ export function VersionPanel({ store, embedded }: { store: DocStore; embedded?: 
         return;
       store.importSnapshot(snap);
       setDiffs({}); // 문서가 바뀌어 기존 비교 결과는 무효
+      clearOverlay();
       setNotice(
         `✓ ${c.hash.slice(0, 7)} 시점으로 복원됨 — 메시지를 남기려면 커밋하세요 (안 해도 세션 종료 시 자동 기록)`,
       );

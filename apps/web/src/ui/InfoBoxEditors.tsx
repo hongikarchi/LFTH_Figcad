@@ -1,4 +1,4 @@
-import { labelText, polygonArea, resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
+import { formatSection, labelText, polygonArea, resolveDimAnchor, type DocStore, type Id, type OpeningType } from '@figcad/core';
 import { NumField, TextField } from './fields';
 import { TypeSelect } from './InfoBoxTypeSelect';
 
@@ -133,12 +133,7 @@ export function renderElementEditor(store: DocStore, el: Element, setSelection: 
   if (el?.kind === 'column') {
     const level = store.getLevel(el.levelId);
     const type = store.getType(el.typeId);
-    const sectionLabel =
-      type?.kind === 'column'
-        ? type.section.shape === 'circle'
-          ? `Ø${type.section.diameter}`
-          : `${type.section.width}×${type.section.depth}`
-        : '—';
+    const sectionLabel = type?.kind === 'column' ? formatSection(type.section) : '—'; // 코어 단일 소스 라벨(polygon 포함)
     return (
       <div className="infobox">
         <span className="infobox-title">기둥</span>
@@ -170,12 +165,7 @@ export function renderElementEditor(store: DocStore, el: Element, setSelection: 
   if (el?.kind === 'beam') {
     const level = store.getLevel(el.levelId);
     const type = store.getType(el.typeId);
-    const sectionLabel =
-      type?.kind === 'beam'
-        ? type.section.shape === 'circle'
-          ? `Ø${type.section.diameter}`
-          : `${type.section.width}×${type.section.depth}`
-        : '—';
+    const sectionLabel = type?.kind === 'beam' ? formatSection(type.section) : '—'; // 코어 단일 소스 라벨(polygon 포함)
     const lengthMm = Math.round(Math.hypot(el.b[0] - el.a[0], el.b[1] - el.a[1]));
     return (
       <div className="infobox">

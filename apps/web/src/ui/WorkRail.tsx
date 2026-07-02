@@ -48,7 +48,7 @@ export function WorkRail({
         )}
         <CommentPanel store={store} actions={actions} embedded />
         <ViewpointPanel store={store} actions={actions} />
-        <VersionPanel store={store} embedded />
+        <VersionPanel store={store} actions={actions} embedded />
       </div>
     );
   }

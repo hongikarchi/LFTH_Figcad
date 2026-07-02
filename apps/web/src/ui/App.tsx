@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { DocStore, Viewpoint } from '@figcad/core';
+import type { DocStore, Viewpoint, DocSnapshot } from '@figcad/core';
+import type { ViewPreset } from '../engine/CameraRig';
 import type { FederationReconciler } from '../engine/FederationReconciler';
 import { useUiStore, type ClipState } from '../state/uiStore';
 import { TopBar } from './TopBar';
 import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
 import { ViewportCluster } from './ViewportCluster';
+import { ViewGizmo } from './ViewGizmo';
 import { CommandPalette } from './CommandPalette';
 import { AiPanel } from './AiPanel';
 import { DrawingPanel } from './DrawingPanel';
@@ -25,12 +27,18 @@ export interface ViewActions {
   redo: () => void;
   /** 전체 맞춤 (zoom-to-fit) */
   fit: () => void;
+  /** 선택 맞춤 (zoom-to-selection, Z) — 선택 없으면 전체 맞춤 폴백 */
+  fitSelection: () => void;
   /** 단면(클리핑 플레인) 적용 — null=해제. 모델 bbox 기준 평면 계산 → 렌더러 clippingPlanes. */
   setClip: (clip: ClipState | null) => void;
   /** 현재 카메라+단면을 뷰포인트로 저장(문서·공유) → id. name 없으면 "단면 N" 자동. */
   saveViewpoint: (name?: string) => string;
   /** 저장된 뷰포인트로 점프 — 카메라 포즈 + viewMode + 클립 재현("N번 단면 봐주세요"). */
   jumpViewpoint: (vp: Viewpoint) => void;
+  /** 버전 비교 3D 오버레이 — 커밋 스냅샷(before) 표시, null=끄기. 추가/삭제(고스트)/변경 색 표기(항목4). */
+  previewDiff: (snap: DocSnapshot | null) => void;
+  /** 뷰 기즈모 프리셋 전환 — Top/Front/Back/Left/Right/Iso(항목8a). */
+  setView: (preset: ViewPreset) => void;
 }
 
 /** 문서 변경 시 리렌더 트리거 (React는 문서를 직접 안 들고 매 렌더 fresh 조회) */
@@ -73,7 +81,8 @@ export function App({
         </>
       )}
       <ViewportCluster store={store} actions={actions} />
-      <AiPanel store={store} />
+      <ViewGizmo actions={actions} />
+      <AiPanel store={store} federation={federation} />
       <DrawingPanel store={store} />
       <CommandPalette store={store} actions={actions} />
     </>

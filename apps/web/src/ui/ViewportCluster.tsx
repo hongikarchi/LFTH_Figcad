@@ -46,6 +46,9 @@ export function ViewportCluster({ store, actions }: { store: DocStore; actions: 
       <button title="전체 맞춤 (F)" onClick={actions.fit}>
         <Icon name="fit" size={16} />
       </button>
+      <button title="선택 맞춤 (Z)" onClick={actions.fitSelection}>
+        <Icon name="fit-selection" size={16} />
+      </button>
       <button
         className={`vc-view ${viewMode === '3d' ? 'active' : ''}`}
         title="3D ↔ 평면 전환"

@@ -57,9 +57,11 @@ export class SelectTool implements Tool {
   private action: EditActionController;
 
   constructor(private ctx: EditorContext) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x0a84ff });
+    // 항목6: 편집 핸들 반투명 + depthTest off(요소에 안 가림). 크기는 refreshHandles서 화면상수(구 고정 7cm=줌서 과대).
+    const mat = new THREE.MeshBasicMaterial({ color: 0x0a84ff, transparent: true, opacity: 0.6, depthTest: false });
     this.handleA = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat);
     this.handleB = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat.clone());
+    this.handleA.renderOrder = this.handleB.renderOrder = 4;
     this.handleA.visible = this.handleB.visible = false;
     ctx.engine.scene.add(this.handleA, this.handleB);
     this.action = new EditActionController(ctx, {
@@ -128,30 +130,13 @@ export class SelectTool implements Tool {
     const el = this.ctx.store.getElement(hit);
     if (!el) return;
     if (this.refuseIfLocked(hit)) return; // 선택은 허용, 드래그만 거부
-    if (el.kind === 'wall') {
-      this.drag = { kind: 'wall', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
-    } else if (el.kind === 'opening') {
+    // 항목10: 본체 클릭+드래그 자동이동 제거 — 클릭=선택만. 전체 이동은 이동 액션(EditActions, Inspector 상시노출).
+    // 정밀편집은 유지: 끝점 핸들(위 87-98)·폴리곤 정점 그립(위 100-118)은 선택된 요소 위에서 드래그.
+    // 개구부(opening)만 예외: 호스트 벽에 구속된 슬라이드(자유이동 아님)라 드래그 유지 — 다른 이동 UI가 없음.
+    if (el.kind === 'opening') {
       this.drag = { kind: 'opening', id: hit, origOffset: el.offset };
-    } else if (el.kind === 'slab' || el.kind === 'roof' || el.kind === 'zone') {
-      // 경계 폴리곤 mover (roof·zone은 slab과 동일 — boundary 평행이동). 정점 그립은 본체 픽 전에 처리됨.
-      this.drag = { kind: 'slab', id: hit, startDoc: info.doc, origBoundary: el.boundary };
-    } else if (el.kind === 'grid') {
-      this.drag = { kind: 'grid', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
-    } else if (el.kind === 'column' || el.kind === 'text') {
-      // 점 mover (text는 column과 동일 — at 평행이동)
-      this.drag = { kind: 'column', id: hit, startDoc: info.doc, origAt: el.at };
-    } else if (
-      el.kind === 'beam' ||
-      el.kind === 'stair' ||
-      el.kind === 'railing' ||
-      el.kind === 'curtainwall'
-    ) {
-      // a/b 세그먼트 mover (stair·railing·커튼월은 beam과 동일 — a/b 평행이동)
-      this.drag = { kind: 'beam', id: hit, startDoc: info.doc, origA: el.a, origB: el.b };
+      this.ctx.collab.setEditing(hit);
     }
-    // dimension은 드래그 분기 없음 — 선택만(이미 setSelection). 가동 파라미터=offset(InfoBox).
-    // 바인딩된 치수의 a/b 드래그는 derive가 무시하므로 의도적으로 제외(advisor).
-    if (this.drag.kind !== 'none') this.ctx.collab.setEditing(hit);
   }
 
   /** 선택 갱신 — uiStore + 씬 하이라이트 동기 */
@@ -445,6 +430,7 @@ export class SelectTool implements Tool {
     let g = this.gripPool[i];
     if (!g) {
       g = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), this.handleA.material as THREE.Material);
+      g.renderOrder = 4; // 핸들과 동일 — depthTest:false 순서 안정
       this.ctx.engine.scene.add(g);
       this.gripPool[i] = g;
     }
@@ -462,13 +448,14 @@ export class SelectTool implements Tool {
       this.ctx.engine.requestRender();
       return;
     }
+    const r = Math.max(7 * this.ctx.rig.worldPerPixel(), 0.004); // 화면상수(~7px) — 구 고정 0.07m(줌서 과대) 대체
     const seg = this.selectedSegment();
     if (seg) {
       const elev = this.segElev(seg);
       this.handleA.position.set(seg.a[0] / 1000, elev, seg.a[1] / 1000);
       this.handleB.position.set(seg.b[0] / 1000, elev, seg.b[1] / 1000);
-      this.handleA.scale.setScalar(0.07);
-      this.handleB.scale.setScalar(0.07);
+      this.handleA.scale.setScalar(r);
+      this.handleB.scale.setScalar(r);
       this.handleA.visible = this.handleB.visible = true;
       this.hideGrips();
       this.ctx.engine.requestRender();
@@ -481,7 +468,7 @@ export class SelectTool implements Tool {
       poly.boundary.forEach((v, i) => {
         const g = this.ensureGrip(i);
         g.position.set(v[0] / 1000, elev, v[1] / 1000);
-        g.scale.setScalar(0.07);
+        g.scale.setScalar(r);
         g.visible = true;
       });
       this.hideGrips(poly.boundary.length);

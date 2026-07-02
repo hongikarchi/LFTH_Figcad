@@ -265,18 +265,26 @@ export class HudLayer {
       input.focus();
       input.select();
       let done = false;
+      // 프리필(initial 있음)일 때 blur는 취소 — 프리필 상태로 딴 곳 탭하면 원치 않는 라벨이
+      // 커밋되는 스팸 방지(임포트 라벨 프리필). Enter는 프리필 그대로도 수락, 타이핑했으면 blur도 수락.
+      let dirty = false;
       const finish = (val: string | null) => {
         if (done) return;
         done = true;
         input.remove();
         resolve(val);
       };
+      input.addEventListener('input', () => {
+        dirty = true;
+      });
       input.addEventListener('keydown', (e) => {
         e.stopPropagation();
         if (e.key === 'Enter') finish(input.value.trim() || null);
         else if (e.key === 'Escape') finish(null);
       });
-      input.addEventListener('blur', () => finish(input.value.trim() || null));
+      input.addEventListener('blur', () =>
+        finish(initial !== '' && !dirty ? null : input.value.trim() || null),
+      );
     });
   }
 

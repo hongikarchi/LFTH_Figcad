@@ -1,4 +1,5 @@
 import type { DocSnapshot, OpLogEntry } from '@figcad/core';
+import type { ImportsManifest } from './importsManifest';
 import { backendOrigin } from '../config/backend';
 
 /**
@@ -49,6 +50,8 @@ export async function runAgent(opts: {
   onLint?: (round: number, findings: AiLintFinding[]) => void;
   sketch?: SketchAttachment | null;
   image?: { dataB64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null;
+  /** 연동 모델 매니페스트 — null/생략 = 필드 부재(구서버 동일 동작, sketch/image 패턴) */
+  imports?: ImportsManifest | null;
   model?: string;
   signal?: AbortSignal;
 }): Promise<AgentResult> {
@@ -60,6 +63,7 @@ export async function runAgent(opts: {
       transcript: opts.transcript,
       ...(opts.sketch ? { sketch: opts.sketch } : {}),
       ...(opts.image ? { image: opts.image } : {}),
+      ...(opts.imports ? { imports: opts.imports } : {}),
       ...(opts.model ? { model: opts.model } : {}),
     }),
     signal: opts.signal,

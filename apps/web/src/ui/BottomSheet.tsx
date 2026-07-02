@@ -41,7 +41,7 @@ export function BottomSheet({
           {phoneSheet === 'models' && <PhoneModelsSheet store={store} federation={federation} />}
           {phoneSheet === 'comment' && <CommentPanel store={store} actions={actions} embedded />}
           {phoneSheet === 'inspect' && <ReviewInspector store={store} />}
-          {phoneSheet === 'version' && <VersionPanel store={store} embedded />}
+          {phoneSheet === 'version' && <VersionPanel store={store} actions={actions} embedded />}
         </div>
       </div>
     </>

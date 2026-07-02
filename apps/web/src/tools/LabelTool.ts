@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { refDisplayName } from '../engine/refIdentity';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 import { LeaderCapture, type LeaderResult } from './leaderCapture';
@@ -49,11 +50,14 @@ export class LabelTool implements Tool {
       this.ctx.engine.requestRender();
       return;
     }
-    // 자유 custom 노트 — 지시선 시작점=anchor(leaderAt 고정), 텍스트 입력
+    // 자유 custom 노트 — 지시선 시작점=anchor(leaderAt 고정), 텍스트 입력.
+    // 임포트(연동 모델) 객체 위 클릭이면 객체명/카테고리/소스명 프리필 — 편집형(Enter=수락, 자동생성 아님:
+    // 임포트 이름은 junk/중복이 흔해 스팸 방지 + 무엇이 인식됐는지 피드백 겸용).
+    const initial = r.refHit ? refDisplayName(this.ctx.store, r.refHit) : '';
     const elev = (this.ctx.store.getLevel(levelId)?.elevation ?? 0) / 1000;
     const world = new THREE.Vector3(r.textAt[0] / 1000, elev + 0.02, r.textAt[1] / 1000);
     this.editing = true;
-    void this.ctx.hud.promptText(world, this.ctx.rig.active).then((text) => {
+    void this.ctx.hud.promptText(world, this.ctx.rig.active, initial).then((text) => {
       this.editing = false;
       if (text) {
         this.ctx.store.createLabel({

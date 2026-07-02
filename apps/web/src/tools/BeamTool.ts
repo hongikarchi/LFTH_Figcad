@@ -8,18 +8,13 @@ import {
   type SnapResult,
 } from '@figcad/core';
 import { setBufferGeometry, setLineGeometry } from '../engine/SceneManager';
+import { createSnapMarker, updateSnapMarker } from './snapMarker';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 
 const SNAP_PX = 12;
 const GRID_MM = 100;
 const DRAG_COMMIT_PX = 8;
-
-const MARKER_COLORS: Record<SnapResult['kind'], number> = {
-  endpoint: 0xff9500,
-  grid: 0x0a84ff,
-  none: 0x1d1d1f,
-};
 
 /**
  * 보 그리기 — WallTool과 동일한 입력 패턴(클릭-클릭 체인 + 펜다운→드래그→리프트).
@@ -42,10 +37,7 @@ export class BeamTool implements Tool {
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({ color: 0x0a84ff }),
     );
-    this.marker = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffffff }),
-    );
+    this.marker = createSnapMarker();
     this.ghostMesh.visible = this.ghostEdges.visible = this.marker.visible = false;
     ctx.engine.scene.add(this.ghostMesh, this.ghostEdges, this.marker);
   }
@@ -110,7 +102,10 @@ export class BeamTool implements Tool {
 
   private snap(info: ToolPointerInfo): SnapResult {
     return snapPoint([info.doc![0], info.doc![1]], {
-      endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
+      endpoints: [
+        ...this.ctx.store.wallEndpoints(this.ctx.levelId()),
+        ...(this.ctx.importSnapCandidates?.([info.doc![0], info.doc![1]], SNAP_PX * info.mmPerPixel) ?? []), // 빽도면 끝점 트레이싱
+      ],
       endpointTolerance: SNAP_PX * info.mmPerPixel,
       grid: GRID_MM,
       ...(this.chainStart ? { axisFrom: this.chainStart } : {}),
@@ -148,10 +143,6 @@ export class BeamTool implements Tool {
   private updateMarker(snap: SnapResult, mmPerPixel: number): void {
     const level = this.ctx.store.getLevel(this.ctx.levelId());
     const elev = (level?.elevation ?? 0) / 1000;
-    this.marker.visible = true;
-    this.marker.position.set(snap.point[0] / 1000, elev + 0.02, snap.point[1] / 1000);
-    const r = Math.max((6 * mmPerPixel) / 1000, 0.01);
-    this.marker.scale.setScalar(r);
-    (this.marker.material as THREE.MeshBasicMaterial).color.setHex(MARKER_COLORS[snap.kind]);
+    updateSnapMarker(this.marker, snap, mmPerPixel, elev);
   }
 }

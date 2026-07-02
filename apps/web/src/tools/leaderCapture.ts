@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { snapPoint, type Element, type Pt, type SnapResult } from '@figcad/core';
-import { pickElement, raycastPoint } from '../engine/Picker';
+import { pickElement } from '../engine/Picker';
+import { refSnapAt } from '../engine/refSnap';
+import type { RefObjectInfo } from '../engine/refIdentity';
+import { updateSnapMarker3d, REF_MARKER_COLORS } from './snapMarker';
 import { useUiStore } from '../state/uiStore';
 import type { EditorContext } from './context';
 import type { ToolPointerInfo } from './ToolController';
@@ -19,6 +22,8 @@ export interface LeaderResult {
   textAt: Pt;
   /** 클릭2가 오버레이/메시 표면을 맞혔으면 그 3D 높이(월드 mm) — 3D 코멘트 핀. 평면 바닥이면 undefined. */
   textZ?: number;
+  /** 클릭1이 요소가 아닌 임포트(연동 모델) 메시 위였을 때의 객체 식별 — 라벨 프리필용 (anchorEl===null일 때만). */
+  refHit?: RefObjectInfo;
 }
 
 /**
@@ -29,11 +34,12 @@ export interface LeaderResult {
 export class LeaderCapture {
   private marker: THREE.Mesh;
   private line: THREE.Line;
-  private anchor: { pt: Pt; el: Element | null; levelId: string } | null = null;
+  private anchor: { pt: Pt; el: Element | null; levelId: string; refInfo?: RefObjectInfo } | null = null;
+  private lastHoverTs = 0; // 3D 호버 레이캐스트 스로틀 — 대형 임포트(BVH 없는 수백만 tri)서 per-move 비용 상한
 
   constructor(
     private ctx: EditorContext,
-    color: number,
+    private color: number,
     private onComplete: (r: LeaderResult) => void,
   ) {
     this.marker = new THREE.Mesh(
@@ -52,28 +58,46 @@ export class LeaderCapture {
   }
 
   move(info: ToolPointerInfo): void {
+    // 3D 모드 — 메시 피처 스냅(꼭짓점>에지, 임포트 포함) 지점에 마커 (기존엔 3D서 마커 미표시였음).
+    if (useUiStore.getState().viewMode === '3d') {
+      // ~30Hz 스로틀 — 이 호버 레이캐스트는 신규 비용(기존엔 up에서만). 드래그 기록 스로틀 관례와 동일.
+      const now = performance.now();
+      if (now - this.lastHoverTs < 33) return;
+      this.lastHoverTs = now;
+      const roots = this.ctx.overlayRoot ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables] : this.ctx.scene.pickables;
+      const r = refSnapAt(info.clientX, info.clientY, this.ctx.rig.active, roots, SNAP_PX);
+      if (r) {
+        updateSnapMarker3d(this.marker, r.point, r.kind === 'face' ? this.color : REF_MARKER_COLORS[r.kind], info.mmPerPixel);
+        if (this.anchor) this.updateLine([Math.round(r.point.x * 1000), Math.round(r.point.z * 1000)]);
+        this.ctx.engine.requestRender();
+        return;
+      }
+    }
     if (!info.doc) return;
     const pt = this.snap(info).point;
+    (this.marker.material as THREE.MeshBasicMaterial).color.setHex(this.color); // 3D 스냅 색 복원
     this.updateMarker(pt, info.mmPerPixel);
     if (this.anchor) this.updateLine(pt);
     this.ctx.engine.requestRender();
   }
 
   up(info: ToolPointerInfo): void {
-    // 3D 모드면 메시 표면 히트 우선(z 포함), 평면은 지면 스냅만(perf: 평면선 60MB 레이캐스트 스킵).
+    // 3D 모드면 메시 피처 스냅 히트 우선(z 포함, 임포트 꼭짓점/에지 스냅), 평면은 지면 스냅만
+    // (perf: 평면선 60MB 레이캐스트 스킵).
     const is3d = useUiStore.getState().viewMode === '3d';
     const roots = this.ctx.overlayRoot ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables] : this.ctx.scene.pickables;
-    const p3d = is3d ? raycastPoint(info.clientX, info.clientY, this.ctx.rig.active, roots) : null;
+    const r = is3d ? refSnapAt(info.clientX, info.clientY, this.ctx.rig.active, roots, SNAP_PX) : null;
     const ground = info.doc ? this.snap(info).point : null;
     // 배치점 = 메시 히트(3D점) 우선 > 지면 스냅. 둘 다 없으면(수평선 위·지면 밖 탭) 취소.
-    const pt: Pt | null = p3d ? [Math.round(p3d.x * 1000), Math.round(p3d.z * 1000)] : ground;
+    const pt: Pt | null = r ? [Math.round(r.point.x * 1000), Math.round(r.point.z * 1000)] : ground;
+    const hitY = r ? r.point.y : undefined; // refSnap 결과는 스크래치 — 즉시 값으로 복사
     if (!pt) return;
     if (!this.anchor) {
-      // 클릭1 = 지시선 시작점 (요소 위면 그 요소를 앵커로)
+      // 클릭1 = 지시선 시작점 (요소 위면 그 요소를 앵커로 — 요소 픽 우선, 임포트는 refInfo로 보조)
       const hit = pickElement(info.clientX, info.clientY, this.ctx.rig.active, this.ctx.scene.pickables);
       const el = hit ? (this.ctx.store.getElement(hit) ?? null) : null;
       const levelId = el && 'levelId' in el ? el.levelId : this.ctx.levelId();
-      this.anchor = { pt, el, levelId };
+      this.anchor = { pt, el, levelId, ...(!el && r?.info ? { refInfo: r.info } : {}) };
       this.line.visible = true;
       this.updateLine(pt);
       this.ctx.engine.requestRender();
@@ -81,9 +105,16 @@ export class LeaderCapture {
     }
     // 클릭2 = 텍스트/핀 위치 → 완료. 메시 표면이면 그 3D 높이(textZ) = 모델 위 3D 코멘트.
     const a = this.anchor;
-    const textZ = p3d ? p3d.y * 1000 : undefined;
+    const textZ = hitY !== undefined ? hitY * 1000 : undefined;
     this.reset();
-    this.onComplete({ anchor: a.pt, anchorEl: a.el, anchorLevelId: a.levelId, textAt: pt, ...(textZ !== undefined ? { textZ } : {}) });
+    this.onComplete({
+      anchor: a.pt,
+      anchorEl: a.el,
+      anchorLevelId: a.levelId,
+      textAt: pt,
+      ...(textZ !== undefined ? { textZ } : {}),
+      ...(a.el === null && a.refInfo ? { refHit: a.refInfo } : {}),
+    });
   }
 
   cancel(): void {
@@ -99,9 +130,14 @@ export class LeaderCapture {
   }
 
   private snap(info: ToolPointerInfo): SnapResult {
-    return snapPoint([info.doc![0], info.doc![1]], {
-      endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
-      endpointTolerance: SNAP_PX * info.mmPerPixel,
+    const tol = SNAP_PX * info.mmPerPixel;
+    const near: Pt = [info.doc![0], info.doc![1]];
+    return snapPoint(near, {
+      endpoints: [
+        ...this.ctx.store.wallEndpoints(this.ctx.levelId()),
+        ...(this.ctx.importSnapCandidates?.(near, tol) ?? []), // 빽도면 끝점 (읽기전용 트레이싱)
+      ],
+      endpointTolerance: tol,
       grid: GRID_MM,
     });
   }

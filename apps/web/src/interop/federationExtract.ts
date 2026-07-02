@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DocStore, buildDeriveIndex, DeriveCache, type DocSnapshot, type FederationSource } from '@figcad/core';
+import { DocStore, buildDeriveIndex, DeriveCache, KIND_LABEL, type DocSnapshot, type FederationSource } from '@figcad/core';
 import { gltfPositionsToFigcad } from '@figcad/interop/coords';
 import type { ReferenceMesh, ReferenceResult } from '../engine/ReferenceLayer';
 import { getIfcApi, parseIfc } from './ifcClient';
@@ -73,10 +73,19 @@ export async function extractFigcadRoom(ref: string): Promise<ReferenceResult> {
   for (const el of store.listElements()) {
     const geo = cache.derive(store, el.id, index);
     if (!geo) continue;
-    if (geo.positions.length) out.push({ positions: geo.positions, normals: geo.normals });
+    // 객체 정체성 — 스냅 정보·라벨 프리필·AI 매니페스트 (category=한글 kind 라벨, 패널도 부모 요소 정체성).
+    const ident = {
+      objectId: el.id,
+      category: KIND_LABEL[el.kind],
+      name:
+        'name' in el && typeof (el as { name?: unknown }).name === 'string'
+          ? (el as { name: string }).name
+          : undefined,
+    };
+    if (geo.positions.length) out.push({ positions: geo.positions, normals: geo.normals, ...ident });
     // 커튼월 유리 패널 등 보조 메시
     if (geo.panels && geo.panels.positions.length)
-      out.push({ positions: geo.panels.positions, normals: geo.panels.normals });
+      out.push({ positions: geo.panels.positions, normals: geo.panels.normals, ...ident });
   }
   return { meshes: out };
 }
@@ -111,7 +120,8 @@ export async function extractGltf(ref: string): Promise<ReferenceResult> {
     // Z반전=winding 뒤집힘 → 노멀 드롭, ReferenceLayer가 computeVertexNormals(importIfcMeshes 패턴).
     const positions = gltfPositionsToFigcad(new Float32Array(posAttr.array as ArrayLike<number>));
     geo.dispose();
-    out.push({ positions });
+    // 노드명 보존 — 무명 메시는 부모 노드명 폴백 (glTF exporter가 메시를 익명 자식으로 감싸는 관례).
+    out.push({ positions, name: obj.name || obj.parent?.name || undefined });
   });
   return { meshes: out };
 }
@@ -132,7 +142,14 @@ export async function extractIfc(ref: string): Promise<ReferenceResult> {
   // importIfcMeshes는 노멀을 빈 배열로 둔다(축교환 반사로 winding 뒤집힘) → normals 생략해
   // ReferenceLayer가 computeVertexNormals 하게. (빈 Float32Array는 truthy라 그냥 넘기면
   // position 수와 안 맞아 지오메트리가 깨진다.)
-  return { meshes: importIfcMeshes(api, bytes).map((m) => ({ positions: m.positions })) };
+  return {
+    meshes: importIfcMeshes(api, bytes).map((m) => ({
+      positions: m.positions,
+      name: m.name,
+      objectId: m.expressId !== undefined ? String(m.expressId) : undefined,
+      category: m.ifcType,
+    })),
+  };
 }
 
 /**
@@ -157,7 +174,20 @@ export async function extract3dm(ref: string): Promise<ReferenceResult> {
   if (capped) console.warn('[federation .3dm] 지오메트리 상한 도달 — 대형 모델 일부만 표시');
   if (meshes.length === 0 && edges.length === 0)
     throw new Error(`.3dm에서 표시할 지오메트리 없음 (객체 ${skipped}개 — 텍스트/포인트뿐?)`);
-  return { meshes: meshes.map((m) => ({ positions: m.positions })), edges };
+  // groups = 병합 버퍼 내 객체 range(name/uuid/layer) — layer는 category로 (표시명 폴백 체인).
+  return {
+    meshes: meshes.map((m) => ({
+      positions: m.positions,
+      groups: m.groups?.map((gr) => ({
+        start: gr.start,
+        count: gr.count,
+        name: gr.name,
+        objectId: gr.id,
+        category: gr.layer,
+      })),
+    })),
+    edges,
+  };
 }
 
 /**

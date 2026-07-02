@@ -2,12 +2,14 @@ import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
 import * as THREE from 'three';
 import * as Y from 'yjs';
-import { DocStore, seedDocument, type Viewpoint } from '@figcad/core';
+import { DocStore, seedDocument, diffSnapshots, type Viewpoint, type DocSnapshot } from '@figcad/core';
 import { Engine } from './engine/Engine';
-import { CameraRig } from './engine/CameraRig';
+import { CameraRig, type ViewPreset } from './engine/CameraRig';
 import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
 import { ReferenceLayer } from './engine/ReferenceLayer';
+import { raycastPoint } from './engine/Picker';
+import { DiffOverlay } from './engine/diffOverlay';
 import { computeSectionContour, computeSectionFill } from './engine/sectionContour';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
@@ -27,7 +29,6 @@ import { BeamTool } from './tools/BeamTool';
 import { StairTool } from './tools/StairTool';
 import { RailingTool } from './tools/RailingTool';
 import { RoofTool } from './tools/RoofTool';
-import { DimensionTool } from './tools/DimensionTool';
 import { MeasureTool } from './tools/MeasureTool';
 import { LabelTool } from './tools/LabelTool';
 import { SketchTool } from './tools/SketchTool';
@@ -35,6 +36,7 @@ import { MarkupTool } from './tools/MarkupTool';
 import { CommentTool } from './tools/CommentTool';
 import { SectionTool } from './tools/SectionTool';
 import { ZoneTool } from './tools/ZoneTool';
+import { AssetTool } from './tools/AssetTool';
 import { CurtainWallTool } from './tools/CurtainWallTool';
 import { setupCollab } from './collab/provider';
 import { Presence, NOOP_COLLAB } from './collab/presence';
@@ -109,6 +111,7 @@ const sceneManager = new SceneManager(store, engine, hud);
 const referenceLayer = new ReferenceLayer(engine);
 referenceLayer.setPlanFlipped(useUiStore.getState().viewMode === 'plan'); // 초기 모드 반영(뷰모드 변경 훅이 init엔 안 불림 → 평면서 업로드 시 텍스트 미러 방지)
 const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS, fetchDwgUnderlay);
+const diffOverlay = new DiffOverlay(engine.scene); // 버전 비교 3D 오버레이(항목4) — VersionPanel이 previewDiff로 구동
 
 // 줌 익스텐트(전체맞춤) — 씬 전체 bbox(네이티브 derive + federation 레퍼런스 메시)로 카메라 맞춤.
 // import/federation 모델은 원점서 멀거나 커서 기본 카메라엔 빈 화면 → 이게 해결. 'F' 키 + federation 로드 후 1회 자동.
@@ -119,9 +122,31 @@ function modelBox(): THREE.Box3 {
   box.union(referenceLayer.visibleBounds());
   return box;
 }
+// 항목1: 원점서 먼 모델 밑에 그리드(z=0)+ground를 깔기 — 모델 bbox 중심(x,z)으로 이동(y=0 유지,
+// 정수 미터 스냅으로 격자선 정렬). fit/로드 시에만 호출(매 doc 변경 갱신은 churn — 회피).
+function recenterGrid(box: THREE.Box3): void {
+  if (box.isEmpty() || !isFinite(box.min.x)) return;
+  const cx = Math.round((box.min.x + box.max.x) / 2);
+  const cz = Math.round((box.min.z + box.max.z) / 2);
+  const grid = engine.scene.userData['grid'] as THREE.Object3D | undefined;
+  const ground = engine.scene.userData['ground'] as THREE.Object3D | undefined;
+  if (grid) grid.position.set(cx, grid.position.y, cz);
+  if (ground) ground.position.set(cx, ground.position.y, cz);
+}
 function fitView(): boolean {
   const box = modelBox();
   if (box.isEmpty() || !isFinite(box.min.x)) return false;
+  recenterGrid(box);
+  rig.fitBounds(box.min, box.max);
+  engine.requestRender();
+  return true;
+}
+// 줌-선택(Z) — 선택 요소 bbox만 프레이밍. 선택 없거나 bbox 못 구하면 전체맞춤 폴백.
+function fitSelection(): boolean {
+  const sel = useUiStore.getState().selection;
+  if (!sel.length) return fitView();
+  const box = sceneManager.boundsOf(sel);
+  if (box.isEmpty() || !isFinite(box.min.x)) return fitView();
   rig.fitBounds(box.min, box.max);
   engine.requestRender();
   return true;
@@ -209,7 +234,9 @@ function applyClip(): void {
   engine.requestRender();
 }
 window.addEventListener('keydown', (e) => {
-  if ((e.key === 'f' || e.key === 'F') && !/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName)) fitView();
+  if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName)) return;
+  if (e.key === 'f' || e.key === 'F') fitView();
+  else if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey) fitSelection(); // 줌-선택 (Ctrl/⌘+Z=undo는 별도 핸들러)
 });
 // federation 소스가 처음 ready 되면 1회 자동 맞춤(오버레이가 화면 밖이면 무의미하므로).
 let didFitFed = false;
@@ -255,6 +282,9 @@ const ctx: EditorContext = {
   wallTypeId: () => useUiStore.getState().activeTypes.wall ?? seedTypeByKind.wall,
   collab: NOOP_COLLAB,
   overlayRoot: referenceLayer.root, // 3D 코멘트 = 오버레이 메시 위 레이캐스트
+  // 빽도면(언더레이) 끝점 스냅 후보 — 활성 레벨의 보이는 언더레이만 (읽기전용 트레이싱)
+  importSnapCandidates: (near, radiusMm) =>
+    federation.underlaySnapCandidates(useUiStore.getState().activeLevelId ?? seed.levelId, near, radiusMm),
 };
 const tools = new ToolController();
 tools.register('wall', new WallTool(ctx));
@@ -270,7 +300,8 @@ tools.register('railing', new RailingTool(ctx));
 tools.register('roof', new RoofTool(ctx));
 tools.register('curtainwall', new CurtainWallTool(ctx));
 tools.register('zone', new ZoneTool(ctx));
-tools.register('dimension', new DimensionTool(ctx));
+tools.register('asset', new AssetTool(ctx)); // 오브젝트(엔투라지) 배치(항목7)
+// 치수(dimension) 생성 도구 제거(항목5) — 측정(줄자)로 대체. 스키마·derive는 back-compat 보존(기존 요소 렌더).
 tools.register('measure', new MeasureTool(ctx));
 tools.register('label', new LabelTool(ctx));
 tools.register('sketch', new SketchTool(ctx));
@@ -353,6 +384,20 @@ new InputManager(
       presence.setCursor(doc, (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000),
     onTwoFingerTap: doUndo,
     onThreeFingerTap: doRedo,
+    // 항목3: RMB 오빗 피벗 — 선택 있으면 그 중심, 없으면 커서 아래 메시(요소+federation 오버레이) 히트.
+    // 둘 다 없으면 null → 현재 target 유지(지면 z=0 강제교차 금지: 상층/측량Z 모델서 거대호 회귀).
+    resolvePivot: (clientX, clientY) => {
+      const sel = useUiStore.getState().selection;
+      if (sel.length) {
+        const box = sceneManager.boundsOf(sel);
+        if (!box.isEmpty() && isFinite(box.min.x)) {
+          const c = box.getCenter(new THREE.Vector3());
+          return [c.x, c.y, c.z];
+        }
+      }
+      const hit = raycastPoint(clientX, clientY, rig.active, [...sceneManager.pickables, referenceLayer.root]);
+      return hit ? [hit.x, hit.y, hit.z] : null;
+    },
   },
 );
 
@@ -444,6 +489,9 @@ const viewActions = {
   fit: () => {
     fitView();
   },
+  fitSelection: () => {
+    fitSelection();
+  },
   setClip: (clip: ClipState | null) => {
     currentClip = clip;
     applyClip();
@@ -467,6 +515,18 @@ const viewActions = {
     s.setClipState(vp.clip);
     currentClip = vp.clip;
     applyClip();
+    engine.requestRender();
+  },
+  // 버전 비교 3D 오버레이(항목4) — snap=커밋 스냅샷(before), null=끄기. diff는 현재 문서 대비 계산.
+  previewDiff: (snap: DocSnapshot | null) => {
+    if (snap) diffOverlay.show(store, snap, diffSnapshots(snap, store.snapshot()));
+    else diffOverlay.clear();
+    engine.requestRender();
+  },
+  // 뷰 기즈모 프리셋(항목8a) — rig가 mode+각도 설정, uiStore.viewMode 동기화(setViewContext·flip 트리거).
+  setView: (preset: ViewPreset) => {
+    rig.setView(preset);
+    useUiStore.getState().setViewMode(rig.mode);
     engine.requestRender();
   },
 };

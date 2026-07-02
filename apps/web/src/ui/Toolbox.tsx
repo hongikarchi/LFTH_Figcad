@@ -32,17 +32,17 @@ const GROUPS: { title: string; items: ToolItem[] }[] = [
       { label: '지붕', icon: 'roof', tool: 'roof' },
       { label: '커튼월', icon: 'window', tool: 'curtainwall' },
       { label: '존', icon: 'box', tool: 'zone' },
-      { label: '오브젝트', icon: 'box', planned: '추후' },
+      { label: '오브젝트', icon: 'tree', tool: 'asset' }, // 엔투라지(나무·사람·차·관목) 배치(항목7)
     ],
   },
   {
     title: '문서',
     items: [
-      // 텍스트 도구 제거(iter-2 3-3) — 자유 텍스트는 레이블 custom 노트로 대체. 스키마·기존 요소는 보존.
-      { label: '치수', icon: 'dimension', tool: 'dimension' },
-      { label: '측정', icon: 'dimension', tool: 'measure' }, // 줄자(일회성·비저장) — 치수는 영속 요소
+      // 텍스트 도구 제거(iter-2 3-3) + 치수 생성표면 제거(항목5) — 자유 텍스트=레이블, 측정=줄자로 대체.
+      // 치수(dimension) 스키마·derive·기존 요소는 back-compat로 보존(렌더만) — 생성 도구/버튼만 제거.
+      { label: '측정', icon: 'dimension', tool: 'measure' }, // 줄자(일회성·비저장)
       { label: '레이블', icon: 'pencil', tool: 'label' },
-      { label: '마크업', icon: 'ai', tool: 'sketch-pen' }, // 프리핸드 영속 스케치(iter-3)
+      { label: '스케치', icon: 'ai', tool: 'sketch-pen' }, // 프리핸드 영속 스케치(iter-3, 구 '마크업')
       { label: '해치', icon: 'hatch', planned: '2D 도면 단계' },
     ],
   },

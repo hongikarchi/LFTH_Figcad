@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { applyOpLog, opSummary, KIND_LABEL, type DocStore, type OpLogEntry } from '@figcad/core';
 import { useUiStore, type AiModelId } from '../state/uiStore';
 import { runAgent, type AiLintFinding, type TranscriptTurn } from '../ai/agentClient';
+import { buildImportsManifest, type ImportsProvider } from '../ai/importsManifest';
 import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
 import { fileToAttachment, type ImageAttachment } from '../ai/imageAttach';
 import { startVoice, voiceSupported } from '../ai/voiceInput';
@@ -25,7 +26,7 @@ interface Plan {
   lintFindings?: AiLintFinding[];
 }
 
-export function AiPanel({ store }: { store: DocStore }) {
+export function AiPanel({ store, federation }: { store: DocStore; federation: ImportsProvider }) {
   // AI = 앰비언트 dock(iter-2). aiOpen으로 전 모드에서 토글 — 단 항상 mount(챗 history 보존).
   const aiOpen = useUiStore((s) => s.aiOpen);
   const selection = useUiStore((s) => s.selection);
@@ -100,6 +101,7 @@ export function AiPanel({ store }: { store: DocStore }) {
 
     // 선택 grounding(피드백) — 현재 선택 요소를 프롬프트에 명시해 "이거/이 벽"이 해소되게.
     // 서버 변경 없이 클라가 ref를 덧붙임(에이전트는 이미 문서 스냅샷 보유 → id로 해소).
+    // 후속: 임포트 객체 픽이 선택 가능해지면 {sourceId, objectName}도 같은 방식으로 덧붙인다(서버 무변경).
     const selRefs = useUiStore
       .getState()
       .selection.map((id) => {
@@ -132,6 +134,8 @@ export function AiPanel({ store }: { store: DocStore }) {
         transcript,
         sketch,
         image: img,
+        // 연동 모델 매니페스트 — AI가 임포트(이름·bbox·오브젝트·레이어)를 보게. 소스 0 = null = 필드 생략.
+        imports: buildImportsManifest(store, federation),
         model: useUiStore.getState().aiModel,
         onThinking: (delta) => {
           setThinking((p) => p + delta);

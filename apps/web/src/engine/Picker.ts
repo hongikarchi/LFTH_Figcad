@@ -45,15 +45,16 @@ export function pickElement(
 }
 
 /**
- * 화면 좌표 → 주어진 루트들(오버레이 그룹·요소 메시) 최근접 **솔리드 면** 3D 교차점(월드 m). 없으면 null. 3D 코멘트용.
- * Mesh만 채택 — 와이어 edge(Line, 기본 threshold 1m)·라벨 스프라이트 히트가 코멘트 z를 오염시키는 것 방지.
+ * 화면 좌표 → 주어진 루트들 최근접 **솔리드 면** Intersection 전체 (faceIndex·object 포함). 없으면 null.
+ * raycastPoint와 동일 규칙(Line threshold 0·조상 가시성 필터·Mesh만) — refSnap(임포트 피처 스냅)용.
  */
-export function raycastPoint(
+export function raycastHit(
   clientX: number,
   clientY: number,
   camera: THREE.Camera,
   roots: THREE.Object3D[],
-): THREE.Vector3 | null {
+  skipAnnotation = false,
+): THREE.Intersection | null {
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const savedLine = raycaster.params.Line?.threshold;
@@ -65,8 +66,29 @@ export function raycastPoint(
     for (let n: THREE.Object3D | null = o; n; n = n.parent) if (!n.visible) return false;
     return true;
   };
-  const hit = hits.find((h) => (h.object as THREE.Mesh).isMesh && isVisible(h.object)); // 솔리드·보이는 면만
-  return hit ? hit.point.clone() : null;
+  // skipAnnotation: 주석 픽 프록시(투명 리본 — userData.annotation)는 통과해 뒤의 실지오메트리를 맞춘다
+  // (피처 스냅이 보이지 않는 프록시 모서리에 붙는 것 방지 — refSnap 전용, 코멘트 raycastPoint는 기존 유지).
+  return (
+    hits.find(
+      (h) =>
+        (h.object as THREE.Mesh).isMesh &&
+        isVisible(h.object) &&
+        (!skipAnnotation || !h.object.userData['annotation']),
+    ) ?? null
+  ); // 솔리드·보이는 면만
+}
+
+/**
+ * 화면 좌표 → 주어진 루트들(오버레이 그룹·요소 메시) 최근접 **솔리드 면** 3D 교차점(월드 m). 없으면 null. 3D 코멘트용.
+ * Mesh만 채택 — 와이어 edge(Line, 기본 threshold 1m)·라벨 스프라이트 히트가 코멘트 z를 오염시키는 것 방지.
+ */
+export function raycastPoint(
+  clientX: number,
+  clientY: number,
+  camera: THREE.Camera,
+  roots: THREE.Object3D[],
+): THREE.Vector3 | null {
+  return raycastHit(clientX, clientY, camera, roots)?.point.clone() ?? null;
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { DocStore, Id } from '@figcad/core';
+import type { DocStore, Id, Pt } from '@figcad/core';
 import type * as THREE from 'three';
 import type { Engine } from '../engine/Engine';
 import type { CameraRig } from '../engine/CameraRig';
@@ -33,4 +33,9 @@ export interface EditorContext {
   collab: CollabBridge;
   /** 오버레이(federation 레퍼런스) 루트 — 3D 코멘트 레이캐스트용(메시 위 핀). */
   overlayRoot?: THREE.Object3D;
+  /**
+   * 임포트(빽도면 등) 스냅 후보 — 활성 레벨의 언더레이 끝점을 커서 반경(doc mm) 내에서.
+   * 도구들이 SnapContext.endpoints에 append (읽기전용 트레이싱 — 임포트 편집 아님). main이 배선.
+   */
+  importSnapCandidates?: (near: Pt, radiusMm: number) => Pt[];
 }

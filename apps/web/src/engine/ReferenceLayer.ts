@@ -16,11 +16,27 @@ import type { Engine } from './Engine';
  * 전체 federation(소스 레지스트리·추출·3D-Tiles·픽킹)은 v1.5 — docs/federation-design.md.
  */
 
+/** 병합 버퍼 내 객체 range — 삼각형 인덱스(faceIndex) 공간, start 오름차순 (.3dm 단일 메시용). */
+export interface ReferenceMeshGroup {
+  start: number;
+  count: number;
+  name?: string;
+  objectId?: string;
+  category?: string;
+}
+
 export interface ReferenceMesh {
   /** non-indexed 삼각형 정점, 월드 미터 (x,y,z 반복) */
   positions: Float32Array;
   /** 선택 — 없으면 geometry가 flat normal 계산 */
   normals?: Float32Array;
+  /** 메시 전체 = 한 객체일 때의 정체성 (glTF 노드명 / IFC Name / figcad-room 요소) — 스냅·라벨·AI용 */
+  name?: string;
+  objectId?: string;
+  /** IFC 타입명 / figcad KIND_LABEL / rhino 레이어 — 표시명 폴백 */
+  category?: string;
+  /** 병합 버퍼(.3dm) 객체별 range — name/objectId/category와 배타적 사용 */
+  groups?: ReferenceMeshGroup[];
 }
 
 /** 추출기 결과 — solid 메시 + (선택) 3D 와이어프레임 에지(.3dm Brep edge 등 = "있는 그대로"). */
@@ -84,6 +100,8 @@ export interface UnderlayPlacement {
 export class ReferenceLayer {
   private group = new THREE.Group();
   private sources = new Map<string, THREE.Group>();
+  /** 소스별 객체 정체성(range 평탄화) — AI 매니페스트·픽 정보 공용. 클라 로컬(Y.Doc 밖). */
+  private identity = new Map<string, ReferenceMeshGroup[]>();
   private planFlipped = false; // plan 직교뷰 X 반사 상태 — 언더레이 텍스트 스프라이트 역-flip용
 
   constructor(private engine: Engine) {
@@ -106,6 +124,7 @@ export class ReferenceLayer {
       color: CLAY_COLOR,
       side: THREE.DoubleSide,
     });
+    const identity: ReferenceMeshGroup[] = [];
     for (const m of result.meshes) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
@@ -115,8 +134,25 @@ export class ReferenceLayer {
       // v0 비픽은 SceneManager.pickables 미포함에서 옴(이 그룹은 별도). 이 플래그는
       // v1.5 픽킹(읽기전용 정보표시) 때 레퍼런스 메시 식별용 마커 — federation-design §4d.
       mesh.userData['figcadReference'] = true;
+      // 객체 정체성 — 스냅 정보·라벨 프리필·AI 매니페스트용 (refIdentity.refObjectInfoAt이 해석).
+      mesh.userData['refSourceId'] = name;
+      if (m.groups) {
+        mesh.userData['refGroups'] = m.groups; // 병합 버퍼(.3dm): faceIndex range 이진탐색
+        identity.push(...m.groups);
+      } else if (m.name || m.objectId || m.category) {
+        const obj: ReferenceMeshGroup = {
+          start: 0,
+          count: m.positions.length / 9,
+          name: m.name,
+          objectId: m.objectId,
+          category: m.category,
+        };
+        mesh.userData['refObject'] = obj; // 메시 전체 = 한 객체 (glTF/IFC/figcad-room)
+        identity.push(obj);
+      }
       g.add(mesh);
     }
+    if (identity.length) this.identity.set(name, identity);
     // 3D 와이어프레임 에지(.3dm Brep edge·커브 = "있는 그대로") — 1 LineSegments draw call.
     if (result.edges && result.edges.length) {
       const egeo = new THREE.BufferGeometry();
@@ -302,6 +338,22 @@ export class ReferenceLayer {
     return [...this.sources.keys()];
   }
 
+  /** 소스의 객체 정체성 목록 — AI 매니페스트·픽 정보 공용. 미로드/무정체성 = []. */
+  objectsOf(name: string): readonly ReferenceMeshGroup[] {
+    return this.identity.get(name) ?? [];
+  }
+
+  /**
+   * 소스 하나의 월드 bbox (visibleBounds와 달리 개별·숨김 포함). 없거나 빈 그룹 = null.
+   * 그룹에 -projectOrigin/언더레이 TRS가 이미 반영돼 있어 결과는 doc 프레임 정렬(×1000=doc mm).
+   */
+  boundsOf(name: string): THREE.Box3 | null {
+    const g = this.sources.get(name);
+    if (!g) return null;
+    const box = new THREE.Box3().setFromObject(g);
+    return box.isEmpty() ? null : box;
+  }
+
   /** 레퍼런스 메시 루트 그룹 — 줌 익스텐트(fitView)가 오버레이까지 포함해 맞추도록 노출(읽기용). */
   get root(): THREE.Group {
     return this.group;
@@ -334,6 +386,7 @@ export class ReferenceLayer {
   }
 
   remove(name: string): void {
+    this.identity.delete(name);
     const g = this.sources.get(name);
     if (!g) return;
     this.disposeGroup(g);
@@ -349,6 +402,7 @@ export class ReferenceLayer {
       this.group.remove(g);
     }
     this.sources.clear();
+    this.identity.clear();
     this.updateGridVisibility();
     this.engine.requestRender();
   }

@@ -1,6 +1,7 @@
-import type { DocStore, FederationSource, Id } from '@figcad/core';
+import type { DocStore, FederationSource, Id, Pt } from '@figcad/core';
 import type { DwgUnderlay } from '@figcad/interop/dwg-underlay';
-import type { ReferenceLayer, UnderlayPlacement } from './ReferenceLayer';
+import { UnderlaySnapIndex } from '@figcad/interop/underlay-snap';
+import type { ReferenceLayer, ReferenceMeshGroup, UnderlayPlacement } from './ReferenceLayer';
 import type { Extractor, UnderlayExtractor } from '../interop/federationExtract';
 
 /** 2D 언더레이(빽도면) sourceType — 메시 아닌 라인워크 렌더 경로. */
@@ -28,6 +29,8 @@ interface LocalState {
   gen: number;
   /** 언더레이: 파싱 결과 캐시 — 배치/클립만 바뀌면 재페치·재파싱 없이 재렌더(addUnderlay만). */
   underlay?: DwgUnderlay;
+  /** 언더레이 끝점 스냅 인덱스 — 첫 쿼리 lazy 빌드, 배치/클립 변경·reload 시 무효화(클라 로컬). */
+  snapIndex?: UnderlaySnapIndex;
   /** 래스터(image/pdf): 디코드 결과 캐시 — 배치만 바뀌면 재페치·재디코드 없이 재렌더. */
   raster?: { source: ImageBitmap | HTMLCanvasElement; wMm: number; hMm: number };
   /** 마지막 적용한 배치(origin/rotation/scale/clip/opacity) 시그 — 변경 감지용. */
@@ -205,11 +208,13 @@ export class FederationReconciler {
     this.ref.addUnderlay(s.id, underlay, placement, elev);
   }
 
-  /** 배치/클립만 변경 — 캐시된 파싱으로 재렌더(재페치·재파싱 없음). */
+  /** 배치/클립만 변경 — 캐시된 파싱으로 재렌더(재페치·재파싱 없음). 스냅 인덱스도 무효화(배치 종속). */
   private reapplyUnderlay(s: FederationSource, st: LocalState): void {
     if (!st.underlay) return;
+    st.snapIndex = undefined;
     this.placeUnderlay(s, st.underlay);
     st.placementSig = placementSigOf(s);
+    this.scheduleSnapIndexBuild(s.id); // 새 배치로 idle 재빌드 (첫 스냅 hitch 방지)
   }
 
   /** 래스터(image/pdf) 배치 적용 — origin/rotation/scale/opacity + 레벨 elevation. */
@@ -272,6 +277,75 @@ export class FederationReconciler {
       });
   }
 
+  /**
+   * 빽도면 끝점 스냅 후보 — ready+visible+해당 레벨 배치 언더레이의 끝점을 커서 반경 내에서 수집.
+   * 인덱스는 첫 쿼리에 lazy 빌드(메가시트 수십 ms 1회), 배치/클립 변경·reload 시 무효화.
+   * 평면 도구들이 SnapContext.endpoints에 append (읽기전용 — 후보점만).
+   */
+  underlaySnapCandidates(levelId: Id, near: Pt, radiusMm: number): Pt[] {
+    const out: Pt[] = [];
+    for (const [id, st] of this.local) {
+      if (st.status !== 'ready' || !st.underlay) continue;
+      const s = this.store.getFederationSource(id);
+      if (!s || !s.visible || !UNDERLAY_TYPES.has(s.sourceType)) continue;
+      if (s.underlay?.levelId !== levelId) continue;
+      if (!st.snapIndex) this.buildSnapIndex(s, st);
+      st.snapIndex!.candidatesNear(near, radiusMm, out);
+    }
+    return out;
+  }
+
+  /** 스냅 인덱스 즉시 빌드 (동기) — lazy 폴백 경로. */
+  private buildSnapIndex(s: FederationSource, st: LocalState): void {
+    if (!st.underlay) return;
+    const pl = s.underlay;
+    st.snapIndex = new UnderlaySnapIndex(st.underlay, {
+      origin: pl?.origin ?? [0, 0],
+      rotation: pl?.rotation ?? 0,
+      scale: pl?.scale ?? 1,
+      clip: pl?.clip,
+    });
+    if (st.snapIndex.capped)
+      console.warn(`[언더레이 스냅] "${s.name}" 끝점 상한 도달 — 일부만 스냅 후보`);
+  }
+
+  /**
+   * 스냅 인덱스 idle 프리빌드 — 메가시트(100k+ 세그) 빌드가 첫 pointermove 중 프레임 hitch로
+   * 떨어지지 않게 로드/배치 직후 유휴 시간에 미리 만든다(리뷰 지적). stale 가드 = placementSig.
+   */
+  private scheduleSnapIndexBuild(id: Id): void {
+    const sig = this.local.get(id)?.placementSig;
+    const ric: (cb: () => void) => unknown =
+      typeof requestIdleCallback === 'function' ? requestIdleCallback : (cb) => setTimeout(cb, 200);
+    ric(() => {
+      const st = this.local.get(id);
+      const s = this.store.getFederationSource(id);
+      if (!st || !s || st.status !== 'ready' || !st.underlay) return;
+      if (st.snapIndex || st.placementSig !== sig) return; // 이미 빌드됨/배치 변경됨(stale)
+      this.buildSnapIndex(s, st);
+    });
+  }
+
+  /** 소스 하나의 월드 bbox — tuple 평탄화(THREE 미유입, AI 매니페스트용). 미로드/빈 = null. */
+  worldBoundsOf(id: Id): { min: [number, number, number]; max: [number, number, number] } | null {
+    const box = this.ref.boundsOf(id);
+    if (!box) return null;
+    return {
+      min: [box.min.x, box.min.y, box.min.z],
+      max: [box.max.x, box.max.y, box.max.z],
+    };
+  }
+
+  /** 소스의 객체 정체성 목록 (ReferenceLayer 위임) — AI 매니페스트용. */
+  objectsOf(id: Id): readonly ReferenceMeshGroup[] {
+    return this.ref.objectsOf(id);
+  }
+
+  /** 소스의 언더레이 파싱 캐시 (레이어명·라벨 텍스트) — AI 매니페스트용. */
+  underlayOf(id: Id): DwgUnderlay | undefined {
+    return this.local.get(id)?.underlay;
+  }
+
   /** 언더레이(DWG/DXF) 로드 — blob 페치+파싱 → 캐시 + live.underlay 배치 적용 → ref.addUnderlay. */
   private loadUnderlay(s: FederationSource, myGen: number): void {
     const kind = s.sourceType === 'dxf' ? 'dxf' : 'dwg';
@@ -287,6 +361,7 @@ export class FederationReconciler {
           status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen,
           underlay, placementSig: placementSigOf(live),
         });
+        this.scheduleSnapIndexBuild(s.id); // 스냅 인덱스 idle 프리빌드 (첫 스냅 hitch 방지)
         this.notify();
       })
       .catch((err: unknown) => {

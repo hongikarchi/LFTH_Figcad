@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { snapPoint, type Pt } from '@figcad/core';
+import { snapPoint, type Pt, type SnapResult } from '@figcad/core';
+import { createSnapMarker, updateSnapMarker } from './snapMarker';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 
@@ -21,10 +22,7 @@ export class SlabTool implements Tool {
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({ color: 0x0a84ff }),
     );
-    this.marker = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0x0a84ff }),
-    );
+    this.marker = createSnapMarker();
     this.preview.visible = this.marker.visible = false;
     ctx.engine.scene.add(this.preview, this.marker);
   }
@@ -35,13 +33,14 @@ export class SlabTool implements Tool {
     if (!info.doc) return;
     const snap = this.snap(info);
     this.updateMarker(snap, info.mmPerPixel);
-    this.updatePreview(snap);
+    this.updatePreview(snap.point);
     this.ctx.engine.requestRender();
   }
 
   up(info: ToolPointerInfo): void {
     if (!info.doc) return;
-    const snap = this.snap(info);
+    const snapRes = this.snap(info);
+    const snap = snapRes.point;
 
     // 첫 점 근처 클릭 = 닫기
     if (this.points.length >= 3) {
@@ -62,7 +61,7 @@ export class SlabTool implements Tool {
     this.points.push(snap); // 자가교차는 commit 시 isSimplePolygon으로 최종 검증
     // 펜/터치 탭은 후속 move가 없어 미리보기가 stale — 커밋한 정점까지 즉시 재렌더
     this.updatePreview();
-    this.updateMarker(snap, info.mmPerPixel);
+    this.updateMarker(snapRes, info.mmPerPixel);
     this.ctx.engine.requestRender();
   }
 
@@ -92,18 +91,19 @@ export class SlabTool implements Tool {
     this.cancel();
   }
 
-  private snap(info: ToolPointerInfo): Pt {
+  private snap(info: ToolPointerInfo): SnapResult {
     return snapPoint([info.doc![0], info.doc![1]], {
       endpoints: [
         ...this.ctx.store.wallEndpoints(this.ctx.levelId()),
         ...this.points, // 자기 꼭짓점(첫 점 닫기 포함)도 후보
+        ...(this.ctx.importSnapCandidates?.([info.doc![0], info.doc![1]], SNAP_PX * info.mmPerPixel) ?? []), // 빽도면 끝점 트레이싱
       ],
       endpointTolerance: SNAP_PX * info.mmPerPixel,
       grid: GRID_MM,
       ...(this.points.length
         ? { axisFrom: this.points[this.points.length - 1]! }
         : {}),
-    }).point;
+    });
   }
 
   // current 생략(커밋 직후) = 확정 정점들만 그림 — 중복점/0mm 치수칩 방지
@@ -136,10 +136,8 @@ export class SlabTool implements Tool {
     this.ctx.hud.showDimension(mid, lenMm, this.ctx.rig.active);
   }
 
-  private updateMarker(p: Pt, mmPerPixel: number): void {
+  private updateMarker(snap: SnapResult, mmPerPixel: number): void {
     const elev = (this.ctx.store.getLevel(this.ctx.levelId())?.elevation ?? 0) / 1000;
-    this.marker.visible = true;
-    this.marker.position.set(p[0] / 1000, elev + 0.03, p[1] / 1000);
-    this.marker.scale.setScalar(Math.max((6 * mmPerPixel) / 1000, 0.01));
+    updateSnapMarker(this.marker, snap, mmPerPixel, elev + 0.01);
   }
 }

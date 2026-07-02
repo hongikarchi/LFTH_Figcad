@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { snapPoint, type Pt } from '@figcad/core';
 import { useUiStore } from '../state/uiStore';
-import { raycastPoint } from '../engine/Picker';
+import { refSnapAt } from '../engine/refSnap';
+import { createSnapMarker, updateSnapMarker, updateSnapMarker3d, REF_MARKER_COLORS } from './snapMarker';
 import type { EditorContext } from './context';
 import type { Tool, ToolPointerInfo } from './ToolController';
 
@@ -21,6 +23,7 @@ export class MeasureTool implements Tool {
   private line: THREE.Line;
   private markerA: THREE.Mesh;
   private markerB: THREE.Mesh;
+  private snapDot: THREE.Mesh; // 3D 피처 스냅 피드백(꼭짓점 주황·에지 파랑) — 면 히트는 숨김
 
   constructor(private ctx: EditorContext) {
     this.line = new THREE.Line(
@@ -32,8 +35,9 @@ export class MeasureTool implements Tool {
     this.line.geometry.setAttribute('lineDistance', new THREE.Float32BufferAttribute([0, 0], 1));
     this.markerA = this.makeMarker(0x0a84ff);
     this.markerB = this.makeMarker(0xffffff);
+    this.snapDot = createSnapMarker();
     this.line.visible = this.markerA.visible = this.markerB.visible = false;
-    ctx.engine.scene.add(this.line, this.markerA, this.markerB);
+    ctx.engine.scene.add(this.line, this.markerA, this.markerB, this.snapDot);
   }
 
   private makeMarker(color: number): THREE.Mesh {
@@ -42,15 +46,38 @@ export class MeasureTool implements Tool {
     return m;
   }
 
-  /** 화면 → 월드(m). 3D = 메시 표면 히트 우선, 폴백/평면 = 지면(활성 레벨 고도). */
+  /** 화면 → 월드(m). 3D = 메시 피처 스냅(꼭짓점>에지>면 — 임포트 포함), 폴백/평면 = 지면(활성 레벨 고도). */
   private worldAt(info: ToolPointerInfo): THREE.Vector3 | null {
     const is3d = useUiStore.getState().viewMode === '3d';
-    const roots = this.ctx.overlayRoot ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables] : this.ctx.scene.pickables;
-    const p3d = is3d ? raycastPoint(info.clientX, info.clientY, this.ctx.rig.active, roots) : null;
-    if (p3d) return p3d;
+    if (is3d) {
+      const roots = this.ctx.overlayRoot
+        ? [this.ctx.overlayRoot, ...this.ctx.scene.pickables]
+        : this.ctx.scene.pickables;
+      const r = refSnapAt(info.clientX, info.clientY, this.ctx.rig.active, roots, 12);
+      if (r) {
+        // 피처 스냅 피드백 — 면 히트는 기존 흰 B마커 의미론 유지(스냅닷 숨김).
+        if (r.kind === 'face') this.snapDot.visible = false;
+        else updateSnapMarker3d(this.snapDot, r.point, REF_MARKER_COLORS[r.kind], info.mmPerPixel);
+        return r.point.clone(); // refSnap 결과는 모듈 스크래치 — 반드시 clone
+      }
+      this.snapDot.visible = false;
+    }
     if (info.doc) {
       const elev = (this.ctx.store.getLevel(this.ctx.levelId())?.elevation ?? 0) / 1000;
-      return new THREE.Vector3(info.doc[0] / 1000, elev, info.doc[1] / 1000);
+      // 평면 — 벽 끝점 + 빽도면(언더레이) 끝점 스냅. grid: 0 — 줄자는 자유점을 그리드로 라운딩하면 안 됨.
+      const tol = 12 * info.mmPerPixel;
+      const near: Pt = [info.doc[0], info.doc[1]];
+      const snap = snapPoint(near, {
+        endpoints: [
+          ...this.ctx.store.wallEndpoints(this.ctx.levelId()),
+          ...(this.ctx.importSnapCandidates?.(near, tol) ?? []),
+        ],
+        endpointTolerance: tol,
+        grid: 0,
+      });
+      if (snap.kind === 'endpoint') updateSnapMarker(this.snapDot, snap, info.mmPerPixel, elev);
+      else this.snapDot.visible = false;
+      return new THREE.Vector3(snap.point[0] / 1000, elev, snap.point[1] / 1000);
     }
     return null;
   }
@@ -118,6 +145,7 @@ export class MeasureTool implements Tool {
     this.drawLine(this.a, b);
     this.showChip(this.a, b);
     this.finalized = true;
+    this.snapDot.visible = false; // 확정 후 스냅 피드백 고스트 방지 (B마커가 점을 표시)
     this.ctx.engine.requestRender();
   }
 
@@ -140,7 +168,7 @@ export class MeasureTool implements Tool {
     this.a = null;
     this.finalized = false;
     this.downClient = null;
-    this.line.visible = this.markerA.visible = this.markerB.visible = false;
+    this.line.visible = this.markerA.visible = this.markerB.visible = this.snapDot.visible = false;
     this.ctx.hud.hideDimension();
     this.ctx.engine.requestRender(); // 비주얼 정리 단일소스(cancel/enter/down-while-finalized 고스트 방지)
   }

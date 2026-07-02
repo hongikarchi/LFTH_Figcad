@@ -60,7 +60,10 @@ export class GridTool implements Tool {
 
   private snap(info: ToolPointerInfo): Pt {
     return snapPoint([info.doc![0], info.doc![1]], {
-      endpoints: this.ctx.store.wallEndpoints(this.ctx.levelId()),
+      endpoints: [
+        ...this.ctx.store.wallEndpoints(this.ctx.levelId()),
+        ...(this.ctx.importSnapCandidates?.([info.doc![0], info.doc![1]], SNAP_PX * info.mmPerPixel) ?? []), // 빽도면 끝점 트레이싱
+      ],
       endpointTolerance: SNAP_PX * info.mmPerPixel,
       grid: GRID_MM,
       ...(this.start ? { axisFrom: this.start } : {}),

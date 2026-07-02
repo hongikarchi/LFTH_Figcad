@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 
 export type ViewMode = '3d' | 'plan';
+/** 뷰 기즈모 프리셋(항목8a) — top=평면(직교 탑다운), 나머지=3D 표준 방위. */
+export type ViewPreset = 'top' | 'front' | 'back' | 'left' | 'right' | 'iso';
 
 /** 카메라 궤도 포즈 — 뷰포인트(저장 단면) 캡처/복원용. 렌더 m·rad (뷰 메타데이터라 mm-정수 불요). */
 export interface CameraPose {
@@ -68,6 +70,37 @@ export class CameraRig {
   /** 방위를 북향으로 스냅 (theta=π → 화면 위=문서 +y 북) — AI 스케치는 북향 평면에서. */
   setNorthUp(): void {
     this.theta = Math.PI;
+    this.apply();
+  }
+
+  /**
+   * 뷰 기즈모 프리셋으로 전환(항목8a). top = 평면(직교 탑다운, 기존 트윈 경로).
+   * 나머지 = 3D 원근을 표준 방위로 스냅 — front=남쪽서 북(+Z) 봄, right=동쪽서 봄, iso=기본 등각.
+   * (true 직교 elevation은 8b — 지금은 원근 프리셋으로 인식 가능한 뷰 제공, ortho 탑다운락 리팩터 회피.)
+   * 호출측(main)이 uiStore.viewMode를 rig.mode에 동기화(setViewContext·flip 트리거).
+   */
+  setView(preset: ViewPreset): void {
+    if (preset === 'top') {
+      this.setMode('plan'); // 기존 평면 경로(직교 탑다운 + 북향 + 트윈)
+      return;
+    }
+    // φ=π/2 = 수평 시선(elevation), θ = 방위. iso만 기본 등각. apply()가 pos = target + dist·(sinφsinθ, cosφ, sinφcosθ).
+    const H = Math.PI / 2;
+    const A: Record<Exclude<ViewPreset, 'top'>, { theta: number; phi: number }> = {
+      front: { theta: Math.PI, phi: H }, // 남쪽서 북(+Z) 바라봄 = 북측 입면
+      back: { theta: 0, phi: H }, // 북쪽서 남 바라봄
+      right: { theta: Math.PI / 2, phi: H }, // 동쪽서 서 바라봄 = 동측 입면
+      left: { theta: -Math.PI / 2, phi: H }, // 서쪽서 동 바라봄
+      iso: { theta: Math.PI / 4, phi: Math.PI / 4.5 }, // 기본 등각
+    };
+    const a = A[preset];
+    this.mode = '3d';
+    this.tweenT = 1; // 스냅(트윈 없음 — 프리셋은 즉시 전환)
+    this.theta = a.theta;
+    this.phi = a.phi;
+    this.savedPhi = a.phi;
+    this.savedTheta = a.theta;
+    this.updateFrustum(window.innerWidth / window.innerHeight);
     this.apply();
   }
 
@@ -180,6 +213,26 @@ export class CameraRig {
   /** 타깃을 월드 좌표(m)로 이동 — 요소 점프용. 각도·거리는 유지 */
   focusOn(x: number, y: number, z: number): void {
     this.target.set(x, y, z);
+    this.apply();
+  }
+
+  /**
+   * 오빗 피벗 변경 — target을 world로 옮기되 **카메라 위치는 고정**(화면 점프 없음).
+   * 현재 카메라 위치에서 새 target까지의 오프셋으로 distance/theta/phi를 역산해 apply가
+   * 같은 위치를 재구성. (focusOn은 각도·거리 유지·target 점프 = 반대 용도.) 3D(원근)에서만 의미.
+   * apply()의 pos = target + distance*(sinPhi·sinθ, cosPhi, sinPhi·cosθ) 역함수.
+   */
+  setPivot(x: number, y: number, z: number): void {
+    if (this.mode !== '3d') return;
+    const ox = this.persp.position.x - x;
+    const oy = this.persp.position.y - y;
+    const oz = this.persp.position.z - z;
+    const dist = Math.hypot(ox, oy, oz);
+    if (dist < MIN_DISTANCE) return; // 피벗이 카메라에 너무 붙음 — 무시(역산 불안정)
+    this.target.set(x, y, z);
+    this.distance = THREE.MathUtils.clamp(dist, MIN_DISTANCE, MAX_DISTANCE);
+    this.phi = THREE.MathUtils.clamp(Math.acos(THREE.MathUtils.clamp(oy / dist, -1, 1)), MIN_PHI, MAX_PHI);
+    this.theta = Math.atan2(ox, oz);
     this.apply();
   }
 
