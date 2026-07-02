@@ -38,6 +38,15 @@ namespace Figcad
             return KindFromLayer(layerFullPath);
         }
 
+        // 명시적 지정 여부 — 객체 figcad:kind 또는 레이어맵이 유효 kind로 해석되면 true.
+        // (레이어 시맨틱 자동분류 = 추측 → 타당성 상한 적용 / 명시적 지정 = 사용자 의사 → 상한 스킵.)
+        public static bool IsExplicitKind(string kindOverride, string layerFullPath, FigcadLayerMap map)
+        {
+            if (Norm(kindOverride) != null) return true;
+            if (map != null && map.TryGet(layerFullPath, out var mk) && Norm(mk) != null) return true;
+            return false;
+        }
+
         // 문자열 → 유효 kind(소문자 트림), 아니면 null(폴백 유도).
         static string Norm(string s)
         {

@@ -102,6 +102,17 @@ namespace Figcad
         const int BATCH = 1500; // D-1 바운드(ops≤2000) 회피 배치 크기
         const double Cos2Deg = 0.99939; // 수직 프리즘축 게이트 cos(2°)
         const double Sin2Deg = 0.03490; // 수평 프리즘축 게이트 sin(2°)
+        // 부재 타당성 상한 — *레이어 자동분류(추측)에만* 적용, 명시적 figcad:kind/레이어맵 지정은 스킵.
+        // 목적 = 눕힌 판·덩어리의 부재 오분류 차단(골든 씬 plate 2000×150 실증). 값은 실무 상한 여유:
+        // 보 춤 2500(전이거더)·기둥 2000(메가기둥)·벽 1500(지하 옹벽). 초과 = Lane-2 정직 잔여.
+        const double BeamWidthMax = 1200;  // 보 단면 폭(수평) 상한(mm) — "폭 2m 보는 없다"
+        const double BeamDepthMax = 2500;  // 보 단면 춤(수직) 상한(mm) — 전이거더 1500~2500 실존
+        const double ColumnDimMax = 2000;  // 기둥 단면 최대변 상한(mm)
+        const double WallThickMax = 1500;  // 벽 두께 상한(mm) — 실모델 F-Wall 600~700 파사드 벽 실존(census) + 옹벽 여유
+        // aspect 가드 = 엡실론 비교. 종전 정확비교(len <= maxdim)는 입방체서 float 동점 코인플립
+        // (800.0000001 > 799.9999998 → 800³ 큐브가 beam 통과, 골든 씬 실증). 비율 마진(×1.2)은
+        // 실존 인방/커플링보(길이 900 × 춤 800)까지 기각해 과잉 — +1mm 엡실론이 정확한 수정.
+        const double AspectEps = 1.0;
         static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
 
         static string Url(FigcadConfig c, string op) =>
@@ -743,7 +754,7 @@ namespace Figcad
                 RecognizedOp rec = null;
                 if (levelId == null) { fail = "레벨 없음"; bucket = "기타"; }
                 else if (resolved == null) { fail = "미분류(레이어)"; bucket = "미분류"; }
-                else rec = RecognizeElement(it.B, resolved, ctx, result, out fail, out bucket);
+                else rec = RecognizeElement(it.B, resolved, FigcadClassify.IsExplicitKind(it.KindOverride, it.Layer, map), ctx, result, out fail, out bucket);
 
                 if (rec == null)
                 {
@@ -810,7 +821,9 @@ namespace Figcad
 
         // Brep 1개 인식. null 반환 = Lane-2(fail=상세 사유, bucket=보고 집계 키).
         // "조용히 근사 금지": 단면 분류/각도 게이트/부피 게이트 실패는 bbox 폴백 없이 Lane-2.
-        static RecognizedOp RecognizeElement(Brep b, string kind, RecoCtx ctx, PushClassification result, out string fail, out string bucket)
+        // explicitKind = 사용자가 figcad:kind/레이어맵으로 명시 지정 → 타당성 *상한*만 스킵
+        // (기하 유효성 게이트 — 프리즘·aspect·부피 — 는 명시 지정도 통과 못 하면 Lane-2).
+        static RecognizedOp RecognizeElement(Brep b, string kind, bool explicitKind, RecoCtx ctx, PushClassification result, out string fail, out string bucket)
         {
             fail = null; bucket = null;
             var bb = b.GetBoundingBox(true);
@@ -853,7 +866,14 @@ namespace Figcad
                 if (fit == null) { fail = "기울음(수직 프리즘축 없음)"; bucket = "기울"; return null; }
                 double atx = (fit.Axis.From.X + fit.Axis.To.X) / 2, aty = (fit.Axis.From.Y + fit.Axis.To.Y) / 2;
                 var frame = FigcadFit.ColumnSectionFrame(new Point3d(atx, aty, 0)); // 기둥 = 월드 XY 고정
-                var sec = FitSectionWithFidelity(fit, frame, ctx, out fail);
+                // 상한 게이트 = 핏 *이전* raw pts bbox(보 분기와 동일 지점·동일 측정) — 저렴한 검사 먼저 +
+                // 두 분기의 게이트 측정 단일화(사후 명명치수 게이트는 필렛 sharpen 편차로 kind별 불일치 유발).
+                var cpts = FigcadFit.ToSectionPts(fit, frame);
+                double cw, cd;
+                PtsExtent(cpts, out cw, out cd);
+                if (!explicitKind && Math.Max(cw, cd) > ColumnDimMax)
+                { fail = "단면 과대(기둥 " + F(Math.Max(cw, cd)) + "mm > " + F(ColumnDimMax) + ")"; bucket = "단면과대"; return null; }
+                var sec = FitSectionWithFidelity(fit, frame, cpts, ctx, out fail);
                 if (sec == null) { bucket = fail != null && fail.StartsWith("부피") ? "부피" : "단면"; return null; }
                 string key, name;
                 if (!SectionTypeKey(sec, kind, out key, out name)) { fail = "단면 키 생성 실패"; bucket = "단면"; return null; }
@@ -879,20 +899,29 @@ namespace Figcad
                     if (Math.Abs(u.Z) < Sin2Deg) horiz.Add(f);
                 }
                 horiz.Sort((x, y) => y.Length.CompareTo(x.Length));
+                string ovFail = null, stubFail = null; // 기각 사유 — 스킵 지점서 기록(사후 재구성 금지)
                 foreach (var fit in horiz)
                 {
                     var frame = FigcadFit.BeamSectionFrame(fit.Axis.From, fit.Axis.To);
                     if (!frame.IsValid) continue;
                     var pts = FigcadFit.ToSectionPts(fit, frame);
                     if (pts.Count == 0) continue;
-                    double minX = double.MaxValue, maxX = double.MinValue, minY = double.MaxValue, maxY = double.MinValue;
-                    foreach (var p in pts)
+                    double secW, secD;
+                    PtsExtent(pts, out secW, out secD);
+                    double secMax = Math.Max(secW, secD);
+                    if (!explicitKind && (secW > BeamWidthMax || secD > BeamDepthMax))
                     {
-                        if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
-                        if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+                        // 기운 보(평행육면체)의 측면 cap쌍도 여기 걸림(거대 평행사변 단면) — 판/덩어리와 구분 불가라 병기.
+                        if (ovFail == null) ovFail = "단면 과대(보 " + F(secW) + "×" + F(secD) + "mm > " +
+                            F(BeamWidthMax) + "×" + F(BeamDepthMax) + " — 판·기운 보·덩어리)";
+                        continue;
                     }
-                    if (fit.Length <= Math.Max(maxX - minX, maxY - minY)) continue; // aspect 가드
-                    var sec = FitSectionWithFidelity(fit, frame, ctx, out fail);
+                    if (fit.Length <= secMax + AspectEps)
+                    {
+                        if (stubFail == null) stubFail = "스텁/입방(축길이 " + F(fit.Length) + " ≤ 단면최대변 " + F(secMax) + ")";
+                        continue; // aspect 가드
+                    }
+                    var sec = FitSectionWithFidelity(fit, frame, pts, ctx, out fail);
                     if (sec == null) { bucket = fail != null && fail.StartsWith("부피") ? "부피" : "단면"; return null; }
                     string key, name;
                     if (!SectionTypeKey(sec, kind, out key, out name)) { fail = "단면 키 생성 실패"; bucket = "단면"; return null; }
@@ -904,7 +933,10 @@ namespace Figcad
                         "],\"zOffset\":" + R(zOff) + "}}";
                     return new RecognizedOp { Kind = "beam", TypeKey = kind + "|" + key, JsonTemplate = json };
                 }
-                fail = "기운 보(수평 축후보 없음)"; bucket = "기울보"; return null;
+                if (ovFail != null) { fail = ovFail; bucket = "단면과대"; }
+                else if (stubFail != null) { fail = stubFail; bucket = "스텁"; }
+                else { fail = "기운 보(수평 축후보 없음)"; bucket = "기울보"; }
+                return null;
             }
 
             if (kind == "wall")
@@ -914,6 +946,7 @@ namespace Figcad
                 double wax, way, wbx, wby, th, planArea;
                 if (!TryWallPlanRect(fit.Profile3D, ctx.Tol, out wax, out way, out wbx, out wby, out th, out planArea))
                 { fail = "벽 평면 비직사각(wall-nonrect)"; bucket = "벽비정형"; return null; }
+                if (!explicitKind && th > WallThickMax) { fail = "두께 과대(벽 " + F(th) + "mm > " + F(WallThickMax) + ")"; bucket = "두께과대"; return null; }
                 if (!FigcadFit.CheckFidelity(fit, planArea, ctx.VolTol))
                 { fail = "부피 불일치(벽 rect 재구성)"; bucket = "부피"; return null; }
                 int thMm = (int)Math.Max(1, Math.Round(th));
@@ -963,6 +996,23 @@ namespace Figcad
             fail = "미지원 kind: " + kind; bucket = "기타"; return null;
         }
 
+        // 프레임 단면점 bbox 치수 — 타당성 상한 게이트의 단일 측정(기둥·보 공용, 핏 이전 raw).
+        static void PtsExtent(List<Point2d> pts, out double w, out double d)
+        {
+            w = 0; d = 0;
+            if (pts == null || pts.Count == 0) return;
+            double minX = double.MaxValue, maxX = double.MinValue, minY = double.MaxValue, maxY = double.MinValue;
+            foreach (var p in pts)
+            {
+                if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+            }
+            w = maxX - minX; d = maxY - minY;
+        }
+
+        // 게이트 메시지용 수치 — R()은 정수 반올림이라 경계값서 "1200mm > 1200" 자기모순 출력 → 0.# 유지.
+        static string F(double v) => v.ToString("0.#", CultureInfo.InvariantCulture);
+
         // 수직 후보(|û·Z| > cos2°) 중 최수직 — column/wall/slab 공용.
         static PrismFit MostVertical(List<PrismFit> valid)
         {
@@ -979,10 +1029,10 @@ namespace Figcad
 
         // FitSection 2단 중재 — 필렛 제거 명명 단면(sharpen)이 부피 게이트에 떨어지면 충실 폴리곤으로
         // 재시도(FigcadFit allowSharpen=false 계약). 둘 다 실패 = null(fail에 사유).
-        static SectionFit FitSectionWithFidelity(PrismFit fit, Plane frame, RecoCtx ctx, out string fail)
+        // pts = 호출측이 이미 게이트용으로 계산한 단면점 재사용(대형 폴리라인 프로파일 이중 투영 제거).
+        static SectionFit FitSectionWithFidelity(PrismFit fit, Plane frame, List<Point2d> pts, RecoCtx ctx, out string fail)
         {
             fail = null;
-            var pts = FigcadFit.ToSectionPts(fit, frame);
             var sec = FigcadFit.FitSection(pts, fit.ProfileCurve, frame, ctx.Tol);
             if (sec.Shape != null && FigcadFit.CheckFidelity(fit, sec.Area, ctx.VolTol)) return sec;
             var sec2 = FigcadFit.FitSection(pts, fit.ProfileCurve, frame, ctx.Tol, false);

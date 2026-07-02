@@ -1,0 +1,29 @@
+{
+  "comment": "커넥터 골든 씬 기대치 — TestHarness.BuildGolden과 1:1. 값은 desired 상태(평판=Lane-2 = 튜닝 후). 치수 tol ±2mm.",
+  "levelElevation": 0,
+  "kindCounts": { "column": 4, "beam": 2, "wall": 1, "slab": 1, "stair": 1, "railing": 1 },
+  "columns": [
+    { "name": "col-rect", "at": [1000, 1000], "height": 3000, "section": { "shape": "rect", "dims": [400, 600] } },
+    { "name": "col-circle", "at": [3000, 1000], "height": 3000, "section": { "shape": "circle", "d": 500 } },
+    { "name": "col-h", "at": [5000, 1000], "height": 3000, "section": { "shape": "hsection", "dims": [400, 400], "web": 13, "flange": 21 } },
+    { "name": "col-L", "atBox": [6800, 850, 7100, 1150], "height": 3000, "section": { "shape": "polygon", "points": 6 } }
+  ],
+  "beams": [
+    { "name": "beam-h", "ab": [[7500, 0], [7500, 6000]], "zOffset": 3000, "section": { "shape": "hsection", "dims": [300, 500], "web": 11, "flange": 18 } },
+    { "name": "beam-rect", "ab": [[1000, 4000], [7000, 4000]], "zOffset": 3300, "section": { "shape": "rect", "dims": [300, 600] } }
+  ],
+  "walls": [
+    { "name": "wall", "ab": [[1000, 11000], [5000, 11000]], "height": 3000, "thickness": 200 }
+  ],
+  "slabs": [
+    { "name": "slab", "boundaryBox": [0, 0, 8000, 6000], "points": 4 }
+  ],
+  "stairs": [
+    { "name": "stair", "abBox": [9000, 0, 11800, 1200] }
+  ],
+  "railings": [
+    { "name": "railing", "abBox": [9000, 4000, 12000, 4050] }
+  ],
+  "federationMin": 1,
+  "_lane2Note": "스크립트가 단언하지 않음(스냅샷에 버킷 없음) — MCP GoldenPush 리포트의 'Lane-2 잔여4(미분류1·스텁1·단면과대2)'로 확인. tilted→단면과대(측면 cap쌍 과대, 메시지에 기운보 병기) · plate→단면과대 · cube→스텁 · blob→미분류(레이어)"
+}
