@@ -20,3 +20,9 @@ coverage/
 d_test.*
 cmp_full.glb
 apps/web/public/__dwgtest.dwg
+
+# 빌드 산출물 (Dockerfile이 재생성)
+apps/server/node-dist/
+# 테스트 스크린샷 산출물 (스크립트가 재생성)
+apps/web/scripts/*.png
+/cmp-node.png
