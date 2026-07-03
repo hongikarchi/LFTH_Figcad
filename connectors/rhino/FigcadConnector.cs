@@ -725,8 +725,6 @@ namespace Figcad
                 Tol = tol,
                 VolTol = volTolFraction,
                 SlabTypeId = result.FirstTypeOfKind.ContainsKey("slab") ? result.FirstTypeOfKind["slab"] : null,
-                StairTypeId = result.FirstTypeOfKind.ContainsKey("stair") ? result.FirstTypeOfKind["stair"] : null,
-                RailTypeId = result.FirstTypeOfKind.ContainsKey("railing") ? result.FirstTypeOfKind["railing"] : null,
                 ModelBB = modelBB,
             };
             foreach (var it in items)
@@ -806,7 +804,7 @@ namespace Figcad
             public double LevelElev; // 첫 레벨 elevation — baseOffset/zOffset 레벨 상대화
             public double Tol;
             public double VolTol;    // CheckFidelity 임계(패널 1~10%)
-            public string SlabTypeId, StairTypeId, RailTypeId;
+            public string SlabTypeId; // stair/railing 시드 타입은 v0.5 파라메트릭 전환으로 소멸
             public BoundingBox ModelBB;
         }
 
@@ -868,12 +866,9 @@ namespace Figcad
                     return new RecognizedOp { Kind = "stair", TypeKey = "stair|" + skey, JsonTemplate = sjson, Approx = true, ApproxReason = "계단(파라)" };
                 }
 
-                if (ctx.StairTypeId == null) { fail = "계단 검출 실패 + 타입 없음(룸 시드 필요)"; bucket = "타입없음"; return null; }
-                double bbRise = bb.Max.Z - bb.Min.Z;
-                string fjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"" + ctx.StairTypeId +
-                    "\",\"a\":[" + R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) + "]" + baseOffJson +
-                    (bbRise >= 1 ? ",\"rise\":" + R(bbRise) : "") + "}}";
-                return new RecognizedOp { Kind = "stair", JsonTemplate = fjson, Approx = true, ApproxReason = "계단bbox" };
+                // 이형(곡선·꺾임·쐐기·객석) = bbox 근사 리프트 대신 Lane-2 오버레이(원본 메시 = 시각 100%).
+                // 가짜 직선 계단이 "실형상과 너무 다름"(사용자 피드백) — 정직 잔여가 낫다.
+                fail = "계단 이형(직선 검출 실패) → 오버레이"; bucket = "계단이형"; return null;
             }
 
             // 이하 = FitPrisms 기반 (column/beam/wall/slab)

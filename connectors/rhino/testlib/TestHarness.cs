@@ -556,6 +556,69 @@ namespace Figcad
         // 어셈블리 내 접근 가능. 별칭 한 겹(테스트 코드 가독).
         static object ParseJson(string s) => Json.Parse(s);
 
+        // ---------- 면벽(열린브렙) 분포 프로브 — 벽 레이어의 단일면 수직 평면 비율 ----------
+        // "벽이 다 non-native"(사용자) 원인 규명: 열린브렙이 면벽(수직 단일 평면면)이면 인식 확장 가치.
+        public static string OpenBrepProbeToFile(string filePath, string outPath)
+        {
+            EventHandler run = null;
+            run = (s, e) =>
+            {
+                RhinoApp.Idle -= run;
+                RhinoDoc doc = null;
+                try
+                {
+                    doc = RhinoDoc.OpenHeadless(filePath);
+                    if (doc == null) { System.IO.File.WriteAllText(outPath, "ERROR: OpenHeadless 실패"); return; }
+                    var agg = new SortedDictionary<string, int[]>(); // layer → [열린브렙, 그중 단일면, 그중 수직평면 단일면]
+                    void Walk(IEnumerable<Rhino.DocObjects.RhinoObject> objs, Transform xf, int depth)
+                    {
+                        if (depth > 8) return;
+                        foreach (var o in objs)
+                        {
+                            if (o is Rhino.DocObjects.InstanceObject io)
+                            {
+                                try { Walk(io.InstanceDefinition.GetObjects(), xf * io.InstanceXform, depth + 1); } catch { }
+                                continue;
+                            }
+                            Brep bp = o.Geometry as Brep;
+                            if (bp == null && o.Geometry is Extrusion ex) bp = ex.ToBrep();
+                            if (bp == null || bp.IsSolid) continue;
+                            string lp = (o.Attributes.LayerIndex >= 0 && o.Attributes.LayerIndex < doc.Layers.Count)
+                                ? doc.Layers[o.Attributes.LayerIndex].FullPath : "?";
+                            int[] c;
+                            if (!agg.TryGetValue(lp, out c)) { c = new int[3]; agg[lp] = c; }
+                            c[0]++;
+                            if (bp.Faces.Count == 1)
+                            {
+                                c[1]++;
+                                var srf = bp.Faces[0].UnderlyingSurface();
+                                Plane pl;
+                                if (srf != null && srf.TryGetPlane(out pl, 1.0))
+                                {
+                                    var dup = (Brep)bp.Duplicate();
+                                    dup.Transform(xf);
+                                    Plane pl2;
+                                    if (dup.Faces[0].UnderlyingSurface().TryGetPlane(out pl2, 1.0) && Math.Abs(pl2.Normal.Z) < 0.05)
+                                        c[2]++;
+                                }
+                            }
+                        }
+                    }
+                    Walk(doc.Objects, Transform.Identity, 0);
+                    var sb = new StringBuilder("OPEN-BREP 분포 (레이어 | 열린 | 단일면 | 수직평면 단일면):\n");
+                    foreach (var kv in agg)
+                        if (kv.Value[0] >= 5)
+                            sb.AppendLine(kv.Value[0].ToString().PadLeft(5) + " " + kv.Value[1].ToString().PadLeft(5) + " " +
+                                kv.Value[2].ToString().PadLeft(5) + "  " + kv.Key);
+                    System.IO.File.WriteAllText(outPath, sb.ToString());
+                }
+                catch (Exception ex2) { try { System.IO.File.WriteAllText(outPath, "ERROR: " + ex2); } catch { } }
+                finally { if (doc != null) doc.Dispose(); }
+            };
+            RhinoApp.Idle += run;
+            return "Idle-큐 프로브 예약 → " + outPath;
+        }
+
         // ---------- 골든 push (2회 = idempotency) ----------
         public static string GoldenPush(string baseUrl, string room, double volTol)
         {

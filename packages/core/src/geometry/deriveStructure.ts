@@ -226,13 +226,23 @@ export function deriveStair(input: StairDeriveInput): DerivedGeometry {
   const tread = run / nSteps;
   const riser = totalRise / nSteps;
 
-  // 측면 실루엣 (u=주행, v=높이): 계단 윤곽 폴리곤
+  // 측면 실루엣 (u=주행, v=높이): 상부 = 계단 톱니, 하부 = waist-슬랩(노징 라인과 평행한 경사 밑면).
+  // 종전(바닥 0까지 통짜 웨지)은 하부가 지면까지 채워져 실계단과 형상 괴리(사용자 피드백) —
+  // RC 계단 관례 waist 두께(경사 ⊥)로 밑면을 경사 오프셋. 시작·끝 수직면은 유지(단순 폴리곤).
+  const waist = Math.max(150, type.riser); // 경사 수직(⊥) 두께 mm — 타입 파라미터화는 후속
+  const waistV = waist * (Math.hypot(run, totalRise) / run); // ⊥두께 → 수직 강하량
   const outer: Ring = [[0, 0]];
   for (let i = 0; i < nSteps; i++) {
     outer.push([i * tread, (i + 1) * riser]); // 단높이 상승
     outer.push([(i + 1) * tread, (i + 1) * riser]); // 디딤판
   }
-  outer.push([run, 0]); // 끝면 하강
+  const x0 = (waistV * run) / totalRise; // 경사 밑면이 바닥(v=0)과 만나는 주행 지점
+  if (totalRise > waistV && x0 < run) {
+    outer.push([run, totalRise - waistV]); // 끝 수직면 하강 (노징 라인 아래 waist)
+    outer.push([x0, 0]); // 경사 밑면 (노징 평행) — 바닥 교점서 착지, 바닥 아래로 안 뚫음
+  } else {
+    outer.push([run, 0]); // 저상승/급경사 퇴화 — 종전 웨지 폴백
+  }
 
   const profile: Profile = { outer, holes: [] };
   const mesh = extrudeProfile(profile, type.width, (u, v, w) => [

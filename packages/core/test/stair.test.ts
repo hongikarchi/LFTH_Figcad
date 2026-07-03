@@ -49,9 +49,15 @@ describe('계단 — 생성/파생', () => {
     expect(geo!.positions.length).toBeGreaterThan(0);
 
     // run=3000, width=1000, 총상승=level.height=3000, riser=175 → n=round(3000/175)=17
+    // waist-슬랩 밑면: 톱니 아래 통짜 웨지에서 밑면 경사선(노징 평행, ⊥두께 waist) 아래 삼각 영역 제거
     const run = 3000, width = 1000, totalRise = 3000;
     const n = Math.round(totalRise / 175);
-    const expectedM3 = (run * 0.001) * (totalRise * 0.001) * ((n + 1) / (2 * n)) * (width * 0.001);
+    const waist = Math.max(150, 175);
+    const waistV = (waist * Math.hypot(run, totalRise)) / run;
+    const x0 = (waistV * run) / totalRise;
+    const removedMm2 = 0.5 * (run - x0) * (totalRise - waistV);
+    const silhouetteMm2 = (run * totalRise * (n + 1)) / (2 * n) - removedMm2;
+    const expectedM3 = silhouetteMm2 * 1e-6 * (width * 0.001);
     expect(signedVolume(geo!.positions)).toBeCloseTo(expectedM3, 2);
   });
 
