@@ -17,6 +17,15 @@ const MIN_DISTANCE = 1;
 const MAX_DISTANCE = 5000; // 대형 모델(경기장 ~100m·import 매스) 전체맞춤 허용 (구 200 = 95m 건물 못 담음)
 const MIN_PHI = 0.05;
 const MAX_PHI = Math.PI / 2 - 0.02;
+const DEFAULT_FOV = 55; // 수직 fov° — 걷기(렌즈) 종료 시 복원 기준
+const MAX_WALK_PITCH = 1.54; // ±88° — 걷기 자유 시선(오빗 phi 클램프 미적용)
+const WALK_WPP_DIST = 10; // 걷기 중 worldPerPixel 기준 깊이(m) — 탭 도구 스냅 톨러런스용 실내 스케일
+const WALK_EXIT_MAX_DIST = 50; // 걷기→오빗 역산 시 타깃 거리 상한(m) — 원거리 피벗 방지
+
+/** 35mm 환산 초점거리(mm) → 수직 fov° (센서 높이 24mm: fov = 2·atan(12/f)). 55° ≡ 23.05mm. */
+export function lensMmToFovDeg(mm: number): number {
+  return (2 * Math.atan(12 / mm) * 180) / Math.PI;
+}
 
 /**
  * 하나의 타깃/거리 상태 위에 3D(원근 궤도)와 평면(상부 직교) 두 카메라를 올린 리그.
@@ -41,8 +50,18 @@ export class CameraRig {
   private savedPhi = Math.PI / 4.5; // 평면 진입 시 복원용
   private savedTheta = Math.PI / 4; // 평면=북향 스냅, 3D 복귀 시 방위 복원
 
+  // 걷기(1인칭) 상태 — mode('3d'|'plan')와 직교하는 플래그. 3d에서만 켜지고 active는 계속 persp
+  // 반환 → rig.active 소비자(Picker·HUD·presence) 무변경. apply()가 walk 분기라 걷기 중 오빗
+  // 뮤테이터 오호출은 시각적 no-op(내장 안전성).
+  private walking = false;
+  private walkPos = new THREE.Vector3();
+  private walkYaw = 0; // 방위(rad) — forward=(sinYaw, 0, cosYaw)
+  private walkPitch = 0; // ±MAX_WALK_PITCH — 오빗 phi 클램프와 별개 자유 시선
+  private _fwd = new THREE.Vector3(); // 프레임 루프 할당 0 — apply/북향 계산 스크래치
+  private _look = new THREE.Vector3();
+
   constructor(aspect: number) {
-    this.persp = new THREE.PerspectiveCamera(55, aspect, 0.1, 50000);
+    this.persp = new THREE.PerspectiveCamera(DEFAULT_FOV, aspect, 0.1, 50000);
     this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50000);
     this.updateFrustum(aspect);
     this.apply();
@@ -139,19 +158,24 @@ export class CameraRig {
     const cam = this.active;
     const W = window.innerWidth;
     const H = window.innerHeight;
-    const p0 = this.target.clone().project(cam);
-    const pN = this.target.clone().add(new THREE.Vector3(0, 0, 1)).project(cam);
+    // 걷기 중엔 스테일 오빗 타깃이 카메라 뒤일 수 있음(방위 반전) → 시선 전방 5m 기준점 사용.
+    const ref = this.walking
+      ? this._look.copy(this.walkPos).add(this.walkForward(this._fwd).multiplyScalar(5))
+      : this.target;
+    const p0 = ref.clone().project(cam);
+    const pN = ref.clone().add(new THREE.Vector3(0, 0, 1)).project(cam);
     const dx = (pN.x - p0.x) * W;
     const dy = -(pN.y - p0.y) * H; // NDC y(위로+) → 화면 y(아래로+)
     return Math.atan2(dy, dx);
   }
 
-  /** 화면 1px당 월드 m (타깃 깊이 기준) — 스냅 톨러런스/팬 환산용 */
+  /** 화면 1px당 월드 m (타깃 깊이 기준) — 스냅 톨러런스/팬 환산용. 걷기 중엔 고정 10m 기준(실내 스케일). */
   worldPerPixel(): number {
     if (this.mode === 'plan' && this.tweenT >= 1) {
       return this.distance / window.innerHeight; // ortho: 화면 높이 = distance
     }
-    return (2 * Math.tan(((55 / 2) * Math.PI) / 180) * this.distance) / window.innerHeight;
+    const depth = this.walking ? WALK_WPP_DIST : this.distance;
+    return (2 * Math.tan(((this.persp.fov / 2) * Math.PI) / 180) * depth) / window.innerHeight;
   }
 
   /**
@@ -228,16 +252,126 @@ export class CameraRig {
     const oy = this.persp.position.y - y;
     const oz = this.persp.position.z - z;
     const dist = Math.hypot(ox, oy, oz);
-    if (dist < MIN_DISTANCE) return; // 피벗이 카메라에 너무 붙음 — 무시(역산 불안정)
+    if (dist < MIN_DISTANCE || dist > MAX_DISTANCE) return; // 역산 불안정/범위 밖 — 피벗 유지
+    const phiRaw = Math.acos(THREE.MathUtils.clamp(oy / dist, -1, 1));
+    // 역산 포즈가 클램프를 요구하면(피벗이 카메라 눈높이보다 위 = phi>MAX_PHI 등) 위치 보존이
+    // 불가능 — 클램프 강행 = apply()가 카메라를 다른 위치로 재구성 = RMB 순간 화면 튐(사용자 보고).
+    // 이 경우 피벗 변경을 포기하고 이전 피벗으로 오빗(점프 없음이 우선).
+    if (phiRaw < MIN_PHI || phiRaw > MAX_PHI) return;
     this.target.set(x, y, z);
-    this.distance = THREE.MathUtils.clamp(dist, MIN_DISTANCE, MAX_DISTANCE);
-    this.phi = THREE.MathUtils.clamp(Math.acos(THREE.MathUtils.clamp(oy / dist, -1, 1)), MIN_PHI, MAX_PHI);
+    this.distance = dist;
+    this.phi = phiRaw;
     this.theta = Math.atan2(ox, oz);
     this.apply();
   }
 
-  /** 현재 궤도 포즈 캡처 (뷰포인트 저장용). mode는 uiStore.viewMode가 별도 소유. */
+  // ---- 걷기(1인칭) — 리뷰 walk mode ----
+
+  get isWalking(): boolean {
+    return this.walking;
+  }
+
+  /** 수직 fov° 설정 (렌즈) — 걷기 진입/렌즈 슬라이더용. 종료 시 DEFAULT_FOV 복원은 호출측. */
+  setFov(deg: number): void {
+    this.persp.fov = THREE.MathUtils.clamp(deg, 10, 120);
+    this.persp.updateProjectionMatrix();
+  }
+
+  resetFov(): void {
+    this.setFov(DEFAULT_FOV);
+  }
+
+  /** 걷기 시선 방향 (단위벡터, out에 기록) */
+  private walkForward(out: THREE.Vector3): THREE.Vector3 {
+    const cp = Math.cos(this.walkPitch);
+    return out.set(Math.sin(this.walkYaw) * cp, Math.sin(this.walkPitch), Math.cos(this.walkYaw) * cp);
+  }
+
+  /**
+   * 걷기 진입 — 오빗 타깃 지점에 착지(카메라 위치 기준이면 fit 후 수백 m 표류),
+   * eyeY = 레벨고도 + 눈높이(호출측 계산). 시선은 오빗의 수평 방위 유지(theta+π = 카메라→타깃 방향), 수평 피치.
+   */
+  enterWalk(eyeY: number): void {
+    this.walkPos.set(this.target.x, eyeY, this.target.z);
+    this.walkYaw = this.theta + Math.PI;
+    this.walkPitch = 0;
+    this.walking = true;
+    this.tweenT = 1; // 진행 중 모드 트윈 킬
+    this.apply();
+  }
+
+  /**
+   * 걷기 종료 — setPivot 역산 패턴: 현재 눈 위치·시선에서 오빗 포즈 재구성(카메라 점프 없음).
+   * 위쪽 시선은 phi 클램프로 근사 스냅 허용. 원거리 피벗(D=50 상한)은 다음 RMB resolvePivot이 자가 치유.
+   */
+  exitWalk(): void {
+    const p = this.walkToOrbit();
+    this.walking = false;
+    this.target.set(p.target[0], p.target[1], p.target[2]);
+    this.distance = p.distance;
+    this.theta = p.theta;
+    this.phi = p.phi;
+    this.savedPhi = this.phi;
+    this.savedTheta = this.theta;
+    this.updateFrustum(window.innerWidth / window.innerHeight);
+    this.apply();
+  }
+
+  /** 걷기 시선 회전 — 오빗 rotate와 동일 감도, pitch는 ±88° 자유(phi 클램프 미적용) */
+  walkLook(dxPx: number, dyPx: number): void {
+    this.walkYaw -= dxPx * 0.005;
+    this.walkPitch = THREE.MathUtils.clamp(this.walkPitch - dyPx * 0.005, -MAX_WALK_PITCH, MAX_WALK_PITCH);
+    this.apply();
+  }
+
+  /** 걷기 이동 — yaw 수평 기저(Enscape 보행 의미론: 시선 pitch 무관 수평 전후) + 수직(dUp) */
+  walkMove(dForward: number, dRight: number, dUp: number): void {
+    const sin = Math.sin(this.walkYaw);
+    const cos = Math.cos(this.walkYaw);
+    this.walkPos.x += dForward * sin - dRight * cos;
+    this.walkPos.z += dForward * cos + dRight * sin;
+    this.walkPos.y += dUp;
+    this.apply();
+  }
+
+  /** 걷기 눈 위치 (지면 스냅 레이 원점용, out에 기록) */
+  getWalkEye(out: THREE.Vector3): THREE.Vector3 {
+    return out.copy(this.walkPos);
+  }
+
+  /** 지면 스냅 — 눈높이 y만 직접 설정 */
+  setWalkY(y: number): void {
+    this.walkPos.y = y;
+    this.apply();
+  }
+
+  /**
+   * 걷기 포즈 → 오빗 포즈 합성 (exitWalk·걷기 중 getPose 공유).
+   * phi를 먼저 클램프하고 그 클램프된 각도의 역방향으로 target을 역산 — apply()가 카메라 위치를
+   * **정확히** walkPos로 재구성(수평 시선 phi=π/2 > MAX_PHI 클램프 시에도 위치 점프 0, 시선만 ≤1.15° 하향).
+   */
+  private walkToOrbit(): CameraPose {
+    const dir = this.walkForward(this._fwd);
+    const D = THREE.MathUtils.clamp(this.distance, MIN_DISTANCE, WALK_EXIT_MAX_DIST);
+    const phi = THREE.MathUtils.clamp(Math.acos(THREE.MathUtils.clamp(-dir.y, -1, 1)), MIN_PHI, MAX_PHI);
+    const theta = Math.atan2(-dir.x, -dir.z);
+    // apply(): pos = target + D·u, u = (sinφsinθ, cosφ, sinφcosθ) → target = walkPos − D·u
+    const sinPhi = Math.sin(phi);
+    return {
+      target: [
+        this.walkPos.x - D * sinPhi * Math.sin(theta),
+        this.walkPos.y - D * Math.cos(phi),
+        this.walkPos.z - D * sinPhi * Math.cos(theta),
+      ],
+      distance: D,
+      phi,
+      theta,
+    };
+  }
+
+  /** 현재 궤도 포즈 캡처 (뷰포인트 저장용). mode는 uiStore.viewMode가 별도 소유. 걷기 중엔 오빗 포즈 합성. */
   getPose(): CameraPose {
+    if (this.walking) return this.walkToOrbit();
     return { target: [this.target.x, this.target.y, this.target.z], distance: this.distance, theta: this.theta, phi: this.phi };
   }
 
@@ -288,6 +422,12 @@ export class CameraRig {
   }
 
   private apply(): void {
+    if (this.walking) {
+      // 걷기: 위치 = walkPos, 시선 = yaw/pitch (오빗 phi 클램프 미적용). ortho 무접촉(walk는 3d 전용).
+      this.persp.position.copy(this.walkPos);
+      this.persp.lookAt(this._look.copy(this.walkPos).add(this.walkForward(this._fwd)));
+      return;
+    }
     const sinPhi = Math.sin(this.phi);
     this.persp.position.set(
       this.target.x + this.distance * sinPhi * Math.sin(this.theta),

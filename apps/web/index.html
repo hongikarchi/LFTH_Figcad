@@ -2434,6 +2434,133 @@
       body.device-phone .clip-control {
         bottom: calc(env(safe-area-inset-bottom, 0px) + 132px);
       }
+      /* ---- 걷기(walk) 모드 — 리뷰 1인칭 ---- */
+      /* 뷰 프리셋 = 걷기 포즈 파괴, 스케일바 = 원근 보행서 무의미 (방위표는 유지) */
+      body.walk-active .view-gizmo { display: none; }
+      body.walk-active .vw-scale { display: none; }
+      /* 렌즈 컨트롤 — 상단 중앙 (하단 = 조이스틱/클러스터/클립 영역) */
+      .walk-control {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        top: calc(env(safe-area-inset-top, 0px) + 56px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        z-index: 28;
+        width: min(340px, calc(100vw - 28px));
+      }
+      .walk-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .walk-title {
+        font-size: 12px;
+        font-weight: 800;
+        color: var(--ink);
+        margin-right: 2px;
+      }
+      .walk-preset,
+      .walk-off {
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.04);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .walk-preset.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .walk-mm {
+        margin-left: auto;
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+      .walk-off {
+        margin-left: 4px;
+      }
+      .walk-slider {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+      /* 조이스틱 — 좌하단 투명 히트존 + 플로팅 스틱 (터치 기기서 걷기 중만 표시, JS 게이트).
+         z 15 = 캔버스 위·패널(WorkRail z20 등) 아래 — 아이패드서 리뷰 레일 탭을 존이 가로채지 않게. */
+      .walk-zone {
+        position: fixed;
+        left: 0;
+        bottom: env(safe-area-inset-bottom, 0px);
+        width: 38vw;
+        height: 48vh;
+        z-index: 15;
+        touch-action: none;
+        pointer-events: auto;
+      }
+      body.device-phone .walk-zone {
+        width: 45vw;
+        height: 42vh;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 58px); /* 바텀바 위 */
+      }
+      .walk-stick {
+        position: absolute;
+        width: 112px;
+        height: 112px;
+        left: calc(env(safe-area-inset-left, 0px) + 28px);
+        bottom: 48px;
+        border-radius: 50%;
+        background: var(--glass);
+        border: 1px solid var(--hairline);
+        box-shadow: var(--shadow);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        opacity: 0.55;
+        pointer-events: none; /* 히트는 존이 소유 — 스틱은 표시 전용 */
+      }
+      body.device-phone .walk-stick {
+        width: 96px;
+        height: 96px;
+      }
+      .walk-stick.active {
+        opacity: 1;
+      }
+      .walk-stick-knob {
+        position: absolute;
+        width: 48px;
+        height: 48px;
+        left: 50%;
+        top: 50%;
+        margin: -24px 0 0 -24px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+      }
+      body.device-phone .walk-stick-knob {
+        width: 44px;
+        height: 44px;
+        margin: -22px 0 0 -22px;
+      }
+      .walk-stick.active .walk-stick-knob {
+        border-color: var(--accent);
+      }
+      .walk-stick-knob.settling {
+        transition: transform 120ms cubic-bezier(0.2, 0.8, 0.3, 1);
+      }
       /* 뷰포인트(저장 단면) 패널 — 협업·리뷰 레일 */
       .vp-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--hairline); }
       .vp-head { display: flex; align-items: center; justify-content: space-between; }

@@ -17,6 +17,13 @@ export interface TapCallbacks {
   onThreeFingerTap?: () => void;
 }
 
+/** 걷기 모드 터치 싱크 — null이면 걷기 꺼짐(기존 오빗/팬핀치). 탭 판정은 걷기와 무관하게 유지. */
+export interface WalkTouchSink {
+  look(dxPx: number, dyPx: number): void;
+  /** ratio = spread/lastSpread — 핀치아웃(>1) = 망원(초점거리 증가) */
+  pinchFocal(ratio: number): void;
+}
+
 export class TouchGestures {
   private pointers = new Map<number, TrackedPointer>();
   private lastCentroid: TrackedPointer | null = null;
@@ -30,6 +37,7 @@ export class TouchGestures {
     private rig: CameraRig,
     private onChange: () => void,
     private taps: TapCallbacks = {},
+    private walk: () => WalkTouchSink | null = () => null,
   ) {}
 
   down(e: PointerEvent): void {
@@ -49,8 +57,11 @@ export class TouchGestures {
 
     this.sessionMoved += Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y);
 
+    const walk = this.walk();
     if (this.pointers.size === 1) {
-      this.rig.orbit(e.clientX - p.x, e.clientY - p.y);
+      // 걷기 중 1지 드래그 = 시선(룩), 아니면 오빗. 탭 판정(up)은 양쪽 공통 유지.
+      if (walk) walk.look(e.clientX - p.x, e.clientY - p.y);
+      else this.rig.orbit(e.clientX - p.x, e.clientY - p.y);
       this.onChange();
     } else if (this.pointers.size === 2) {
       p.x = e.clientX;
@@ -59,9 +70,14 @@ export class TouchGestures {
       const centroid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const spread = Math.hypot(a.x - b.x, a.y - b.y);
       if (this.lastCentroid) {
-        this.rig.pan(centroid.x - this.lastCentroid.x, centroid.y - this.lastCentroid.y);
-        if (this.lastSpread > 0 && spread > 0) {
-          this.rig.zoom(this.lastSpread / spread);
+        if (walk) {
+          // 걷기 중 2지 = 핀치 렌즈만 (팬 무시). 핀치아웃 = 망원 — rig.zoom 인자(last/spread)와 역수.
+          if (this.lastSpread > 0 && spread > 0) walk.pinchFocal(spread / this.lastSpread);
+        } else {
+          this.rig.pan(centroid.x - this.lastCentroid.x, centroid.y - this.lastCentroid.y);
+          if (this.lastSpread > 0 && spread > 0) {
+            this.rig.zoom(this.lastSpread / spread);
+          }
         }
         this.onChange();
       }

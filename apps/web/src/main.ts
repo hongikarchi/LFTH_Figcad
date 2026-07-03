@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import * as Y from 'yjs';
 import { DocStore, seedDocument, diffSnapshots, type Viewpoint, type DocSnapshot } from '@figcad/core';
 import { Engine } from './engine/Engine';
-import { CameraRig, type ViewPreset } from './engine/CameraRig';
+import { CameraRig, lensMmToFovDeg, type ViewPreset } from './engine/CameraRig';
 import { buildScene } from './engine/buildScene';
 import { SceneManager } from './engine/SceneManager';
 import { ReferenceLayer } from './engine/ReferenceLayer';
@@ -18,7 +18,9 @@ import { FederationReconciler } from './engine/FederationReconciler';
 import { MaterialReconciler } from './engine/MaterialReconciler';
 import { FEDERATION_EXTRACTORS, fetchDwgUnderlay } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
+import { WalkController } from './input/WalkController';
 import { HudLayer } from './hud/HudLayer';
+import { WalkJoystick } from './hud/WalkJoystick';
 import { ToolController } from './tools/ToolController';
 import { WallTool } from './tools/WallTool';
 import { SelectTool } from './tools/SelectTool';
@@ -239,6 +241,7 @@ function applyClip(): void {
 }
 window.addEventListener('keydown', (e) => {
   if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName)) return;
+  if (useUiStore.getState().walkActive) return; // 걷기 중 F/Z 무력 — F는 D 옆이라 오폭 위험
   if (e.key === 'f' || e.key === 'F') fitView();
   else if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey) fitSelection(); // 줌-선택 (Ctrl/⌘+Z=undo는 별도 핸들러)
 });
@@ -378,7 +381,19 @@ if (localStorage.getItem(forkKey)) {
   setTimeout(doImport, 2500); // 이벤트 미발화 폴백
 }
 
-new InputManager(
+// --- 걷기(1인칭) 모드 — 리뷰 walk. 이동=ticker, 조이스틱=명령형 HUD, 시선/휠은 InputManager 분기 ---
+const walk = new WalkController(rig, {
+  groundRoots: () => [...sceneManager.pickables, referenceLayer.root],
+  levelElevationM: () => (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000,
+  requestRender: () => engine.requestRender(),
+  onToast: (m) => hud.toast(m),
+});
+engine.addTicker(walk.update);
+const joystick = new WalkJoystick((x, y) => walk.setJoystick(x, y));
+// 조이스틱 = 터치 능력 기준 (iPad는 device-class 'desktop' — device 기준 금지)
+const hasTouch = window.matchMedia('(any-pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+
+const input = new InputManager(
   canvas,
   rig,
   tools,
@@ -389,6 +404,17 @@ new InputManager(
       presence.setCursor(doc, (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000),
     onTwoFingerTap: doUndo,
     onThreeFingerTap: doRedo,
+    walkActive: () => useUiStore.getState().walkActive,
+    walkLook: (dx, dy) => walk.look(dx, dy),
+    walkSpeed: (d) => walk.adjustSpeed(d),
+    walkFocalDelta: (dMm) => {
+      const s = useUiStore.getState();
+      s.setLensMm(s.lensMm + dMm);
+    },
+    walkFocalPinch: (ratio) => {
+      const s = useUiStore.getState();
+      s.setLensMm(s.lensMm * ratio);
+    },
     // 항목3: RMB 오빗 피벗 — 선택 있으면 그 중심, 없으면 커서 아래 메시(요소+federation 오버레이) 히트.
     // 둘 다 없으면 null → 현재 target 유지(지면 z=0 강제교차 금지: 상층/측량Z 모델서 거대호 회귀).
     resolvePivot: (clientX, clientY) => {
@@ -412,6 +438,19 @@ useUiStore.subscribe((state, prev) => {
     tools.setActive(state.activeTool);
     sceneManager.setSelected([]);
   }
+  // 걷기 **종료**는 viewMode 블록보다 먼저 — setViewMode('plan')이 {plan, walkActive:false}를 단일
+  // set으로 커밋하므로, exitWalk(걷기 방위 역산)가 setMode('plan')의 북향 스냅(θ=π)을 되덮지 않게
+  // 순서 보장. (진입은 반대로 viewMode 블록 뒤 — rig.setMode('3d') 선행 필요.)
+  const walkOff = !state.walkActive && prev.walkActive;
+  const walkOn = state.walkActive && !prev.walkActive;
+  if (walkOff) {
+    input.resetTouch();
+    document.body.classList.remove('walk-active');
+    walk.exit();
+    joystick.hide();
+    rig.resetFov(); // 렌즈 = 걷기 스코프 — 오빗 복귀 시 기본 fov (lensMm 값은 localStorage 기억)
+    engine.requestRender();
+  }
   if (state.viewMode !== prev.viewMode || state.activeLevelId !== prev.activeLevelId) {
     rig.setMode(state.viewMode);
     sceneManager.setViewContext(state.viewMode, state.activeLevelId);
@@ -423,6 +462,21 @@ useUiStore.subscribe((state, prev) => {
   if (state.selection !== prev.selection) {
     sceneManager.setSelected(state.selection);
     presence.setSelection(state.selection);
+  }
+  // 걷기 **진입** — viewMode 블록 뒤(평면서 진입 시 rig.setMode('3d')가 walk.enter()보다 먼저 실행).
+  if (walkOn) {
+    input.resetTouch(); // 진행 중 터치 제스처 폐기 (스테일 포인터 방지)
+    document.body.classList.add('walk-active');
+    tools.cancel(); // 진행 중 드로우 체인 정리 (도구 자체는 유지 — 탭 클릭 계속 동작)
+    rig.setFov(lensMmToFovDeg(state.lensMm));
+    walk.enter();
+    if (hasTouch) joystick.show();
+    hud.toast(hasTouch ? '왼쪽 스틱 이동 · 화면 드래그 둘러보기' : 'WASD 이동 · 드래그 둘러보기 · 휠 속도 · Esc 종료');
+    engine.requestRender();
+  }
+  if (state.lensMm !== prev.lensMm && state.walkActive) {
+    rig.setFov(lensMmToFovDeg(state.lensMm));
+    engine.requestRender();
   }
 });
 
@@ -439,6 +493,12 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
     e.preventDefault();
     doRedo();
+    return;
+  }
+  // 걷기 중: Esc = 걷기 종료(도구 cancel 미실행), 나머지 단축키(PgUp/Dn·화살표·Delete) 무력
+  // (WASD·Q/E·Shift는 WalkController 자체 리스너). Ctrl+Z/Y undo/redo는 위에서 이미 통과.
+  if (useUiStore.getState().walkActive) {
+    if (e.key === 'Escape') useUiStore.getState().setWalkActive(false);
     return;
   }
   switch (e.key) {
@@ -484,17 +544,23 @@ window.addEventListener('keydown', (e) => {
 });
 
 // --- React UI (패널만 — 캔버스/HUD는 명령형) ---
+// 카메라를 점프시키는 액션은 걷기 자동 종료 — zustand subscribe 동기 발화라 walk.exit()(오빗 복원)가
+// setPose/fitBounds 실행 전 완료. saveViewpoint는 제외(걷기 중 저장 = getPose 합성으로 동작).
+const exitWalk = () => useUiStore.getState().setWalkActive(false);
 const viewActions = {
   focusWorld: (x: number, y: number, z: number) => {
+    exitWalk();
     rig.focusOn(x, y, z);
     engine.requestRender();
   },
   undo: doUndo,
   redo: doRedo,
   fit: () => {
+    exitWalk();
     fitView();
   },
   fitSelection: () => {
+    exitWalk();
     fitSelection();
   },
   setClip: (clip: ClipState | null) => {
@@ -514,6 +580,7 @@ const viewActions = {
   },
   // 저장 뷰포인트로 점프 — viewMode(→rig.setMode) → 카메라 포즈 스냅 → 클립 재현("N번 단면 봐주세요").
   jumpViewpoint: (vp: Viewpoint) => {
+    exitWalk();
     const s = useUiStore.getState();
     s.setViewMode(vp.viewMode); // 구독이 rig.setMode + sceneManager.setViewContext
     rig.setPose(vp.camera);
@@ -530,6 +597,7 @@ const viewActions = {
   },
   // 뷰 기즈모 프리셋(항목8a) — rig가 mode+각도 설정, uiStore.viewMode 동기화(setViewContext·flip 트리거).
   setView: (preset: ViewPreset) => {
+    exitWalk();
     rig.setView(preset);
     useUiStore.getState().setViewMode(rig.mode);
     engine.requestRender();
@@ -575,6 +643,7 @@ if (import.meta.env.DEV) {
       federationExtract, // { extractFigcadRoom, FEDERATION_EXTRACTORS } — A4 스모크/오프라인 추출용
       dwg, // { parseDwgUnderlay, underlayDenseCenter } — DWG 언더레이 스모크(libredwg WASM)
       ui: useUiStore,
+      walk, // 걷기 모드 스모크 — active/setJoystick 직접 구동
     };
   });
 }

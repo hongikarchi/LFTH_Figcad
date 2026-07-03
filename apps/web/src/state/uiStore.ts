@@ -45,6 +45,10 @@ export type WorkspaceMode = 'review' | 'model' | 'hub';
 export type DeviceClass = 'phone' | 'desktop';
 /** 단면(클리핑 플레인) — null=끔. axis=평면 법선축, t=모델 bbox 0~1 위치, flip=남길 쪽 반전. */
 export type ClipState = { axis: 'x' | 'y' | 'z'; t: number; flip: boolean };
+/** 걷기(1인칭) 렌즈 — 35mm 환산 초점거리 mm. 23 ≡ 기존 fov 55°(진입 무봉합). 슬라이더·핀치·휠 동일 클램프. */
+export const LENS_MM_DEFAULT = 23;
+export const LENS_MM_MIN = 16;
+export const LENS_MM_MAX = 135;
 /** 폰 바텀시트 콘텐츠 (모바일 리뷰/뷰어 전용) — null=닫힘. 집중형 컴팩트 시트. */
 export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
 
@@ -62,6 +66,8 @@ export const MODE_TOOLS: Record<WorkspaceMode, ToolName[]> = {
   ],
   hub: ['select'],
 };
+
+let lensPersistTimer: ReturnType<typeof setTimeout> | null = null; // 렌즈 localStorage 디바운스
 
 /** 마크업 펜 기본 스타일 (iter-3 스케치 업그레이드) */
 export const DEFAULT_SKETCH_STYLE: SketchStyle = {
@@ -143,6 +149,12 @@ interface UiState {
   phoneSheet: PhoneSheet;
   /** 단면(클리핑 플레인) — null=끔. 엔진 적용은 ViewActions.setClip(렌더러 clippingPlanes). */
   clip: ClipState | null;
+  /** 걷기(1인칭) 모드 — 리뷰 탭 전용 앰비언트 토글(clip/aiOpen 패턴). 엔진 적용은 main.ts subscribe. */
+  walkActive: boolean;
+  /** 걷기 렌즈(35mm 환산 초점거리) — localStorage 영속, 걷기 진입 시 적용·종료 시 기본 fov 복원 */
+  lensMm: number;
+  setWalkActive: (v: boolean) => void;
+  setLensMm: (mm: number) => void;
   setDevice: (d: DeviceClass) => void;
   setPhoneSheet: (s: PhoneSheet) => void;
   setClipState: (c: ClipState | null) => void;
@@ -217,14 +229,33 @@ export const useUiStore = create<UiState>((set) => ({
   device: 'desktop', // useDeviceClass가 mount 전 matchMedia로 교정(폰이면 'phone')
   phoneSheet: null,
   clip: null,
+  walkActive: false,
+  lensMm: (() => {
+    const v = Number(localStorage.getItem('figcad.lensMm'));
+    return v >= LENS_MM_MIN && v <= LENS_MM_MAX ? v : LENS_MM_DEFAULT;
+  })(),
+  // 걷기 = 3D 전용 → 진입 시 viewMode 동시 셋(setTool('sketch') 커플링 선례)
+  setWalkActive: (v) => set(v ? { walkActive: true, viewMode: '3d' } : { walkActive: false }),
+  // 반올림 없음 — 핀치 렌즈는 미세 ratio(~1.01) 누적이라 정수화 시 소실. 표시만 반올림(WalkControl).
+  // 영속화는 디바운스 — 핀치가 pointermove(60~120Hz)마다 호출하는데 localStorage는 동기 I/O(iPad 잰크).
+  setLensMm: (mm) => {
+    const c = Math.max(LENS_MM_MIN, Math.min(LENS_MM_MAX, mm));
+    if (lensPersistTimer !== null) clearTimeout(lensPersistTimer);
+    lensPersistTimer = setTimeout(() => {
+      lensPersistTimer = null;
+      localStorage.setItem('figcad.lensMm', String(c));
+    }, 300);
+    set({ lensMm: c });
+  },
   setDevice: (device) => set({ device }),
   setPhoneSheet: (phoneSheet) => set({ phoneSheet }),
   setClipState: (clip) => set({ clip }),
   // 스케치는 평면+북향 필수(도구 요건) — 그 커플링만 유지. 패널 부작용(aiOpen)은 제거.
+  // viewMode:'plan' 직접 셋은 setViewMode의 plan→걷기종료 커플링을 우회하므로 walkActive도 명시 종료.
   setTool: (activeTool) =>
     set(
       activeTool === 'sketch'
-        ? { activeTool, selection: [], editAction: null, viewMode: 'plan' }
+        ? { activeTool, selection: [], editAction: null, viewMode: 'plan', walkActive: false }
         : { activeTool, selection: [], editAction: null },
     ),
   setSelection: (selection) =>
@@ -250,12 +281,14 @@ export const useUiStore = create<UiState>((set) => ({
   setPaintStyle: (patch) => set((s) => ({ paintStyle: { ...s.paintStyle, ...patch } })),
   setPaintMode: (paintMode) => set({ paintMode }),
   setPaintEyedropper: (paintEyedropper) => set({ paintEyedropper }),
-  setViewMode: (viewMode) => set({ viewMode }),
-  // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor)
+  // 평면 전환 = 걷기 종료 (걷기는 3D 전용)
+  setViewMode: (viewMode) => set(viewMode === 'plan' ? { viewMode, walkActive: false } : { viewMode }),
+  // mode 전환 = 그 mode 팔레트에 현재 도구 없으면 select로 리셋(한 곳, advisor). 리뷰 이탈 = 걷기 종료.
   setMode: (activeMode) =>
     set((s) => ({
       activeMode,
       activeTool: MODE_TOOLS[activeMode].includes(s.activeTool) ? s.activeTool : 'select',
+      ...(activeMode !== 'review' ? { walkActive: false } : {}),
     })),
   setUserName: (userName) => set({ userName }),
   setPeers: (peers) => set({ peers }),
