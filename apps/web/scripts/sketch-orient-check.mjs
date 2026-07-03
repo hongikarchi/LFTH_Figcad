@@ -1,10 +1,13 @@
 /** 일회용: 비대칭 "ㄱ" 손그림 → 래스터 PNG 덤프. 방위(y-flip) 육안 확인용. */
 import puppeteer from 'puppeteer-core';
 import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
+const here = dirname(fileURLToPath(import.meta.url));
 const port = process.argv[2] ?? '5173';
 const browser = await puppeteer.launch({
-  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  executablePath: process.env.CHROME ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   headless: true,
 });
 try {
@@ -31,7 +34,7 @@ try {
   console.log('strokes=' + JSON.stringify(dump.strokes));
   const b64 = await page.evaluate(() => window.__figcad.sketch.rasterizeSketch()?.dataB64 ?? '');
   if (!b64) throw new Error('빈 래스터');
-  const out = 'C:\\Users\\user\\Documents\\LFTH_Figcad\\apps\\web\\scripts\\_sketch-orient.png';
+  const out = join(here, '_sketch-orient.png');
   writeFileSync(out, Buffer.from(b64, 'base64'));
   console.log('WROTE ' + out);
 } finally {
