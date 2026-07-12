@@ -128,6 +128,7 @@
 
       /* ---- Presence strip: 아바타 파일 + 연결 + 공유 (P0-2 헤드라인 해자) ---- */
       .presence-strip {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -184,6 +185,40 @@
       .avatar-pile .avatar.more {
         background: rgba(0, 0, 0, 0.12);
         color: var(--ink-soft);
+      }
+      /* presence 팝오버 — 인라인 rename·공유 QR (Presence 잔여 소품) */
+      .presence-pop {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 10px;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6);
+        backdrop-filter: blur(24px) saturate(1.6);
+        border: 1px solid var(--hairline);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        z-index: 60;
+      }
+      .presence-rename {
+        width: 160px;
+        padding: 6px 8px;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        font-size: 13px;
+      }
+      .presence-share-pop canvas {
+        border-radius: 6px;
+        background: #fff;
+      }
+      .presence-share-hint {
+        font-size: 11px;
+        color: var(--ink);
+        opacity: 0.65;
       }
       .presence-share {
         margin-left: 6px;

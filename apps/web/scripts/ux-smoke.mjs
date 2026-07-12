@@ -187,6 +187,37 @@ try {
   if (mv.action !== null) throw new Error(`move 후 editAction 미해제: ${mv.action}`);
   console.log(`PASS  편집액션 move → boundary[0]=${JSON.stringify(mv.v0)}, action 해제 (EditActionController)`);
 
+  // Presence 소품 — 인라인 rename(prompt 대체) + 공유 QR 팝오버
+  await page.waitForSelector('.avatar.self', { timeout: 8000 }); // presence self는 awareness 초기화 후 등장
+  await page.click('.avatar.self');
+  await page.waitForSelector('.presence-rename', { timeout: 3000 });
+  await page.evaluate(() => { const i = document.querySelector('.presence-rename'); i.value = ''; });
+  await page.type('.presence-rename', '스모크테스터');
+  await page.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 200));
+  const renamed = await page.evaluate(() => window.__figcad.ui.getState().userName);
+  if (renamed !== '스모크테스터') throw new Error(`인라인 rename 실패: ${renamed}`);
+  console.log('PASS  presence 인라인 rename — Enter 커밋 → userName 반영');
+
+  await page.click('.presence-share');
+  await page.waitForSelector('.presence-share-pop canvas', { timeout: 5000 });
+  const qr = await page.evaluate(async () => {
+    // qrcode 동적 로드 + 렌더 완료 대기 — 캔버스가 비어있지 않은지(QR 모듈 픽셀)
+    for (let i = 0; i < 20; i++) {
+      const c = document.querySelector('.presence-share-pop canvas');
+      const ctx = c.getContext('2d');
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      let dark = 0;
+      for (let k = 0; k < d.length; k += 4) if (d[k] < 100) dark++;
+      if (dark > 100) return { dark };
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return { dark: 0 };
+  });
+  if (qr.dark <= 100) throw new Error('공유 QR 미렌더 (캔버스 빈 상태)');
+  console.log(`PASS  공유 QR 팝오버 — 코드 렌더 (${qr.dark} 암픽셀)`);
+  await page.click('.presence-share'); // 닫기
+
   // per-tool 핫키 레이어(Slice 11) — 실 keydown 디스패치 경로: W=벽(모델), 1=협업·리뷰 모드, 게이팅(리뷰서 W 무반응)
   const hk = await page.evaluate(() => {
     const ui = window.__figcad.ui;
