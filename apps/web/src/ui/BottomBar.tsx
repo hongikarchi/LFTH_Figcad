@@ -42,6 +42,13 @@ export function BottomBar() {
       >
         📦 모델
       </button>
+      <button
+        className={`bottom-bar-btn ${phoneSheet === 'viewpoint' ? 'active' : ''}`}
+        title="공유 뷰포인트 — 팀이 저장한 카메라·단면으로 점프"
+        onClick={() => setPhoneSheet(phoneSheet === 'viewpoint' ? null : 'viewpoint')}
+      >
+        📍 뷰
+      </button>
       {hasSelection && (
         <button
           className={`bottom-bar-btn ${phoneSheet === 'inspect' ? 'active' : ''}`}

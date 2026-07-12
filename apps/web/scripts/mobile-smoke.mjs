@@ -95,6 +95,27 @@ try {
   await page.evaluate(() => document.querySelector('.bottom-sheet-backdrop')?.click());
   await wait(250);
 
+  // 뷰포인트 시트 — 수신 UI("N번 단면 봐주세요"): 채널의 저장 뷰포인트가 목록에 뜨고 탭=점프
+  await page.evaluate(() => {
+    const F = window.__figcad;
+    F.store.addViewpoint({
+      camera: { target: [1, 0, 2], distance: 42, theta: 1.1, phi: 0.9 },
+      viewMode: '3d', clip: null, author: '데스크톱동료',
+    });
+    F.ui.getState().setPhoneSheet('viewpoint');
+  });
+  await wait(300);
+  ok(await page.evaluate(() =>
+    document.querySelector('.bottom-sheet-title')?.textContent === '뷰포인트' &&
+    document.querySelectorAll('.bottom-sheet-body .vp-item').length === 1,
+  ), '뷰포인트 시트 렌더 (공유 항목 1)');
+  await page.evaluate(() => document.querySelector('.vp-item .vp-open')?.click());
+  await wait(300);
+  const vpPose = await page.evaluate(() => window.__figcad.rig.getPose());
+  ok(Math.abs(vpPose.distance - 42) < 1e-6 && Math.abs(vpPose.theta - 1.1) < 1e-6, `뷰포인트 탭=점프 (distance=${vpPose.distance})`);
+  await page.evaluate(() => document.querySelector('.bottom-sheet-backdrop')?.click());
+  await wait(250);
+
   // 드래그 = 카메라 (요소 안 늘어남)
   const before = await page.evaluate(() => window.__figcad.store.listElements().length);
   await page.touchscreen.touchStart(120, 300);

@@ -49,7 +49,7 @@ export const LENS_MM_DEFAULT = 23;
 export const LENS_MM_MIN = 16;
 export const LENS_MM_MAX = 135;
 /** 폰 바텀시트 콘텐츠 (모바일 리뷰/뷰어 전용) — null=닫힘. 집중형 컴팩트 시트. */
-export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | null;
+export type PhoneSheet = 'models' | 'comment' | 'inspect' | 'version' | 'viewpoint' | null;
 
 /**
  * mode별 도구 팔레트 — select = 만능 baseline(전 모드). 모델=그리기,

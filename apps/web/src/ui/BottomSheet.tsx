@@ -5,9 +5,10 @@ import { CommentPanel } from './CommentPanel';
 import { ReviewInspector } from './ReviewInspector';
 import { VersionPanel } from './VersionPanel';
 import { PhoneModelsSheet } from './PhoneModelsSheet';
+import { ViewpointPanel } from './ViewpointPanel';
 import type { ViewActions } from './App';
 
-const TITLE = { models: '모델 · 도면', comment: '코멘트', inspect: '검사', version: '버전' } as const;
+const TITLE = { models: '모델 · 도면', comment: '코멘트', inspect: '검사', version: '버전', viewpoint: '뷰포인트' } as const;
 
 /**
  * 폰 전용 바텀시트 (모바일 리뷰/뷰어) — phoneSheet별 집중 컴팩트 콘텐츠.
@@ -42,6 +43,8 @@ export function BottomSheet({
           {phoneSheet === 'comment' && <CommentPanel store={store} actions={actions} embedded />}
           {phoneSheet === 'inspect' && <ReviewInspector store={store} />}
           {phoneSheet === 'version' && <VersionPanel store={store} actions={actions} embedded />}
+          {/* 공유 뷰포인트 수신("N번 단면 봐주세요") — 데이터는 viewpoints 채널로 이미 전원 공유, 폰은 수신 UI */}
+          {phoneSheet === 'viewpoint' && <ViewpointPanel store={store} actions={actions} />}
         </div>
       </div>
     </>
