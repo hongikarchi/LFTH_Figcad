@@ -92,3 +92,20 @@
 - **미검증 잔여 findings (리셋 후 재검증 또는 아침 판단)**: 글랜싱 각도 클리어런스 붕괴(카psule 아님의 근본 한계 — v1.2 후보: 법선 방향 디페너트레이션 패스) · 허리 레이 vs 계단 등반 고속(달리기) 스터터 가능성(보행속도는 기하 분석상 안전 — 계단 케이스 스모크 추가 후보) · 45° 램프 경계 마진 0.57° · computeBoundsTree 동기 1프레임 프리즈(대형 단일 메시 수백 ms 1회 — 수용 or 워커화) · bvh.ts 정적 번들 +~30-45KB gz(걷기 미사용자도 로드 — dynamic import 후보) · '힙 할당 0' 주석 뉘앙스(intersectObjects 자체 할당은 기존 스냅 레이와 동일).
 - **게이트**: web tsc ✅ · web vitest 65 ✅ · walk-smoke(충돌 포함) ✅
 - **결과**: DONE — `77e10f6` (미검증 findings는 위 큐)
+- **재검증 (한도 리셋 후 resume, 20 에이전트 — 제기 17 / 확정 13 / stale·기각 4)**: 확정분 수정 = `e4a33c0`
+  - [major] 글랜싱 클리어런스 붕괴 — θ=85°서 R·cosθ≈3cm + 0.08 탈출구 오발 = **실제 관통 실증** → 수직 기준 allowed 환산 + 법선 푸시아웃 1발
+  - [major] DoubleSide 내부 데드락 — 0.08 탈출구는 0.08~0.35 밴드 미구제·신규 트랩 실증 → 내부 백페이스(원시 법선·dir>0 && d<R) 비차단으로 대체
+  - [minor] 45° 램프 고속 침수→관통·추락 → 스냅 lag>1m 시 수평 1프레임 유보
+  - [minor] 계단 라이저 스터터(달리기 한정·자기치유·등반 ~4m/s 캡) → 의도 수용+주석
+  - **수용(v1.2 후보)**: computeBoundsTree 동기 1프레임 프리즈(대형 단일 메시 1회 — 워커화 후보) · three-mesh-bvh 정적 번들 +~30-45KB gz(dynamic import 후보) · 계단 전용 스모크 케이스 부재
+  - stale 기각 2건 = 커밋 전 인라인 수정(스프라이트 camera·Line threshold) 유효 확인. 회귀 테스트 +2(글랜싱·내부 탈출) = walk-collision 9케이스.
+
+## 회차 3: A-S2 축-공 기즈모 (2026-07-12 야간)
+
+- **구현**: `hud/AxisGizmo.ts` — 명령형 DOM(불변③), 공 6개(N/E/S/W/T/B) + 축선 + ⬒ persp/ortho + ⌂ iso. 쿼터니언 투영 배치(무변화 스킵), 드래그=오빗, 정착 재클릭=반대축(gizmoPresetFor 순수 분리·VIEW_PRESET_ANGLES 단일 소스). ViewGizmo.tsx 삭제(주의: 삭제가 e4a33c0 걷기 커밋에 휩쓸림 — 히스토리 흠, 기능 무해).
+- **리뷰**: 2렌즈(widget-correctness·integration-a11y)×18에이전트 — **제기 16 / 확정 16 / 기각 0**. 전부 수정:
+  - **[critical] 포인터 캡처 재타게팅 = 실브라우저 공 클릭 전멸** — setPointerCapture 후 pointerup.target이 orb로 재타깃(스펙). 합성 dispatchEvent 스모크는 캡처 파이프라인을 우회해 이 버그를 통과시킴(교훈: 위젯 입력 스모크는 실 CDP 입력 필수) → down 시점 target 기록 + 스모크 실마우스 전환.
+  - [major] ortho X반사 미보정 — plan(방위가 가장 중요한 모드)에서 E/W 공이 씬과 정반대 → isOrtho 화면 x 미러 + E공 부호 단언.
+  - [minor 14] pointercancel/pointerId(유령 오빗 27°·멀티터치 지터) · 밖에서 시작한 프레스 오발 · plan 트윈 중 T 더블탭→bottom · 각도표 리터럴 복제 · 걷기 중 티커 낭비 · 지평선 공 노이즈 · ⬒ plan 침묵 no-op → 비활성 · 접근성 회귀(div 공 → role/tabIndex/aria/키보드) 등.
+- **게이트**: T0 665 ✅ (web 71) · 스모크 4종(review-smoke 실마우스 경로) ✅
+- **결과**: DONE — `d20e9e5`
