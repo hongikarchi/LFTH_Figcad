@@ -199,23 +199,44 @@ try {
   if (renamed !== '스모크테스터') throw new Error(`인라인 rename 실패: ${renamed}`);
   console.log('PASS  presence 인라인 rename — Enter 커밋 → userName 반영');
 
+  // 아바타 재탭 = 커밋+닫기 (리뷰 확정: Chromium blur-커밋+click 재오픈 루프 / WebKit 무음 폐기)
+  await page.click('.avatar.self');
+  await page.waitForSelector('.presence-rename', { timeout: 3000 });
+  await page.evaluate(() => { const i = document.querySelector('.presence-rename'); i.value = ''; });
+  await page.type('.presence-rename', '아바타닫기');
+  await page.click('.avatar.self');
+  await new Promise((r) => setTimeout(r, 200));
+  const avatarClose = await page.evaluate(() => ({
+    open: !!document.querySelector('.presence-rename'),
+    name: window.__figcad.ui.getState().userName,
+  }));
+  if (avatarClose.open) throw new Error('아바타 재탭 후 rename 팝오버 미닫힘 (재오픈 루프)');
+  if (avatarClose.name !== '아바타닫기') throw new Error(`아바타 재탭 커밋 실패: ${avatarClose.name}`);
+  console.log('PASS  presence 아바타 재탭 — 커밋+닫기 (재오픈 루프·무음 폐기 없음)');
+
   await page.click('.presence-share');
   await page.waitForSelector('.presence-share-pop canvas', { timeout: 5000 });
   const qr = await page.evaluate(async () => {
-    // qrcode 동적 로드 + 렌더 완료 대기 — 캔버스가 비어있지 않은지(QR 모듈 픽셀)
+    // qrcode 동적 로드 + 렌더 완료 대기. 불투명(a=255) 암+명 픽셀 동시 요구 —
+    // 미도색 캔버스는 전 픽셀 투명흑(r=0)이라 "r<100" 단독 카운트는 공허 통과(리뷰 확정 major).
     for (let i = 0; i < 20; i++) {
       const c = document.querySelector('.presence-share-pop canvas');
       const ctx = c.getContext('2d');
       const d = ctx.getImageData(0, 0, c.width, c.height).data;
       let dark = 0;
-      for (let k = 0; k < d.length; k += 4) if (d[k] < 100) dark++;
-      if (dark > 100) return { dark };
+      let light = 0;
+      for (let k = 0; k < d.length; k += 4) {
+        if (d[k + 3] !== 255) continue;
+        if (d[k] < 100) dark++;
+        else if (d[k] > 155) light++;
+      }
+      if (dark > 100 && light > 100) return { dark, light };
       await new Promise((r) => setTimeout(r, 100));
     }
-    return { dark: 0 };
+    return { dark: 0, light: 0 };
   });
-  if (qr.dark <= 100) throw new Error('공유 QR 미렌더 (캔버스 빈 상태)');
-  console.log(`PASS  공유 QR 팝오버 — 코드 렌더 (${qr.dark} 암픽셀)`);
+  if (qr.dark <= 100 || qr.light <= 100) throw new Error(`공유 QR 미렌더 (dark=${qr.dark}, light=${qr.light})`);
+  console.log(`PASS  공유 QR 팝오버 — 코드 렌더 (암 ${qr.dark} / 명 ${qr.light} 불투명픽셀)`);
   await page.click('.presence-share'); // 닫기
 
   // per-tool 핫키 레이어(Slice 11) — 실 keydown 디스패치 경로: W=벽(모델), 1=협업·리뷰 모드, 게이팅(리뷰서 W 무반응)
