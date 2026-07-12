@@ -337,7 +337,11 @@ try {
   const dwgUp = await page.evaluate(async ({ BACKEND, ROOM }) => {
     const F = window.__figcad;
     try {
-      const buf = await (await fetch('/__dwgtest.dwg')).arrayBuffer();
+      const fres = await fetch('/__dwgtest.dwg');
+      const buf = fres.ok ? await fres.arrayBuffer() : null;
+      // DWG 매직 "AC10xx" — vite 404/SPA 폴백 바디가 파서·업로드로 흘러가는 것 차단
+      const magic = buf && buf.byteLength >= 2 ? String.fromCharCode(...new Uint8Array(buf.slice(0, 2))) : '';
+      if (!buf || magic !== 'AC') return { missing: true };
       const u = await F.dwg.parseDwgUnderlay(buf, 'dwg');
       const [dx, dy] = F.dwg.underlayDenseCenter(u);
       // 기대 끝점: 첫 가시 세그먼트의 시작점 → 배치(origin=[-dx,-dy], rot 0, scale 1) 적용 = doc mm
@@ -365,7 +369,9 @@ try {
     }
   }, { BACKEND, ROOM });
 
-  if (dwgUp.error || !dwgUp.expected) {
+  if (dwgUp.missing) {
+    skip('DWG 언더레이 블록(끝점 스냅)', '픽스처 없음: apps/web/public/__dwgtest.dwg (gitignore 머신로컬 — dwg-underlay/dwg-e2e SKIP 규약과 동일)');
+  } else if (dwgUp.error || !dwgUp.expected) {
     check(false, 'DWG 언더레이 업로드/파싱', dwgUp.error ?? '가시 세그먼트 없음');
     skip('underlaySnapCandidates 검증', '언더레이 픽스처 실패');
   } else {
@@ -430,7 +436,7 @@ try {
         `manifest dwg: status=ready + layers ${dwg.layers?.length}개 (textSamples ${dwg.textSamples?.length ?? 0}개)`,
       );
     } else {
-      skip('manifest dwg 소스 검증', '위 DWG 블록 실패로 소스 부재');
+      skip('manifest dwg 소스 검증', dwgUp.missing ? 'DWG 픽스처 없음 (위 블록 SKIP)' : '위 DWG 블록 실패로 소스 부재');
     }
     skip('AI dock 전송 경로(body.imports 주입)', 'AI 키/패널 의존 — buildImportsManifest 실모듈+실인자(store/federation) 직접 검증으로 갈음');
   }
