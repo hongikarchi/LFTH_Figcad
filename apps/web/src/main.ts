@@ -22,6 +22,7 @@ import { initHotkeys } from './input/hotkeys';
 import { WalkController } from './input/WalkController';
 import { HudLayer } from './hud/HudLayer';
 import { WalkJoystick } from './hud/WalkJoystick';
+import { AxisGizmo } from './hud/AxisGizmo';
 import { ToolController } from './tools/ToolController';
 import { WallTool } from './tools/WallTool';
 import { SelectTool } from './tools/SelectTool';
@@ -623,6 +624,28 @@ const viewActions = {
     engine.requestRender();
   },
 };
+// 축-공 기즈모(A-S2) — 명령형 DOM HUD(불변③). 렌더 티커가 카메라 회전을 공 배치에 반영.
+// 텍스트 그리드 ViewGizmo(8a) 대체 — 라벨=건축 방위 N/E/S/W(§C 결정1), 드래그=오빗, ⬒=수동 persp/ortho.
+const axisGizmo = new AxisGizmo({
+  setView: (p) => viewActions.setView(p),
+  rotate: (dx, dy) => {
+    rig.rotate(dx, dy);
+    engine.requestRender();
+  },
+  toggleProjection: () => {
+    rig.setProjection(rig.isOrtho ? 'persp' : 'ortho'); // plan·걷기 중은 rig가 내부 무시
+    syncMirrorComp();
+    engine.requestRender();
+  },
+  isOrtho: () => rig.isOrtho,
+  getPose: () => rig.getPose(),
+  mode: () => rig.mode,
+});
+engine.addTicker(() => {
+  // 걷기 중엔 CSS로 숨김(walk-active) — 스타일 쓰기 낭비 없이 티커도 스킵(리뷰)
+  if (!useUiStore.getState().walkActive) axisGizmo.update(rig.active);
+  return false;
+});
 // 협업 핸들 — presence 명령형 객체를 React 패널에 노출 (rename). peers/connection은 uiStore.
 const collab = {
   setUserName: (name: string) => {

@@ -30,6 +30,19 @@ export function lensMmToFovDeg(mm: number): number {
 }
 
 /**
+ * 프리셋 궤도각 단일 소스 — setView와 AxisGizmo 정착 판정이 공유(리터럴 복제 드리프트 방지, 리뷰).
+ * φ=π/2 = 수평 시선(입면), θ = 방위. apply()가 pos = target + dist·(sinφsinθ, cosφ, sinφcosθ).
+ */
+export const VIEW_PRESET_ANGLES: Record<Exclude<ViewPreset, 'top'>, { theta: number; phi: number }> = {
+  front: { theta: Math.PI, phi: Math.PI / 2 }, // 남쪽서 북(+Z) 바라봄 = 남측 입면
+  back: { theta: 0, phi: Math.PI / 2 }, // 북쪽서 남 바라봄 = 북측 입면
+  right: { theta: Math.PI / 2, phi: Math.PI / 2 }, // 동쪽서 서 바라봄 = 동측 입면
+  left: { theta: -Math.PI / 2, phi: Math.PI / 2 }, // 서쪽서 동 바라봄 = 서측 입면
+  bottom: { theta: Math.PI, phi: MAX_PHI }, // 아래서 올려다봄(천장·보 하부) — A-S4 full-sphere 의존
+  iso: { theta: Math.PI / 4, phi: Math.PI / 4.5 }, // 기본 등각
+};
+
+/**
  * 하나의 타깃/거리 상태 위에 3D(원근 궤도)와 평면(상부 직교) 두 카메라를 올린 리그.
  * 평면 모드는 별도 씬이 아니라 카메라 상태일 뿐 — post-MVP 도면 생성이 꽂힐 자리.
  * 렌더 월드 단위: 미터 (문서는 mm, 변환은 렌더 경계에서).
@@ -128,17 +141,7 @@ export class CameraRig {
       this.setMode('plan'); // 기존 평면 경로(직교 탑다운 + 북향 + 트윈)
       return;
     }
-    // φ=π/2 = 수평 시선(elevation), θ = 방위. apply()가 pos = target + dist·(sinφsinθ, cosφ, sinφcosθ).
-    const H = Math.PI / 2;
-    const A: Record<Exclude<ViewPreset, 'top'>, { theta: number; phi: number }> = {
-      front: { theta: Math.PI, phi: H }, // 남쪽서 북(+Z) 바라봄 = 남측 입면
-      back: { theta: 0, phi: H }, // 북쪽서 남 바라봄 = 북측 입면
-      right: { theta: Math.PI / 2, phi: H }, // 동쪽서 서 바라봄 = 동측 입면
-      left: { theta: -Math.PI / 2, phi: H }, // 서쪽서 동 바라봄 = 서측 입면
-      bottom: { theta: Math.PI, phi: MAX_PHI }, // 아래서 올려다봄(천장·보 하부) — A-S4 full-sphere 의존
-      iso: { theta: Math.PI / 4, phi: Math.PI / 4.5 }, // 기본 등각
-    };
-    const a = A[preset];
+    const a = VIEW_PRESET_ANGLES[preset];
     // no-op 가드(리뷰) — 이미 그 축뷰에 정착해 있으면 재클릭이 persp 강등 + X미러 왕복
     // 플래시(0.3s 공회전 트윈)를 만들지 않게 그대로 유지.
     const dT = THREE.MathUtils.euclideanModulo(a.theta - this.theta + Math.PI, Math.PI * 2) - Math.PI;

@@ -7,7 +7,6 @@ import { TopBar } from './TopBar';
 import { WorkRail } from './WorkRail';
 import { Inspector } from './Inspector';
 import { ViewportCluster } from './ViewportCluster';
-import { ViewGizmo } from './ViewGizmo';
 import { CommandPalette } from './CommandPalette';
 import { AiPanel } from './AiPanel';
 import { DrawingPanel } from './DrawingPanel';
@@ -81,7 +80,7 @@ export function App({
         </>
       )}
       <ViewportCluster store={store} actions={actions} />
-      <ViewGizmo actions={actions} />
+      {/* 뷰 기즈모 = hud/AxisGizmo(명령형 DOM, main.ts 마운트) — 8a 텍스트 그리드는 S2에서 대체 */}
       <AiPanel store={store} federation={federation} actions={actions} />
       <DrawingPanel store={store} />
       <CommandPalette store={store} actions={actions} />

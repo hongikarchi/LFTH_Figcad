@@ -3,7 +3,7 @@
  *   1) MeasureTool(줄자): 3D 메시 피처 스냅 두 클릭 → hud-chip mm 값
  *   2) Viewpoints: 저장(.vp-save) → 카메라 이동 → 점프(.vp-open) → 포즈 복원 + store 채널
  *   3) diffOverlay(버전 3D 비교): 커밋 → 변경 → 비교 → 씬 오버레이(초록/주황/빨강) → 토글 off
- *   4) ViewGizmo: Top → plan 직교 탑다운, Front → 3D theta=π/phi=π/2
+ *   4) 축-공 기즈모(A-S2): T공 → plan 직교 탑다운, S공 → 남측 입면 true ortho, ⌂ → iso 원근
  * 사전: vite dev :5173 + 백엔드 :8787 (버전 API). 사용: node apps/web/scripts/review-smoke.mjs [포트]
  */
 import puppeteer from 'puppeteer-core';
@@ -205,17 +205,21 @@ try {
   console.log('PASS  버전 비교 토글 off — 오버레이 정리 (0/0)');
 
   // ============================================================
-  // 4) ViewGizmo — Top → plan 탑다운(직교), Front → 3D 표준 방위(theta=π, phi=π/2)
+  // 4) 축-공 기즈모(A-S2) — T공 → plan 탑다운(직교), S공 → 남측 입면(true ortho), ⌂ → iso 원근
   // ============================================================
-  await page.waitForSelector('.view-gizmo', { timeout: 5000 });
-  const clickGizmo = (label) =>
-    page.evaluate((l) => {
-      const b = [...document.querySelectorAll('.view-gizmo button')].find((x) => x.textContent === l);
-      if (!b) return false;
-      b.click();
-      return true;
-    }, label);
-  if (!(await clickGizmo('Top'))) throw new Error('ViewGizmo Top 버튼 없음');
+  await page.waitForSelector('.axis-gizmo', { timeout: 5000 });
+  // 공 클릭 = **실마우스 입력**(CDP) — 합성 dispatchEvent는 브라우저 히트테스트·포인터캡처
+  // 재타게팅 파이프라인을 우회해 실환경 버그(캡처로 pointerup.target=orb)를 못 잡는다(리뷰 critical).
+  const clickBall = async (axis) => {
+    const h = await page.$(`.axis-gizmo .ag-ball[data-axis="${axis}"]`);
+    if (!h) return false;
+    const box = await h.boundingBox();
+    if (!box) return false;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    return true;
+  };
+  const clickGizmo = (sel) => page.evaluate((s) => { const el = document.querySelector(s); if (!el) return false; el.click(); return true; }, sel);
+  if (!(await clickBall('T'))) throw new Error('축-공 기즈모 T공 없음');
   await sleep(150);
   await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); }); // 트윈 즉시 완료
   await sleep(150);
@@ -225,12 +229,12 @@ try {
     pose: window.__figcad.rig.getPose(),
     ortho: window.__figcad.rig.active?.isOrthographicCamera === true,
   }));
-  if (top.mode !== 'plan' || top.viewMode !== 'plan') throw new Error(`Top 후 mode 기대 plan: rig=${top.mode} ui=${top.viewMode}`);
-  if (top.pose.phi > 0.06) throw new Error(`Top 후 phi 기대 ≈0.05(탑다운), 실제 ${top.pose.phi}`);
-  if (!top.ortho) throw new Error('Top(평면) 후 활성 카메라가 직교가 아님');
-  console.log(`PASS  뷰 기즈모 Top — plan 직교 탑다운 (phi=${top.pose.phi.toFixed(3)}, ortho=${top.ortho})`);
+  if (top.mode !== 'plan' || top.viewMode !== 'plan') throw new Error(`T공 후 mode 기대 plan: rig=${top.mode} ui=${top.viewMode}`);
+  if (top.pose.phi > 0.06) throw new Error(`T공 후 phi 기대 ≈0.05(탑다운), 실제 ${top.pose.phi}`);
+  if (!top.ortho) throw new Error('T공(평면) 후 활성 카메라가 직교가 아님');
+  console.log(`PASS  축-공 기즈모 T — plan 직교 탑다운 (phi=${top.pose.phi.toFixed(3)}, ortho=${top.ortho})`);
 
-  if (!(await clickGizmo('Front'))) throw new Error('ViewGizmo Front 버튼 없음');
+  if (!(await clickBall('S'))) throw new Error('축-공 기즈모 S공 없음');
   await sleep(150);
   await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); }); // S3 포즈 트윈 즉시 완료
   await sleep(100);
@@ -249,15 +253,22 @@ try {
       eastNdcX: c[0] / c[3],
     };
   });
-  if (front.mode !== '3d' || front.viewMode !== '3d') throw new Error(`Front 후 mode 기대 3d: rig=${front.mode} ui=${front.viewMode}`);
-  if (Math.abs(front.pose.theta - Math.PI) > 1e-3) throw new Error(`Front 후 theta 기대 π, 실제 ${front.pose.theta}`);
-  if (Math.abs(front.pose.phi - Math.PI / 2) > 1e-3) throw new Error(`Front 후 phi 기대 π/2(수평), 실제 ${front.pose.phi}`);
-  if (!front.ortho) throw new Error('Front(입면) 후 활성 카메라가 직교가 아님 — 8b true ortho 회귀');
-  if (!(front.eastNdcX > 0)) throw new Error(`Front 입면 chirality 반전 — 동쪽이 화면 왼쪽 (ndcX=${front.eastNdcX})`);
-  console.log(`PASS  뷰 기즈모 Front — 남측 입면 true ortho·동=오른쪽 (phi=${front.pose.phi.toFixed(3)}, eastNdcX=${front.eastNdcX.toFixed(3)})`);
+  if (front.mode !== '3d' || front.viewMode !== '3d') throw new Error(`S공 후 mode 기대 3d: rig=${front.mode} ui=${front.viewMode}`);
+  if (Math.abs(front.pose.theta - Math.PI) > 1e-3) throw new Error(`S공 후 theta 기대 π, 실제 ${front.pose.theta}`);
+  if (Math.abs(front.pose.phi - Math.PI / 2) > 1e-3) throw new Error(`S공 후 phi 기대 π/2(수평), 실제 ${front.pose.phi}`);
+  if (!front.ortho) throw new Error('S공(남측 입면) 후 활성 카메라가 직교가 아님 — 8b true ortho 회귀');
+  if (!(front.eastNdcX > 0)) throw new Error(`남측 입면 chirality 반전 — 동쪽이 화면 왼쪽 (ndcX=${front.eastNdcX})`);
+  // 기즈모 E공 화면 x부호 = 씬 chirality와 일치해야(ortho X미러 보정 회귀 가드, 리뷰 major)
+  const eBallX = await page.evaluate(() => {
+    const b = document.querySelector('.axis-gizmo .ag-ball[data-axis="E"]');
+    const m = /translate\((-?[\d.]+)px/.exec(b?.style.transform ?? '');
+    return m ? Number(m[1]) : NaN;
+  });
+  if (!(eBallX > 0)) throw new Error(`기즈모 E공이 화면 왼쪽 (x=${eBallX}) — 씬(동=오른쪽)과 거울상`);
+  console.log(`PASS  축-공 기즈모 S — 남측 입면 true ortho·동=오른쪽 (eastNdcX=${front.eastNdcX.toFixed(3)}, E공 x=${eBallX.toFixed(0)}px)`);
 
-  // 입면 ortho → Iso 복귀 = 원근 재개 (projection 잔존 회귀 가드)
-  if (!(await clickGizmo('Iso'))) throw new Error('ViewGizmo Iso 버튼 없음');
+  // 입면 ortho → ⌂(iso 홈) = 원근 재개 (projection 잔존 회귀 가드)
+  if (!(await clickGizmo('.axis-gizmo .ag-home'))) throw new Error('축-공 기즈모 ⌂(iso) 버튼 없음');
   await sleep(150);
   await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); });
   await sleep(100);

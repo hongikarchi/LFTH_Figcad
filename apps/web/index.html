@@ -816,36 +816,79 @@
         background: var(--ink);
         color: #fff;
       }
-      /* 뷰 기즈모 (항목8a) — 우상단, 2열 그리드. viewport-cluster와 같은 글래스 룩. */
-      .view-gizmo {
+      /* 축-공 뷰 기즈모 (A-S2) — 우상단 명령형 DOM. 공=방위(N/E/S/W/T/B), 드래그=오빗. */
+      .axis-gizmo {
         position: fixed;
         top: calc(env(safe-area-inset-top, 0px) + 60px);
         right: calc(env(safe-area-inset-right, 0px) + 16px);
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 3px;
-        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px;
         background: var(--glass);
         -webkit-backdrop-filter: blur(24px) saturate(1.6);
         backdrop-filter: blur(24px) saturate(1.6);
         border: 1px solid var(--hairline);
-        border-radius: 11px;
+        border-radius: 12px;
         box-shadow: var(--shadow);
         z-index: 25;
+        user-select: none;
+        touch-action: none;
       }
-      .view-gizmo button {
-        min-width: 46px;
-        height: 26px;
+      .axis-gizmo .ag-orb {
+        position: relative;
+        width: 96px;
+        height: 96px;
+        cursor: grab;
+      }
+      .axis-gizmo .ag-ball {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 24px;
+        height: 24px;
+        margin: -12px 0 0 -12px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.08);
+        border: 1px solid var(--hairline);
+        color: var(--ink);
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 22px;
+        text-align: center;
+        cursor: pointer;
+      }
+      .axis-gizmo .ag-ball:hover {
+        background: var(--accent);
+        color: #fff;
+      }
+      .axis-gizmo .ag-line {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        height: 1.5px;
+        background: var(--ink);
+        transform-origin: left center;
+        pointer-events: none;
+      }
+      .axis-gizmo .ag-foot {
+        display: flex;
+        gap: 4px;
+      }
+      .axis-gizmo .ag-foot button {
+        min-width: 34px;
+        height: 20px;
         padding: 0 6px;
-        border: none;
+        border: 1px solid var(--hairline);
         border-radius: 6px;
         background: transparent;
         color: var(--ink);
-        font-size: 12px;
+        font-size: 10px;
         font-weight: 600;
         cursor: pointer;
       }
-      .view-gizmo button:hover {
+      .axis-gizmo .ag-foot button:hover {
         background: rgba(0, 0, 0, 0.05);
       }
       .viewport-cluster .vc-sep {
@@ -2440,7 +2483,7 @@
       }
       /* ---- 걷기(walk) 모드 — 리뷰 1인칭 ---- */
       /* 뷰 프리셋 = 걷기 포즈 파괴, 스케일바 = 원근 보행서 무의미 (방위표는 유지) */
-      body.walk-active .view-gizmo { display: none; }
+      body.walk-active .axis-gizmo { display: none; }
       body.walk-active .vw-scale { display: none; }
       /* 렌즈 컨트롤 — 상단 중앙 (하단 = 조이스틱/클러스터/클립 영역) */
       .walk-control {
