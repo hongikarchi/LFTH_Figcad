@@ -109,3 +109,11 @@
   - [minor 14] pointercancel/pointerId(유령 오빗 27°·멀티터치 지터) · 밖에서 시작한 프레스 오발 · plan 트윈 중 T 더블탭→bottom · 각도표 리터럴 복제 · 걷기 중 티커 낭비 · 지평선 공 노이즈 · ⬒ plan 침묵 no-op → 비활성 · 접근성 회귀(div 공 → role/tabIndex/aria/키보드) 등.
 - **게이트**: T0 665 ✅ (web 71) · 스모크 4종(review-smoke 실마우스 경로) ✅
 - **결과**: DONE — `d20e9e5`
+
+## 회차 6: F 소품 배치 1 (2026-07-12 야간)
+
+- **PDF 다중 페이지** — `8bd3b03`: underlay.page optional(구빌드 strip→1페이지 강등, clip/opacity 선례) + setUnderlayPage op + renderPdfPage(클램프·pageCount) + 리컨실러 페이지 변경=재렌더(요청 페이지 기준 감지 — 클램프 재로드 루프 방지, 자가 발견) + HubManage ‹n/N› 스테퍼. 검증 = pdf-page-smoke 신설(2페이지 픽스처 자체 생성 — 로드·전환·클램프 라이브).
+- **Toolbox 핫키 힌트** — `d412975`: hotkeyForTool 역매핑(오버라이드에 밀린 키 생략).
+- **.gitattributes** — `24e5f7?`: PDF 픽스처 CRLF 변환 = xref 오프셋 파손 위험 자가 발견 → pdf/dwg/3dm/glb binary 명시.
+- **주의**: 이 소품 3건의 adversarial 리뷰는 다음 스윕에 배치(전부 라이브 스모크 검증 완료 상태).
+- **잔여 큐**: poché 완전 DCEL(M — 알고리즘, 새 컨텍스트 권장) · Presence 인라인 rename+Share QR(S) · web 테스트 부채(ToolController/InputManager) · B-P0/P2(아이패드 감각 = 감독 필요).
