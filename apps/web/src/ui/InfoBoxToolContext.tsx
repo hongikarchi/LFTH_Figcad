@@ -263,15 +263,6 @@ export function renderToolContext(
     );
   }
 
-  if (activeTool === 'dimension') {
-    return (
-      <div className="infobox">
-        <span className="infobox-title">치수 도구</span>
-        <span className="infobox-hint">두 점 클릭 — 끝점(벽·기둥)에 스냅하면 이동 추종 바인딩</span>
-      </div>
-    );
-  }
-
   if (activeTool === 'label') {
     return (
       <div className="infobox">

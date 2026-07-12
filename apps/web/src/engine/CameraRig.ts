@@ -156,6 +156,9 @@ export class CameraRig {
    */
   northScreenAngle(): number {
     const cam = this.active;
+    // project()는 matrixWorldInverse를 갱신 없이 사용 — 렌더러 밖(테스트·apply 직후 렌더 전)
+    // 호출 시 1콜 스테일 방지. 렌더러가 프레임마다 하는 일의 멱등 재현(저비용).
+    cam.updateMatrixWorld();
     const W = window.innerWidth;
     const H = window.innerHeight;
     // 걷기 중엔 스테일 오빗 타깃이 카메라 뒤일 수 있음(방위 반전) → 시선 전방 5m 기준점 사용.

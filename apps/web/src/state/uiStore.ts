@@ -16,7 +16,6 @@ export type ToolName =
   | 'curtainwall'
   | 'zone'
   | 'asset'
-  | 'dimension'
   | 'measure'
   | 'label'
   | 'sketch'

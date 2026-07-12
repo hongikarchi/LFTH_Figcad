@@ -60,7 +60,7 @@ export function CommandPalette({ store, actions }: { store: DocStore; actions: V
     { label: '도구: 기둥', run: mode('model', 'column') },
     { label: '도구: 보', run: mode('model', 'beam') },
     { label: '도구: 그리드', run: mode('model', 'grid') },
-    { label: '도구: 치수', run: mode('model', 'dimension') },
+    { label: '도구: 측정 (줄자)', run: () => ui.setTool('measure') },
     { label: '도구: 코멘트', run: mode('review', 'comment') },
     { label: '도구: 레이블', run: mode('model', 'label') },
     { label: '도구: 스케치 (AI)', run: () => { ui.setAiOpen(true); ui.setViewMode('plan'); ui.setTool('sketch'); } },
