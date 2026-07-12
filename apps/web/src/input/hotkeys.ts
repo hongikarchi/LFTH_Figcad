@@ -41,6 +41,17 @@ export function resolveHotkey(key: string, mode: WorkspaceMode): HotkeyAction | 
   return null;
 }
 
+/** KeyboardEvent → 핫키 문자 — 한글 IME 등 비라틴 레이아웃에서 e.key가 'ㅈ' 등이라 물리 키(e.code)로 폴백(리뷰). */
+export function hotkeyChar(key: string, code: string): string {
+  const k = key.toLowerCase();
+  if (/^[a-z0-9]$/.test(k)) return k;
+  const m = /^Key([A-Z])$/.exec(code);
+  if (m) return m[1]!.toLowerCase();
+  const d = /^Digit(\d)$/.exec(code);
+  if (d) return d[1]!;
+  return k;
+}
+
 /** window keydown 등록 — main.ts 부팅 시 1회. 기존 F(fit)/Z(줌선택)/Esc/화살표 핸들러와 키 비중복. */
 export function initHotkeys(onApplied?: () => void): void {
   window.addEventListener('keydown', (e) => {
@@ -50,7 +61,7 @@ export function initHotkeys(onApplied?: () => void): void {
     const ui = useUiStore.getState();
     if (ui.walkActive) return; // WASD·Shift는 걷기 이동 (WalkController 소유)
     if (ui.device === 'phone') return; // 폰 = 키보드 없음 + 시트 UX와 충돌 방지
-    const act = resolveHotkey(e.key.toLowerCase(), ui.activeMode);
+    const act = resolveHotkey(hotkeyChar(e.key, e.code), ui.activeMode);
     if (!act) return;
     if (act.kind === 'mode') ui.setMode(act.mode);
     else ui.setTool(act.tool);

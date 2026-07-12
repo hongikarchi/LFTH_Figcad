@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DocStore } from '@figcad/core';
-import { useUiStore, type WorkspaceMode, type ToolName } from '../state/uiStore';
+import { useUiStore, type ToolName, type WorkspaceMode } from '../state/uiStore';
 import type { ViewActions } from './App';
 
 /**
  * Cmd/Ctrl-K 명령 팔레트 (UI/UX 재구성 P1 Slice11) — 데스크톱 어포던스.
  * 키보드 레이어는 InputManager(펜/터치 포인터 분기)와 직교 — 캔버스 엘리먼트 밖 바인딩이라 불변④ 무관.
- * 숫자 1~3 = 모드 빠른전환(입력 포커스 아닐 때). 모드/도구/뷰 액션을 검색·실행.
+ * 모드(1~3)·도구 단축키는 input/hotkeys.ts 단일 소유 — 여기는 Ctrl+K 팔레트만.
  */
 type Cmd = { label: string; run: () => void };
-
-const MODE_BY_DIGIT: WorkspaceMode[] = ['review', 'model', 'hub'];
 
 export function CommandPalette({ store, actions }: { store: DocStore; actions: ViewActions }) {
   const [open, setOpen] = useState(false);
@@ -28,9 +26,7 @@ export function CommandPalette({ store, actions }: { store: DocStore; actions: V
         setSel(0);
         return;
       }
-      if (!open && !inField && /^[1-3]$/.test(e.key)) {
-        useUiStore.getState().setMode(MODE_BY_DIGIT[Number(e.key) - 1]!);
-      }
+      // 1/2/3 모드 전환은 input/hotkeys.ts 단일 소유(걷기·폰·IME 가드 포함) — 여기 중복 등록 제거(리뷰)
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

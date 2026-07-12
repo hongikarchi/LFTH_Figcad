@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveHotkey } from '../src/input/hotkeys';
+import { hotkeyChar, resolveHotkey } from '../src/input/hotkeys';
 
 // per-tool 핫키 해석(Slice 11) — 모드 팔레트 게이팅·오버라이드·비핫키 통과를 고정.
 
@@ -40,5 +40,19 @@ describe('resolveHotkey', () => {
     for (const k of ['f', 'z', 'escape', 'delete', 'arrowup', 'pageup', 'q', 'e', '4', '0']) {
       expect(resolveHotkey(k, 'model')).toBeNull();
     }
+  });
+});
+
+describe('hotkeyChar — 한글 IME/비라틴 레이아웃 e.code 폴백 (리뷰 iter2)', () => {
+  it('한글 자모(e.key=ㅈ)는 물리 키 KeyW로 해석', () => {
+    expect(hotkeyChar('ㅈ', 'KeyW')).toBe('w');
+    expect(hotkeyChar('ㅁ', 'KeyA')).toBe('a');
+    expect(hotkeyChar('ㄴ', 'Digit1')).toBe('1');
+  });
+  it('라틴 키·숫자는 e.key 그대로, 특수키는 통과', () => {
+    expect(hotkeyChar('W', 'KeyW')).toBe('w');
+    expect(hotkeyChar('1', 'Digit1')).toBe('1');
+    expect(hotkeyChar('Escape', 'Escape')).toBe('escape');
+    expect(hotkeyChar('ArrowUp', 'ArrowUp')).toBe('arrowup');
   });
 });

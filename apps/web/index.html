@@ -2212,8 +2212,12 @@
         z-index: 35;
       }
       .bottom-bar-btn {
+        /* 7버튼(선택 시 검사 + 뷰) 시 390px 폭에서 AI 버튼 클리핑(리뷰) — min-width:0 + 축소 패딩 + 말줄임 */
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
         flex: 1;
-        padding: 10px 6px;
+        padding: 10px 4px;
         font-size: 12px;
         font-weight: 700;
         border: 1px solid var(--hairline);
