@@ -9,6 +9,7 @@ describe('screenToDoc 그레이징 가드', () => {
   it('입면 ortho 수평 레이 = 지면과 평행 → 전 픽셀 null (1e20mm 커밋 차단)', () => {
     const rig = new CameraRig(1280 / 800);
     rig.setView('front');
+    for (let i = 0; i < 10 && rig.tick(0.1); i++) { /* S3 트윈 완료 — 입면 도착 후가 그레이징 지점 */ }
     rig.active.updateMatrixWorld();
     // 가드 전: 지면 위쪽 픽셀이 [~1e4, ~1e20]mm 히트를 반환했다
     expect(screenToDoc(640, 200, rig.active, 0)).toBeNull();

@@ -110,7 +110,9 @@ try {
     document.querySelectorAll('.bottom-sheet-body .vp-item').length === 1,
   ), '뷰포인트 시트 렌더 (공유 항목 1)');
   await page.evaluate(() => document.querySelector('.vp-item .vp-open')?.click());
-  await wait(300);
+  await wait(150);
+  await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); }); // 점프 트윈(§C-5) 즉시 완료
+  await wait(100);
   const vpPose = await page.evaluate(() => window.__figcad.rig.getPose());
   ok(Math.abs(vpPose.distance - 42) < 1e-6 && Math.abs(vpPose.theta - 1.1) < 1e-6, `뷰포인트 탭=점프 (distance=${vpPose.distance})`);
   await page.evaluate(() => document.querySelector('.bottom-sheet-backdrop')?.click());

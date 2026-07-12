@@ -78,10 +78,16 @@ describe('기본 상태·모드 전환', () => {
   });
 });
 
-describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () => {
+/** 프리셋은 S3부터 포즈 트윈 — 도착 상태 단언은 finishTween 후 */
+function setViewDone(rig: CameraRig, preset: Parameters<CameraRig['setView']>[0]): void {
+  rig.setView(preset);
+  finishTween(rig);
+}
+
+describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근 · S3: 최단호 트윈 + Auto Perspective)', () => {
   it('front = 남쪽에서 북(+Z) 바라봄, 수평 시선, active=직교(입면)', () => {
     const rig = makeRig();
-    rig.setView('front');
+    setViewDone(rig, 'front');
     const pose = rig.getPose();
     expect(pose.theta).toBeCloseTo(Math.PI, 9);
     expect(pose.phi).toBeCloseTo(Math.PI / 2, 9); // full-sphere라 π/2가 클램프 내 (오빗 튐 해소)
@@ -96,7 +102,7 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('chirality — 남측 입면에서 동쪽(+X)이 화면 오른쪽 (실세계·Rhino Front·plan과 일치)', () => {
     const rig = makeRig();
-    rig.setView('front');
+    setViewDone(rig, 'front');
     rig.active.updateMatrixWorld();
     const eastFront = new THREE.Vector3(5, 0, 0).project(rig.active).x;
     expect(eastFront).toBeGreaterThan(0); // 반사 교정 전엔 −0.24(왼쪽 거울상)
@@ -109,7 +115,7 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('입면 ortho 프러스텀 반높이 = distance·tan(fov/2) — persp↔ortho 스왑 무봉합', () => {
     const rig = makeRig();
-    rig.setView('front');
+    setViewDone(rig, 'front');
     const cam = rig.active as THREE.OrthographicCamera;
     const pose = rig.getPose();
     const expected = pose.distance * Math.tan((55 / 2) * (Math.PI / 180));
@@ -120,14 +126,14 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('right = 동쪽서 서쪽 바라봄 (+X측)', () => {
     const rig = makeRig();
-    rig.setView('right');
+    setViewDone(rig, 'right');
     const cam = rig.active as THREE.OrthographicCamera;
     expect(cam.position.x).toBeGreaterThan(rig.getPose().target[0]);
   });
 
   it('bottom = 아래서 올려다봄 (φ=MAX_PHI, 직교)', () => {
     const rig = makeRig();
-    rig.setView('bottom');
+    setViewDone(rig, 'bottom');
     const cam = rig.active as THREE.OrthographicCamera;
     expect(cam.isOrthographicCamera).toBe(true);
     expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9);
@@ -136,7 +142,7 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('입면 ortho에서 orbit = 팬 (Rhino 평행 뷰 의미론, X반사 방향 고정)', () => {
     const rig = makeRig();
-    rig.setView('front');
+    setViewDone(rig, 'front');
     const before = rig.getPose();
     rig.orbit(100, 0); // 오른쪽 드래그 → 콘텐츠가 커서 따라옴 → target은 -X (plan과 동일 부호 반전)
     const after = rig.getPose();
@@ -147,7 +153,7 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('입면 ortho에서 setPivot 무시 — RMB 피벗이 축정렬 입면을 기울이지 않음', () => {
     const rig = makeRig();
-    rig.setView('front');
+    setViewDone(rig, 'front');
     const before = rig.getPose();
     rig.setPivot(5, 2, 3); // 리뷰 실증: 가드 없으면 시선축 12° 기울어 사선 액소노로 변형
     expect(rig.getPose()).toEqual(before);
@@ -156,7 +162,7 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('입면 ortho fitBounds = tan(fov/2) 공식 (sin 공식이면 실여유율 1.30 과줌아웃)', () => {
     const rig = makeRig();
-    rig.setView('front');
+    setViewDone(rig, 'front');
     rig.fitBounds(new THREE.Vector3(-50, 0, -50), new THREE.Vector3(50, 10, 50));
     const expected = (50 / Math.tan((55 / 2) * (Math.PI / 180))) * 1.15;
     expect(rig.getPose().distance).toBeCloseTo(expected, 6);
@@ -165,14 +171,14 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
   it('front 입면 = 북축 퇴화 — northScreenAngle 마지막 유효각 유지(float 노이즈 각도 금지)', () => {
     const rig = makeRig();
     const isoAngle = rig.northScreenAngle(); // 등각에서 유한 유효각
-    rig.setView('front'); // 북(0,0,1)이 시선과 평행 → 화면 Δ≈1e-15px
+    setViewDone(rig, 'front'); // 북(0,0,1)이 시선과 평행 → 화면 Δ≈1e-15px
     expect(rig.northScreenAngle()).toBeCloseTo(isoAngle, 9);
   });
 
   it('top = plan 모드 경로 재사용 (입면 ortho 상태서도 plan 경로로 정상 진입)', () => {
     const rig = makeRig();
-    rig.setView('front');
-    rig.setView('top');
+    setViewDone(rig, 'front');
+    setViewDone(rig, 'top');
     expect(rig.mode).toBe('plan');
     finishTween(rig);
     const cam = rig.active as THREE.OrthographicCamera;
@@ -182,8 +188,8 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('iso = 기본 등각 + 원근 복귀', () => {
     const rig = makeRig();
-    rig.setView('front');
-    rig.setView('iso');
+    setViewDone(rig, 'front');
+    setViewDone(rig, 'iso');
     const pose = rig.getPose();
     expect(pose.theta).toBeCloseTo(Math.PI / 4, 9);
     expect(pose.phi).toBeCloseTo(Math.PI / 4.5, 9);
@@ -192,7 +198,7 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
 
   it('setMode·setPose·enterWalk는 입면 ortho를 원근으로 리셋', () => {
     const a = makeRig();
-    a.setView('front');
+    setViewDone(a, 'front');
     a.setMode('plan');
     finishTween(a);
     a.setMode('3d');
@@ -200,14 +206,123 @@ describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () 
     expect(a.isOrtho).toBe(false);
 
     const b = makeRig();
-    b.setView('front');
+    setViewDone(b, 'front');
     b.setPose({ target: [0, 0, 0], distance: 30, theta: 1, phi: 1 }); // 뷰포인트 점프 = 원근 의미론
     expect(b.isOrtho).toBe(false);
 
     const c = makeRig();
-    c.setView('front');
+    setViewDone(c, 'front');
     c.enterWalk(1.6); // 걷기 = 항상 원근
     expect((c.active as THREE.PerspectiveCamera).isPerspectiveCamera).toBe(true);
+  });
+});
+
+describe('A-S3 — 포즈 트윈·Auto Perspective', () => {
+  it('축뷰 트윈 중엔 persp, 도착 순간 ortho 스왑 (Auto Perspective)', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    expect(rig.isOrtho).toBe(false); // 비행 중 = 원근
+    rig.tick(0.1); // 중간 프레임
+    expect(rig.isOrtho).toBe(false);
+    const midPhi = rig.getPose().phi;
+    expect(midPhi).toBeGreaterThan(Math.PI / 4.5); // iso→front로 진행 중
+    expect(midPhi).toBeLessThan(Math.PI / 2);
+    finishTween(rig);
+    expect(rig.isOrtho).toBe(true); // 도착 = 직교 스왑
+  });
+
+  it('θ 최단호 래핑 — θ≈−3.0에서 front(π)로 짧은 호(Δ≈−0.14)로 이동', () => {
+    const rig = makeRig();
+    rig.rotate((Math.PI / 4 + 3.0) / 0.005, 0); // theta: π/4 → −3.0 (rotate는 θ-=dx·0.005)
+    expect(rig.getPose().theta).toBeCloseTo(-3.0, 6);
+    setViewDone(rig, 'front');
+    // 래핑 없으면 −3.0→+π(Δ=+6.14, 한 바퀴) — 최단호는 −3.0→−π(Δ=−0.14)
+    expect(rig.getPose().theta).toBeCloseTo(-Math.PI, 6);
+  });
+
+  it('autoOrtho에서 rotate = 원근 복귀 (Blender Auto Perspective)', () => {
+    const rig = makeRig();
+    setViewDone(rig, 'front');
+    expect(rig.isOrtho).toBe(true);
+    rig.rotate(30, 10);
+    expect(rig.isOrtho).toBe(false); // 축뷰가 켠 ortho는 회전 시 원근 복귀
+  });
+
+  it('수동 setProjection ortho는 rotate에도 유지 (autoOrtho 아님)', () => {
+    const rig = makeRig();
+    rig.setProjection('ortho');
+    expect(rig.isOrtho).toBe(true);
+    rig.rotate(30, 10);
+    expect(rig.isOrtho).toBe(true); // 수동 토글 = 유지
+    rig.setProjection('persp');
+    expect(rig.isOrtho).toBe(false);
+  });
+
+  it('프리셋 비행 중 입력 개입 = 현 지점 동결 + ortho 스왑 취소', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    rig.tick(0.1);
+    const midPhi = rig.getPose().phi;
+    rig.zoom(1.5); // 조종간 잡음 — 트윈 동결
+    expect(rig.getPose().phi).toBeCloseTo(midPhi, 9); // phi 그대로(끝값으로 점프 안 함)
+    finishTween(rig); // 트윈 이미 소멸 — no-op
+    expect(rig.isOrtho).toBe(false); // 스왑 취소
+  });
+
+  it('plan 진입 비행 중 입력 개입 = 끝값(탑다운) 스냅 후 적용 (forceComplete)', () => {
+    const rig = makeRig();
+    rig.setMode('plan');
+    rig.tick(0.05); // 진입 비행 중
+    rig.orbit(100, 0); // plan 팬 시도
+    expect(rig.getPose().phi).toBeCloseTo(MIN_PHI, 9); // 미완 φ 방치 금지 — 탑다운 강제 도달
+    expect(rig.getPose().theta).toBeCloseTo(Math.PI, 9);
+  });
+
+  it('setPose auto — 가까우면 트윈 비행, 멀면 스냅 (§C 결정5)', () => {
+    const near = makeRig();
+    near.setPose({ target: [3, 0, 3], distance: 30, theta: 1.0, phi: 1.0 }, 'auto');
+    expect(near.getPose().theta).not.toBeCloseTo(1.0, 3); // 아직 비행 중
+    finishTween(near);
+    expect(near.getPose().theta).toBeCloseTo(1.0, 9);
+    expect(near.getPose().target[0]).toBeCloseTo(3, 9);
+
+    const far = makeRig();
+    far.setPose({ target: [5000, 0, 5000], distance: 30, theta: 1.0, phi: 1.0 }, 'auto');
+    expect(far.getPose().theta).toBeCloseTo(1.0, 9); // 즉시 스냅(장거리 트윈은 어지러움)
+    expect(far.getPose().target[0]).toBeCloseTo(5000, 9);
+  });
+
+  it('같은 축뷰 재클릭 = no-op — persp 강등·미러 왕복 플래시 없음 (리뷰 iter2)', () => {
+    const rig = makeRig();
+    setViewDone(rig, 'front');
+    expect(rig.isOrtho).toBe(true);
+    rig.setView('front'); // 재클릭
+    expect(rig.isOrtho).toBe(true); // 즉시 persp 강등 없음
+    expect(rig.tick(0.1)).toBe(false); // 공회전 트윈 미생성
+  });
+
+  it('평면→걷기 진입 시 3D 복원 트윈 끝값 채택 — 걷기 시선이 북향으로 굳지 않음 (리뷰 iter2)', () => {
+    const rig = makeRig();
+    rig.rotate(200, 0); // theta: π/4 − 1.0 — 사용자 방위
+    const customTheta = rig.getPose().theta;
+    rig.setMode('plan');
+    finishTween(rig);
+    rig.setMode('3d'); // 복원 트윈 시작(t=0)
+    rig.enterWalk(1.6); // 트윈 미완 상태로 걷기 진입
+    expect(rig.getPose().theta).toBeCloseTo(customTheta, 6); // savedTheta 채택 (π 아님)
+  });
+
+  it('트윈은 distance·target도 보간 (뷰포인트 비행)', () => {
+    const rig = makeRig();
+    rig.setPose({ target: [10, 0, 0], distance: 60, theta: Math.PI / 4, phi: Math.PI / 4.5 }, 'auto');
+    rig.tick(0.1);
+    const mid = rig.getPose();
+    expect(mid.target[0]).toBeGreaterThan(0);
+    expect(mid.target[0]).toBeLessThan(10);
+    expect(mid.distance).toBeGreaterThan(25);
+    expect(mid.distance).toBeLessThan(60);
+    finishTween(rig);
+    expect(rig.getPose().distance).toBeCloseTo(60, 9);
   });
 });
 

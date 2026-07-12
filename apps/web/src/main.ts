@@ -119,8 +119,10 @@ const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EX
 // 그려지므로 텍스처 U 반전으로 상쇄. rig.projection은 rig 내부 상태라 뷰 상태를 바꾸는 모든 경로
 // (viewMode 구독·setView 프리셋·뷰포인트 점프·걷기 진입)에서 이 헬퍼로 재동기한다.
 const syncMirrorComp = () => {
-  const mirrored =
-    useUiStore.getState().viewMode === 'plan' || (rig.mode === '3d' && !rig.isWalking && rig.isOrtho);
+  // 술어 = **활성 카메라의 실제 반사 상태**(rig.isOrtho — plan 정착·입면 ortho 둘 다 X반사 프러스텀).
+  // viewMode 기준이면 plan 진입 비행 0.3s 동안(active=persp 무반사) 스프라이트가 미리 뒤집혀
+  // 거울 텍스트가 보인다(리뷰) — 렌더 티커가 프레임마다 재동기하므로 상태 전이는 자동 추적됨.
+  const mirrored = !rig.isWalking && rig.isOrtho;
   sceneManager.setMirrorComp(mirrored);
   referenceLayer.setPlanFlipped(mirrored);
 };
@@ -273,6 +275,9 @@ federation.onChange(() => {
 engine.addTicker(() => {
   hud.reproject(rig.active);
   hud.updateViewportWidgets(rig.worldPerPixel(), rig.northScreenAngle()); // 스케일바·방위표(줌/회전 실시간)
+  // Auto Perspective(A-S3) ortho 스왑은 트윈 완료 프레임에 rig 내부에서 일어남 — 렌더 프레임마다
+  // 멱등 재동기(setMirrorComp/setPlanFlipped 둘 다 무변화 조기 return이라 비용 0에 수렴).
+  syncMirrorComp();
   return false;
 });
 
@@ -595,7 +600,7 @@ const viewActions = {
     exitWalk();
     const s = useUiStore.getState();
     s.setViewMode(vp.viewMode); // 구독이 rig.setMode + sceneManager.setViewContext
-    rig.setPose(vp.camera); // projection persp 리셋 포함
+    rig.setPose(vp.camera, 'auto'); // §C 결정5 — 가까우면 부드럽게 비행, 멀면 스냅
     syncMirrorComp();
     s.setClipState(vp.clip);
     currentClip = vp.clip;

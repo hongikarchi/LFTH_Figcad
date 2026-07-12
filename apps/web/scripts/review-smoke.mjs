@@ -40,7 +40,8 @@ try {
     const { store, seed, ui, rig, engine } = F;
     const wid = store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [4000, 0] });
     ui.getState().setViewMode('3d'); // 기본값이 3d지만 명시 (measure는 viewMode 전환 시 cancel됨)
-    rig.setView('iso'); // 스냅(트윈 없음)
+    rig.setView('iso');
+    rig.tick(2); // S3 트윈 즉시 완료 — fitBounds의 인터럽트(동결)가 iso 포즈를 t=0에서 죽이지 않게(리뷰)
     rig.fitBounds({ x: -4, y: -1, z: -6 }, { x: 8, y: 4, z: 6 }); // 벽을 캔버스 중앙부(WorkRail 우측)에
     engine.requestRender();
     // 벽 메시 union bbox — SceneManager 파생 지오메트리는 월드 m(identity transform)
@@ -137,7 +138,9 @@ try {
   const moved = await page.evaluate(() => window.__figcad.rig.getPose());
   if (Math.abs(moved.theta - poseA.theta) < 0.5) throw new Error('카메라 이동이 적용 안 됨(테스트 자체 결함)');
   await page.click('.vp-item .vp-open');
-  await sleep(300);
+  await sleep(150);
+  await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); }); // 점프 트윈(§C-5 auto) 즉시 완료
+  await sleep(100);
   const after = await page.evaluate(() => ({
     pose: window.__figcad.rig.getPose(),
     viewMode: window.__figcad.ui.getState().viewMode,
@@ -228,7 +231,9 @@ try {
   console.log(`PASS  뷰 기즈모 Top — plan 직교 탑다운 (phi=${top.pose.phi.toFixed(3)}, ortho=${top.ortho})`);
 
   if (!(await clickGizmo('Front'))) throw new Error('ViewGizmo Front 버튼 없음');
-  await sleep(200);
+  await sleep(150);
+  await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); }); // S3 포즈 트윈 즉시 완료
+  await sleep(100);
   const front = await page.evaluate(() => {
     const cam = window.__figcad.rig.active;
     cam.updateMatrixWorld();
@@ -253,7 +258,9 @@ try {
 
   // 입면 ortho → Iso 복귀 = 원근 재개 (projection 잔존 회귀 가드)
   if (!(await clickGizmo('Iso'))) throw new Error('ViewGizmo Iso 버튼 없음');
-  await sleep(200);
+  await sleep(150);
+  await page.evaluate(() => { window.__figcad.rig.tick(2); window.__figcad.engine.requestRender(); });
+  await sleep(100);
   const iso = await page.evaluate(() => ({
     ortho: window.__figcad.rig.active?.isOrthographicCamera === true,
     pose: window.__figcad.rig.getPose(),

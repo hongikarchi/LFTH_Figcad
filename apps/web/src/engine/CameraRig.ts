@@ -51,10 +51,18 @@ export class CameraRig {
   private theta = Math.PI / 4; // 방위각
   private phi = Math.PI / 4.5; // 극각 (0 = 바로 위)
 
-  // 모드 전환 트윈: phi를 0으로/원래대로 보간
-  private tweenT = 1;
-  private phiFrom = 0;
-  private phiTo = 0;
+  // 포즈 트윈(A-S3) — 모드 전환(φ·θ)과 프리셋/뷰포인트 점프({θ 최단호, φ, distance, target})를
+  // 단일 구조로. forceComplete = 입력 개입 시에도 끝값 스냅(plan 탑다운 필수 — 미완 φ로 멈추면
+  // 평면 의미론 파손), swapToOrtho = 완료 시 projection='ortho'(Auto Perspective — 트윈은 persp로
+  // 날아가고 도착 순간 직교 스왑, plan 진입 :79 패턴과 동일).
+  private tween: {
+    t: number;
+    fromTheta: number; fromPhi: number; fromDist: number; fromTarget: THREE.Vector3;
+    toTheta: number; toPhi: number; toDist: number; toTarget: THREE.Vector3;
+    forceComplete: boolean;
+    swapToOrtho: boolean;
+  } | null = null;
+  private autoOrtho = false; // Auto Perspective 추적 — 축뷰 프리셋이 켠 ortho(수동 토글과 구분)
   private savedPhi = Math.PI / 4.5; // 평면 진입 시 복원용
   private savedTheta = Math.PI / 4; // 평면=북향 스냅, 3D 복귀 시 방위 복원
 
@@ -86,7 +94,7 @@ export class CameraRig {
 
   get active(): THREE.Camera {
     // 트윈 중에는 원근 카메라로 내려다보다가 완료 시 직교로 스냅
-    if (this.mode === 'plan' && this.tweenT >= 1) return this.ortho;
+    if (this.mode === 'plan' && this.tween === null) return this.ortho;
     // 입면/저면 true ortho(A-S1) — 걷기는 항상 원근
     if (this.mode === '3d' && this.projection === 'ortho' && !this.walking) return this.ortho;
     return this.persp;
@@ -131,42 +139,125 @@ export class CameraRig {
       iso: { theta: Math.PI / 4, phi: Math.PI / 4.5 }, // 기본 등각
     };
     const a = A[preset];
+    // no-op 가드(리뷰) — 이미 그 축뷰에 정착해 있으면 재클릭이 persp 강등 + X미러 왕복
+    // 플래시(0.3s 공회전 트윈)를 만들지 않게 그대로 유지.
+    const dT = THREE.MathUtils.euclideanModulo(a.theta - this.theta + Math.PI, Math.PI * 2) - Math.PI;
+    const wantOrtho = preset !== 'iso';
+    if (
+      this.mode === '3d' && !this.tween && !this.walking &&
+      Math.abs(dT) < 1e-6 && Math.abs(this.phi - a.phi) < 1e-6 &&
+      this.projection === (wantOrtho ? 'ortho' : 'persp')
+    ) {
+      this.savedPhi = a.phi;
+      this.savedTheta = a.theta;
+      return;
+    }
+    const fromPlan = this.mode === 'plan';
     this.mode = '3d';
-    this.projection = preset === 'iso' ? 'persp' : 'ortho'; // 축뷰=직교, iso=원근 (Blender 관례)
-    this.tweenT = 1; // 스냅(트윈 없음 — S3에서 포즈 트윈 예정)
-    this.theta = a.theta;
-    this.phi = a.phi;
     this.savedPhi = a.phi;
     this.savedTheta = a.theta;
-    this.updateFrustum(window.innerWidth / window.innerHeight);
-    this.apply();
+    if (preset === 'iso') {
+      // iso = 원근 즉시 복귀 + 포즈 트윈 (ortho에서 오는 경우 스왑을 트윈 시작에 — 반사 해제가 함께)
+      this.projection = 'persp';
+      this.autoOrtho = false;
+      this.updateFrustum(window.innerWidth / window.innerHeight);
+      this.startTween({ target: [this.target.x, this.target.y, this.target.z], distance: this.distance, theta: a.theta, phi: a.phi }, {});
+    } else {
+      // 축뷰 = Auto Perspective: persp로 최단호 트윈 → 도착 시 ortho 스왑(A3.3).
+      // plan에서 오면 X반사 정합이 유지되도록 즉시 3d 프러스텀 재계산 후 트윈.
+      this.projection = 'persp';
+      this.updateFrustum(window.innerWidth / window.innerHeight);
+      this.startTween(
+        { target: [this.target.x, this.target.y, this.target.z], distance: this.distance, theta: a.theta, phi: a.phi },
+        { swapToOrtho: true },
+      );
+    }
+    if (fromPlan) this.apply(); // plan ortho 잔상 방지 — persp 초기 프레임 정렬
   }
 
   setMode(mode: ViewMode): void {
     if (mode === this.mode) return;
     this.mode = mode;
     this.projection = 'persp'; // 입면 ortho는 setView 축뷰 전용 — 모드 전환은 원근 복귀
-    this.tweenT = 0;
-    this.phiFrom = this.phi;
+    this.autoOrtho = false;
     if (mode === 'plan') {
       this.savedPhi = this.phi;
-      this.phiTo = MIN_PHI;
-      // 평면 진입 = 북향 스냅(화면 위=북, 동=오른쪽 = CAD 표준 평면도). 3D 각도(theta)는 저장해 복귀 시 복원.
       this.savedTheta = this.theta;
-      this.theta = Math.PI;
+      // 평면 진입 = 북향(θ=π) + 탑다운(φ=MIN_PHI)으로 트윈 — 끝값 도달 필수(forceComplete):
+      // 미완 φ로 멈추면 plan ortho 스냅(active)이 어긋난 각도로 발생.
+      this.startTween(
+        { target: [this.target.x, this.target.y, this.target.z], distance: this.distance, theta: Math.PI, phi: MIN_PHI },
+        { forceComplete: true },
+      );
     } else {
-      this.phiTo = this.savedPhi;
-      this.theta = this.savedTheta;
+      this.startTween(
+        { target: [this.target.x, this.target.y, this.target.z], distance: this.distance, theta: this.savedTheta, phi: this.savedPhi },
+        {},
+      );
     }
     this.updateFrustum(window.innerWidth / window.innerHeight); // plan X반사 ↔ 표준 방향 즉시 정합
   }
 
+  /** 포즈 트윈 시작 — θ는 최단호(±π 래핑: Left→Right가 한 바퀴 돌지 않게). */
+  private startTween(
+    to: CameraPose,
+    opts: { forceComplete?: boolean; swapToOrtho?: boolean },
+  ): void {
+    const dTheta = THREE.MathUtils.euclideanModulo(to.theta - this.theta + Math.PI, Math.PI * 2) - Math.PI;
+    this.tween = {
+      t: 0,
+      fromTheta: this.theta,
+      fromPhi: this.phi,
+      fromDist: this.distance,
+      fromTarget: this.target.clone(),
+      toTheta: this.theta + dTheta,
+      toPhi: to.phi,
+      toDist: to.distance,
+      toTarget: new THREE.Vector3(to.target[0], to.target[1], to.target[2]),
+      forceComplete: opts.forceComplete ?? false,
+      swapToOrtho: opts.swapToOrtho ?? false,
+    };
+  }
+
+  /**
+   * 사용자 입력(오빗·팬·줌·피벗)의 트윈 개입 — forceComplete(plan 진입)는 끝값 스냅 후 입력 적용,
+   * 그 외(프리셋·뷰포인트 비행)는 현 보간 지점에서 동결(사용자가 조종간을 잡음 = ortho 스왑 취소).
+   */
+  private interruptTween(): void {
+    if (!this.tween) return;
+    const tw = this.tween;
+    this.tween = null;
+    if (tw.forceComplete) {
+      this.theta = tw.toTheta;
+      this.phi = tw.toPhi;
+      this.distance = tw.toDist;
+      this.target.copy(tw.toTarget);
+      if (tw.swapToOrtho) {
+        this.projection = 'ortho';
+        this.autoOrtho = true;
+      }
+    }
+    this.updateFrustum(window.innerWidth / window.innerHeight);
+  }
+
   /** Engine ticker — 완료 프레임도 true 반환 (마지막 프레임 + 카메라 스왑이 렌더되도록) */
   tick(dt: number): boolean {
-    if (this.tweenT >= 1) return false;
-    this.tweenT = Math.min(this.tweenT + dt / TWEEN_DURATION, 1);
-    const e = 1 - Math.pow(1 - this.tweenT, 3); // ease-out cubic
-    this.phi = this.phiFrom + (this.phiTo - this.phiFrom) * e;
+    if (!this.tween) return false;
+    const tw = this.tween;
+    tw.t = Math.min(tw.t + dt / TWEEN_DURATION, 1);
+    const e = 1 - Math.pow(1 - tw.t, 3); // ease-out cubic
+    this.theta = tw.fromTheta + (tw.toTheta - tw.fromTheta) * e;
+    this.phi = tw.fromPhi + (tw.toPhi - tw.fromPhi) * e;
+    this.distance = tw.fromDist + (tw.toDist - tw.fromDist) * e;
+    this.target.lerpVectors(tw.fromTarget, tw.toTarget, e);
+    if (tw.t >= 1) {
+      this.tween = null;
+      if (tw.swapToOrtho) {
+        this.projection = 'ortho'; // Auto Perspective — 도착 순간 직교 스왑
+        this.autoOrtho = true;
+      }
+      this.updateFrustum(window.innerWidth / window.innerHeight); // 최종 distance·모드 프러스텀 정합
+    }
     this.apply();
     return true;
   }
@@ -199,7 +290,7 @@ export class CameraRig {
 
   /** 화면 1px당 월드 m (타깃 깊이 기준) — 스냅 톨러런스/팬 환산용. 걷기 중엔 고정 10m 기준(실내 스케일). */
   worldPerPixel(): number {
-    if (this.mode === 'plan' && this.tweenT >= 1) {
+    if (this.mode === 'plan' && this.tween === null) {
       return this.distance / window.innerHeight; // ortho: 화면 높이 = distance
     }
     const depth = this.walking ? WALK_WPP_DIST : this.distance;
@@ -211,6 +302,7 @@ export class CameraRig {
    * (docs.mcneel.com rotateview / navigatingviewports)
    */
   orbit(dx: number, dy: number): void {
+    this.interruptTween();
     if (this.mode === 'plan' || (this.mode === '3d' && this.projection === 'ortho')) {
       this.pan(dx, dy);
       return;
@@ -219,10 +311,18 @@ export class CameraRig {
   }
 
   /**
-   * 강제 회전 — Rhino Ctrl+Shift+RMB (평행 뷰 회전).
+   * 강제 회전 — Rhino Ctrl+Shift+RMB (평행 뷰 회전) + S2 기즈모 드래그.
    * 평면 모드에선 수직축(theta)만 — 뷰가 탑뷰에서 벗어나지 않게.
+   * Auto Perspective(A3.3): 축뷰 프리셋이 켠 ortho(autoOrtho)에서 회전이 들어오면 원근 복귀 —
+   * 사용자가 수동 토글로 켠 ortho는 유지(Blender 동일).
    */
   rotate(dx: number, dy: number): void {
+    this.interruptTween();
+    if (this.mode === '3d' && this.projection === 'ortho' && this.autoOrtho) {
+      this.projection = 'persp';
+      this.autoOrtho = false;
+      this.updateFrustum(window.innerWidth / window.innerHeight);
+    }
     this.theta -= dx * 0.005;
     if (this.mode !== 'plan') {
       this.phi = THREE.MathUtils.clamp(this.phi - dy * 0.005, MIN_PHI, MAX_PHI);
@@ -236,6 +336,7 @@ export class CameraRig {
   }
 
   pan(dx: number, dy: number): void {
+    this.interruptTween();
     // 카메라 기저에서 유도: right=(cos,0,-sin), 화면상향 u는 모드별 (리뷰 검증 공식).
     // 콘텐츠가 커서를 정확히 따라오도록 worldPerPixel 사용.
     const scale = this.worldPerPixel();
@@ -259,13 +360,28 @@ export class CameraRig {
   }
 
   zoom(factor: number): void {
+    this.interruptTween();
     this.distance = THREE.MathUtils.clamp(this.distance * factor, MIN_DISTANCE, MAX_DISTANCE);
+    this.updateFrustum(window.innerWidth / window.innerHeight);
+    this.apply();
+  }
+
+  /**
+   * 수동 persp/ortho 토글 (S2 기즈모 버튼) — autoOrtho 해제 = 이후 회전에도 유지(Blender 수동 토글).
+   * plan·걷기 중 무시(각자 고유 투영 소유).
+   */
+  setProjection(p: 'persp' | 'ortho'): void {
+    if (this.mode !== '3d' || this.walking || p === this.projection) return;
+    this.interruptTween();
+    this.projection = p;
+    this.autoOrtho = false;
     this.updateFrustum(window.innerWidth / window.innerHeight);
     this.apply();
   }
 
   /** 타깃을 월드 좌표(m)로 이동 — 요소 점프용. 각도·거리는 유지 */
   focusOn(x: number, y: number, z: number): void {
+    this.interruptTween(); // 점프 명령이 비행 중 트윈에 되돌려지지 않게
     this.target.set(x, y, z);
     this.apply();
   }
@@ -280,6 +396,7 @@ export class CameraRig {
     // 입면 ortho에선 피벗 회전 자체가 없음(orbit=팬, Rhino 평행 뷰) — theta/phi 재역산이
     // ortho.lookAt 축을 기울여 축정렬 입면을 사선 액소노로 파괴하므로 무조건 무시.
     if (this.mode !== '3d' || this.projection === 'ortho') return;
+    this.interruptTween(); // RMB-down = 사용자가 조종간 잡음 — 비행 중이면 현 지점 동결 후 피벗
     const ox = this.persp.position.x - x;
     const oy = this.persp.position.y - y;
     const oz = this.persp.position.z - z;
@@ -330,7 +447,20 @@ export class CameraRig {
     this.walkPitch = 0;
     this.walking = true;
     this.projection = 'persp'; // 걷기 = 항상 원근 (입면 ortho에서 진입해도)
-    this.tweenT = 1; // 진행 중 모드 트윈 킬
+    this.autoOrtho = false;
+    if (this.tween) {
+      // 진행 중 트윈은 끝값 채택 후 종료 — 평면→걷기 진입 시 setMode('3d') 복원 트윈이
+      // t=0에서 죽으면 3D 방위(savedTheta)가 유실돼 걷기 시선이 북향(plan θ=π)으로 굳는다(리뷰).
+      // 단 walkYaw/walkPos는 이 위(θ 기준)에서 이미 계산됐으므로 순서 유의 — 아래서 재계산.
+      const tw = this.tween;
+      this.theta = tw.toTheta;
+      this.phi = tw.toPhi;
+      this.distance = tw.toDist;
+      this.target.copy(tw.toTarget);
+      this.tween = null;
+      this.walkPos.set(this.target.x, this.walkPos.y, this.target.z); // eyeY 유지
+      this.walkYaw = this.theta + Math.PI;
+    }
     this.apply();
   }
 
@@ -411,18 +541,38 @@ export class CameraRig {
   }
 
   /**
-   * 궤도 포즈 복원 (뷰포인트 점프 — 스냅, 트윈 없음). mode 전환은 호출측이 uiStore.setViewMode로 별도 처리.
-   * updateFrustum까지 = ortho도 즉시 정합.
+   * 궤도 포즈 복원 (뷰포인트 점프). mode 전환은 호출측이 uiStore.setViewMode로 별도 처리.
+   * mode='auto'(§C 결정5 거리 기반 절충): 가까우면(카메라 변위 < 3×뷰 깊이) 부드럽게 비행,
+   * 멀면 스냅(장거리 트윈은 어지러움). 기본 'snap' = 기존 호출자 의미 불변.
    */
-  setPose(p: CameraPose): void {
-    this.target.set(p.target[0], p.target[1], p.target[2]);
-    this.distance = THREE.MathUtils.clamp(p.distance, MIN_DISTANCE, MAX_DISTANCE);
-    this.theta = p.theta;
-    this.phi = THREE.MathUtils.clamp(p.phi, MIN_PHI, MAX_PHI);
-    this.tweenT = 1; // 트윈 중단 = 즉시 스냅
+  setPose(p: CameraPose, mode: 'snap' | 'auto' = 'snap'): void {
     this.projection = 'persp'; // 뷰포인트 페이로드에 projection 없음 — 저장 시점 의미론(원근) 재현
-    this.savedPhi = this.phi;
-    this.savedTheta = this.theta;
+    this.autoOrtho = false;
+    const to: CameraPose = {
+      target: p.target,
+      distance: THREE.MathUtils.clamp(p.distance, MIN_DISTANCE, MAX_DISTANCE),
+      theta: p.theta,
+      phi: THREE.MathUtils.clamp(p.phi, MIN_PHI, MAX_PHI),
+    };
+    this.savedPhi = to.phi;
+    this.savedTheta = to.theta;
+    if (mode === 'auto' && this.mode === '3d' && !this.walking) {
+      const camDelta = Math.hypot(
+        this.persp.position.x - (to.target[0] + to.distance * Math.sin(to.phi) * Math.sin(to.theta)),
+        this.persp.position.y - (to.target[1] + to.distance * Math.cos(to.phi)),
+        this.persp.position.z - (to.target[2] + to.distance * Math.sin(to.phi) * Math.cos(to.theta)),
+      );
+      if (camDelta < Math.max(this.distance, to.distance) * 3) {
+        this.updateFrustum(window.innerWidth / window.innerHeight);
+        this.startTween(to, {});
+        return;
+      }
+    }
+    this.tween = null; // 스냅 = 진행 중 트윈 중단
+    this.target.set(to.target[0], to.target[1], to.target[2]);
+    this.distance = to.distance;
+    this.theta = to.theta;
+    this.phi = to.phi;
     this.updateFrustum(window.innerWidth / window.innerHeight);
     this.apply();
   }
@@ -433,6 +583,7 @@ export class CameraRig {
    */
   fitBounds(min: THREE.Vector3, max: THREE.Vector3): void {
     if (!isFinite(min.x) || !isFinite(max.x) || max.x < min.x) return;
+    this.interruptTween(); // F-fit은 명시 명령 — 비행 중 트윈이 target/distance를 되돌리면 안 됨
     this.target.set((min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2);
     const radius = Math.max(max.x - min.x, max.y - min.y, max.z - min.z) * 0.5 || 1;
     const fov = (this.persp.fov * Math.PI) / 180;
@@ -452,7 +603,7 @@ export class CameraRig {
       // 평면(plan) 직교뷰 X 반사 — 동(+X)=화면 오른쪽·북(+Z)=위 = CAD/지도 표준 방위.
       // (북=+Z·Y-up·위에서 -Y로 내려봄 = 수평면이 left-handed → 반사 없이는 동右+북上 불가.)
       // left/right 부호 스왑 = 프로젝션 X 음수 스케일. 지오·픽킹은 동일 카메라라 일관. 단 스프라이트
-      // 라벨은 셰이더상 quad가 같이 뒤집힘 → SceneManager가 plan 모드서 scale.x 역-flip으로 상쇄.
+      // 라벨은 셰이더상 quad가 같이 뒤집힘 → SceneManager.setMirrorComp가 텍스처 U 반전으로 상쇄.
       // 반높이 = distance·0.5는 plan 줌 의미론(화면 높이=distance, worldPerPixel 매핑)과 결착 — 유지.
       const half = this.distance * 0.5;
       this.ortho.left = half * aspect;
@@ -466,7 +617,9 @@ export class CameraRig {
       // 실세계·Rhino Front·자체 plan과 반대). plan과 같은 기법으로 교정 — 스프라이트 상쇄는
       // SceneManager.setMirrorComp, 팬 부호는 pan()의 입면 분기. 저면(bottom)도 일괄 반사 =
       // 반사 천장 평면도(RCP) 관례와 부합. 원근(persp)과 스왑 시 좌우가 뒤집혀 보이는 건
-      // 반사 교정의 필연 — 축뷰 진입은 이산 점프라 수용(§C 후속: S3 트윈 시 마스킹).
+      // 반사 교정의 필연 — S3 트윈 도착 프레임의 1회 미러 팝은 의식적 수용(리뷰 iter2 확인:
+      // 상태 손상 없음·연쇄 없음. 마스킹(스왑 크로스페이드/트윈 내 X스케일 보간)은 S2 기즈모와
+      // 함께 재평가 — MORNING_SUMMARY 큐).
       const half = this.distance * Math.tan(((this.persp.fov / 2) * Math.PI) / 180);
       this.ortho.left = half * aspect;
       this.ortho.right = -half * aspect;
@@ -502,6 +655,9 @@ export class CameraRig {
       this.ortho.position.copy(this.persp.position);
       this.ortho.up.set(0, 1, 0); // plan이 남긴 up 오염 제거 (phi ∈ [0.05, π−0.05]라 특이점 없음)
       this.ortho.lookAt(this.target);
+      // 스왑 프레임에 HUD reproject가 1콜 스테일 matrixWorldInverse로 투영하지 않게(리뷰) —
+      // lookAt은 회전 반영 전 행렬을 굳히므로 여기서 확정(멱등·저비용, northScreenAngle 수정과 동일 근거).
+      this.ortho.updateMatrixWorld();
     }
   }
 }
