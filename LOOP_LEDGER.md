@@ -117,3 +117,12 @@
 - **.gitattributes** — `24e5f7?`: PDF 픽스처 CRLF 변환 = xref 오프셋 파손 위험 자가 발견 → pdf/dwg/3dm/glb binary 명시.
 - **주의**: 이 소품 3건의 adversarial 리뷰는 다음 스윕에 배치(전부 라이브 스모크 검증 완료 상태).
 - **잔여 큐**: poché 완전 DCEL(M — 알고리즘, 새 컨텍스트 권장) · Presence 인라인 rename+Share QR(S) · web 테스트 부채(ToolController/InputManager) · B-P0/P2(아이패드 감각 = 감독 필요).
+
+## 회차 6 계속: Presence 소품 + 배치 1 리뷰 확정 (2026-07-12 심야)
+
+- **Presence 인라인 rename + 공유 QR** — `d252a01`: prompt→인라인 입력(IME 조합 가드), 공유 팝오버 = QR(qrcode 동적 import — 번들 무영향)+URL 복사. ux-smoke rename·QR 암픽셀 검증(플레이크 1건 = self 아바타 대기 누락 → waitForSelector 수정, 2회 연속 안정). **리뷰는 다음 배치**.
+- **배치 1 리뷰 확정** — 2렌즈×14에이전트, **제기 12 / 확정 11 / 기각 1**(픽스처 CRLF 창 — 반박됨). 수정 = `f68d58f`:
+  - [major] **로드 인플라이트 page 변경 영구 유실** — rasterPageReq를 완료 시점 live 기준으로 기록 + reconcile이 loading 중 sig만 소비 → '전원 같은 페이지' 조용히 파손 → 렌더에 넘긴 요청 기준 기록 + completion-time 재검(즉시 재로드).
+  - [minor 10] 스테퍼 기준 단일화(pageOf) · fed-register 유래 underlay 없는 pdf 스테퍼 비노출 · 재로드 중 pageCount 보존(언마운트 방지) · pdfClient 로딩 실패 destroy 누수 · hotkeyForTool MODE_TOOLS 게이트+ToolPalette 힌트 일관 · setUnderlayPage core 3케이스·스냅샷 라운드트립 · 구빌드 write-back page 소거 = 수용+롤아웃 노트(재질 페인트 opacity와 동일 클래스).
+- 게이트: T0 668(core 446) ✅ · pdf-page/ux 스모크 ✅
+- **잔여 큐(갱신)**: Presence 소품 리뷰(다음 배치) · poché 완전 DCEL(새 컨텍스트 권장) · web 테스트 부채 · B-P0/P2(감독 필요).
