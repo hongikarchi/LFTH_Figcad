@@ -250,7 +250,10 @@ export async function handleConnectorRequest(
       ts: Date.now(),
     });
     await persist(); // 무인 룸도 즉시 영속 (접속 클라 없으면 자동 체크포인트 안 도므로)
-    return json(200, { ...result, deduped });
+    // idMap(Map)은 JSON 직렬화 시 {}로 변질(리뷰) — 클라(AiPanel) 전용 필드라 와이어에서 제외
+    const { idMap, ...wire } = result;
+    void idMap;
+    return json(200, { ...wire, deduped });
   }
 
   return json(400, { error: 'op은 apply(POST)/pull(GET)/origin/fed-register(POST) 중 하나' });

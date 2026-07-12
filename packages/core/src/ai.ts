@@ -77,6 +77,8 @@ export interface ApplyResult {
   failed: { entry: OpLogEntry; error: string }[];
   /** 새로 생성된 실제 요소 id (선택 강조용) */
   createdIds: Id[];
+  /** 드라이런 id → 실제 id — 승인 후 ui-action(ui_focus 등) 참조 재매핑용(B-P1) */
+  idMap: Map<Id, Id>;
 }
 
 /**
@@ -101,7 +103,7 @@ export function applyOpLog(store: DocStore, log: OpLogEntry[]): ApplyResult {
       failed.push({ entry, error: e instanceof Error ? e.message : String(e) });
     }
   }
-  return { applied, failed, createdIds };
+  return { applied, failed, createdIds, idMap };
 }
 
 /** opLog 엔트리 → 계획 카드용 한 줄 한글 요약 (레지스트리 summary 위임) */

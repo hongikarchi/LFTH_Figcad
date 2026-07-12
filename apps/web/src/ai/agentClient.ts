@@ -21,12 +21,23 @@ export interface AiLintFinding {
   fix?: { label: string; deleteIds: string[] };
 }
 
+/** ui-action(B-P1) — 서버가 이름→id 해소를 마친 정규화 payload. 실행은 uiActionExecutor. */
+export interface UiActionEntry {
+  action: string;
+  params: Record<string, unknown>;
+  summary: string;
+  /** 이 뷰 액션 시점까지의 문서 op 수 — 혼합 계획에서 승인 후 실행 순서 판단용 */
+  opIndex: number;
+}
+
 export interface AgentResult {
   opLog: OpLogEntry[];
   stopReason: string;
   note?: string;
   /** 승인 게이트 직전 검증 결과 (warning/info + 미해결 error). */
   lintFindings?: AiLintFinding[];
+  /** ui-action(뷰 조작) — opLog와 분리: 비영속·비undo. 순수 뷰 응답이면 즉시, 혼합이면 승인 후 실행. */
+  uiActions?: UiActionEntry[];
 }
 
 function agentUrl(): string {
@@ -46,6 +57,7 @@ export async function runAgent(opts: {
   transcript: TranscriptTurn[];
   onText: (delta: string) => void;
   onOp: (summary: string) => void;
+  onUiAction?: (summary: string) => void; // 뷰 조작 진행 표시(라이브) — 실행은 done의 uiActions로
   onThinking?: (delta: string) => void; // 생각 과정(요약) — 임시 표시용, transcript 미저장
   onLint?: (round: number, findings: AiLintFinding[]) => void;
   sketch?: SketchAttachment | null;
@@ -94,6 +106,9 @@ export async function runAgent(opts: {
       case 'op':
         opts.onOp(String(ev['summary'] ?? ev['op'] ?? ''));
         break;
+      case 'ui':
+        opts.onUiAction?.(String(ev['summary'] ?? ev['action'] ?? ''));
+        break;
       case 'thinking':
         opts.onThinking?.(String(ev['text'] ?? ''));
         break;
@@ -110,6 +125,9 @@ export async function runAgent(opts: {
           ...(ev['note'] ? { note: String(ev['note']) } : {}),
           ...(Array.isArray(ev['lintFindings']) && ev['lintFindings'].length
             ? { lintFindings: ev['lintFindings'] as AiLintFinding[] }
+            : {}),
+          ...(Array.isArray(ev['uiActions']) && ev['uiActions'].length
+            ? { uiActions: ev['uiActions'] as UiActionEntry[] }
             : {}),
         };
         break;

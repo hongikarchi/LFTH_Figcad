@@ -1073,4 +1073,185 @@ export const CAPABILITIES: Capability[] = [
     },
     summary: (a) => `벽 연장/자르기 (${a['end']}끝)`,
   },
+
+  // ===== view — ui-action(B-P1) =====
+  // 문서 op가 아니다(불변② 비대상): 비영속·비undo·비브로드캐스트 — 내 카메라/뷰 상태만.
+  // run은 store를 참조해 이름→id 해소·검증만 하고 정규화 payload를 반환한다(드라이런 무접촉).
+  // 실행은 클라 uiActionExecutor(ViewActions·uiStore) — 서버가 uiActions[]로 전달.
+  {
+    id: 'ui_set_view',
+    category: 'view',
+    titleKo: '뷰 전환',
+    icon: 'view',
+    descriptionKo:
+      "표준 뷰로 전환 (사용자 화면만 — 문서 무변경). preset: top=평면(직교 탑다운), front/back/left/right=입면(직교 — front=남측 입면), bottom=저면, iso=등각(원근). 예: '동측 입면 보여줘'→right.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: {
+          type: 'string',
+          enum: ['top', 'front', 'back', 'left', 'right', 'iso', 'bottom'],
+          description: '표준 뷰 프리셋 (front=남측 입면, back=북측, right=동측, left=서측)',
+        },
+      },
+      required: ['preset'],
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (_store, a) => {
+      const preset = asStr(a['preset'], 'preset');
+      if (!['top', 'front', 'back', 'left', 'right', 'iso', 'bottom'].includes(preset))
+        throw new Error('preset must be top|front|back|left|right|iso|bottom');
+      return { preset };
+    },
+    summary: (a) => `뷰 전환 → ${String(a['preset'])}`,
+  },
+  {
+    id: 'ui_set_view_mode',
+    category: 'view',
+    titleKo: '3D/평면 전환',
+    icon: 'view',
+    descriptionKo: "뷰 모드 전환 (사용자 화면만). '평면으로'→plan, '3D로'→3d.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: ['3d', 'plan'], description: '뷰 모드' },
+      },
+      required: ['mode'],
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (_store, a) => {
+      const mode = asStr(a['mode'], 'mode');
+      if (mode !== '3d' && mode !== 'plan') throw new Error("mode must be '3d'|'plan'");
+      return { mode };
+    },
+    summary: (a) => `뷰 모드 → ${String(a['mode'])}`,
+  },
+  {
+    id: 'ui_set_story',
+    category: 'view',
+    titleKo: '스토리 이동',
+    icon: 'layers',
+    descriptionKo:
+      "활성 스토리(층) 전환 + 평면 뷰로 (사용자 화면만). level = 레벨 id 또는 이름. 예: '2층 평면 봐줘'→level='2층'.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        level: { type: 'string', description: '레벨 id 또는 이름 (부분 일치 허용)' },
+      },
+      required: ['level'],
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (store, a) => {
+      const q = asStr(a['level'], 'level');
+      const levels = store.listLevels();
+      const hit =
+        levels.find((l) => l.id === q) ??
+        levels.find((l) => l.name === q) ??
+        levels.find((l) => l.name.includes(q));
+      // 이름 목록은 협업자/커넥터 유래 데이터 — JSON 프레이밍으로 지시문 위장 완화(인젝션 가드)
+      if (!hit) throw new Error(`level not found: ${JSON.stringify(q)} (레벨 목록: ${JSON.stringify(levels.map((l) => l.name))})`);
+      return { levelId: hit.id, levelName: hit.name };
+    },
+    summary: (a) => `스토리 → ${String(a['level'])} (평면)`,
+  },
+  {
+    id: 'ui_jump_viewpoint',
+    category: 'view',
+    titleKo: '뷰포인트 점프',
+    icon: 'pin',
+    descriptionKo:
+      "저장된 공유 뷰포인트로 점프 (사용자 화면만 — 카메라+단면 재현). viewpoint = id, 이름, 또는 번호. 예: '3번 단면 보여줘'→viewpoint='3'.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        viewpoint: { type: 'string', description: '뷰포인트 id, 이름, 또는 번호(인덱스)' },
+      },
+      required: ['viewpoint'],
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (store, a) => {
+      const q = asStr(a['viewpoint'], 'viewpoint');
+      const vps = store.listViewpoints();
+      const numQ = q.replace(/번$/, '');
+      const byNum = /^\d+$/.test(numQ) ? Number(numQ) : null;
+      const hit =
+        vps.find((v) => v.id === q) ??
+        (byNum !== null ? vps.find((v) => v.index === byNum) : undefined) ??
+        vps.find((v) => v.name === q) ??
+        vps.find((v) => v.name.includes(q));
+      if (!hit)
+        throw new Error(
+          // 이름 목록 = 협업자 유래 데이터 — JSON 프레이밍 (ui_set_story와 동일 가드)
+          `viewpoint not found: ${JSON.stringify(q)} (목록: ${JSON.stringify(vps.map((v) => `${v.index}=${v.name}`))})`,
+        );
+      return { viewpointId: hit.id, name: hit.name };
+    },
+    summary: (a) => `뷰포인트 점프 → ${String(a['viewpoint'])}`,
+  },
+  {
+    id: 'ui_set_clip',
+    category: 'view',
+    titleKo: '단면 클립',
+    icon: 'section',
+    descriptionKo:
+      "실시간 단면 클립 설정/해제 (사용자 화면만 — 렌더 클립, 문서 무변경). off=true면 해제. axis: y=수평(높이 방향 절단, 기본), x/z=수직. t: 0~1 (모델 바운드 내 위치, y축이면 0=바닥 1=꼭대기). flip: 반대쪽 유지.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        off: { type: 'boolean', description: 'true = 클립 해제' },
+        axis: { type: 'string', enum: ['x', 'y', 'z'], description: '절단축 (기본 y=수평 절단)' },
+        t: { type: 'number', description: '절단 위치 0~1 (기본 0.5)' },
+        flip: { type: 'boolean', description: '반대쪽 유지 (기본 false)' },
+      },
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (_store, a) => {
+      if (a['off'] === true) return { clip: null };
+      const axis = a['axis'] === undefined ? 'y' : asStr(a['axis'], 'axis');
+      if (axis !== 'x' && axis !== 'y' && axis !== 'z') throw new Error('axis must be x|y|z');
+      const t = a['t'] === undefined ? 0.5 : asNum(a['t'], 't');
+      return { clip: { axis, t: Math.min(1, Math.max(0, t)), flip: a['flip'] === true } };
+    },
+    summary: (a) =>
+      a['off'] === true ? '단면 클립 해제' : `단면 클립 ${String(a['axis'] ?? 'y')}=${String(a['t'] ?? 0.5)}`,
+  },
+  {
+    id: 'ui_focus',
+    category: 'view',
+    titleKo: '화면 맞춤',
+    icon: 'focus',
+    descriptionKo:
+      "요소를 화면에 맞춤 (사용자 화면만). ids 지정 = 그 요소들 선택+줌, 생략 = 전체 맞춤. 예: '그 벽 화면에 잡아줘'→ids=[벽id].",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: idArrSchema('맞출 요소 id 배열 (생략 = 전체 맞춤)'),
+      },
+      additionalProperties: false,
+    },
+    mutating: false,
+    aiExposed: true,
+    run: (store, a) => {
+      if (a['ids'] === undefined) return { ids: null };
+      const ids = asIds(a['ids']);
+      if (ids.length === 0) return { ids: null }; // 빈 배열 = 전체 맞춤으로 정규화 (payload·요약 일관)
+      const missing = ids.filter((id) => !store.getElement(id));
+      if (missing.length) throw new Error(`elements not found: ${JSON.stringify(missing)}`);
+      return { ids };
+    },
+    summary: (a) =>
+      Array.isArray(a['ids']) && (a['ids'] as unknown[]).length > 0
+        ? `요소 ${(a['ids'] as unknown[]).length}개 화면 맞춤`
+        : '전체 맞춤',
+  },
 ];

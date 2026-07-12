@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { applyOpLog, opSummary, KIND_LABEL, type DocStore, type OpLogEntry } from '@figcad/core';
 import { useUiStore, type AiModelId } from '../state/uiStore';
-import { runAgent, type AiLintFinding, type TranscriptTurn } from '../ai/agentClient';
+import { runAgent, type AiLintFinding, type TranscriptTurn, type UiActionEntry } from '../ai/agentClient';
+import { executeUiAction } from '../ai/uiActionExecutor';
+import type { ViewActions } from './App';
 import { buildImportsManifest, type ImportsProvider } from '../ai/importsManifest';
 import { clearSketch, hasSketch, onSketchChange, rasterizeSketch } from '../ai/sketchCapture';
 import { fileToAttachment, type ImageAttachment } from '../ai/imageAttach';
@@ -24,9 +26,19 @@ interface Plan {
   summaries: string[];
   note?: string;
   lintFindings?: AiLintFinding[];
+  /** 혼합 계획의 뷰 액션 — 승인(applyOpLog) 후 idMap으로 재매핑해 실행, 거부 시 폐기 */
+  uiActions?: UiActionEntry[];
 }
 
-export function AiPanel({ store, federation }: { store: DocStore; federation: ImportsProvider }) {
+export function AiPanel({
+  store,
+  federation,
+  actions,
+}: {
+  store: DocStore;
+  federation: ImportsProvider;
+  actions: ViewActions;
+}) {
   // AI = 앰비언트 dock(iter-2). aiOpen으로 전 모드에서 토글 — 단 항상 mount(챗 history 보존).
   const aiOpen = useUiStore((s) => s.aiOpen);
   const selection = useUiStore((s) => s.selection);
@@ -161,6 +173,10 @@ export function AiPanel({ store, federation }: { store: DocStore; federation: Im
           setLiveOps((prev) => [...prev, summary]);
           scrollDown();
         },
+        onUiAction: (summary) => {
+          setLiveOps((prev) => [...prev, `🎬 ${summary}`]); // 진행 표시만 — 실행은 done 후 정책대로
+          scrollDown();
+        },
         onLint: (round, findings) => {
           // critic이 결정적 lint error를 발견해 모델에 수정 재요청 중
           setMsgs((prev) => [
@@ -181,12 +197,18 @@ export function AiPanel({ store, federation }: { store: DocStore; federation: Im
           summaries: result.opLog.map(opSummary),
           ...(result.note ? { note: result.note } : {}),
           ...(result.lintFindings?.length ? { lintFindings: result.lintFindings } : {}),
+          // 혼합 계획(문서 op + 뷰 액션) — 뷰 액션은 승인 후 실행(새 요소 id 재매핑·순서 성립)
+          ...(result.uiActions?.length ? { uiActions: result.uiActions } : {}),
         };
         // auto mode = 카드 없이 즉시 적용(undo 가능). 단 에러 잔존(critic 2라운드 후)이면 게이트로 fallback
         // (BIM은 기하 틀리면 사람 검토가 안전). 안전 근거: ops=zod+서버 lint critic → 임의코드와 다름.
         const hasErr = !!result.lintFindings?.some((f) => f.severity === 'error');
         if (useUiStore.getState().aiAutoApply && !hasErr) applyPlan(built);
         else setPlan(built);
+      } else if (result.uiActions?.length) {
+        // 순수 뷰 응답("2층 평면 봐줘") — 문서 무변경·비undo라 승인 카드 비대상, 즉시 실행 (§C 결정3)
+        const notices = result.uiActions.map((a) => executeUiAction(a, { actions, store }).notice);
+        setMsgs((prev) => [...prev, ...notices.map((text): ChatMsg => ({ role: 'notice', text }))]);
       }
     } catch (e) {
       setMsgs((prev) => {
@@ -212,10 +234,12 @@ export function AiPanel({ store, federation }: { store: DocStore; federation: Im
     const failNote = result.failed.length
       ? ` (${result.failed.length}건 실패: ${result.failed[0]!.error})`
       : '';
-    setMsgs((prev) => [
-      ...prev,
-      { role: 'notice', text: `✓ ${result.applied}개 작업 적용됨${failNote}` },
-    ]);
+    const notices: ChatMsg[] = [{ role: 'notice', text: `✓ ${result.applied}개 작업 적용됨${failNote}` }];
+    // 혼합 계획의 뷰 액션 — 적용 직후 실행(드라이런 id는 idMap으로 실제 id 치환: "만들고 봐줘" 순서 성립)
+    for (const a of p.uiActions ?? []) {
+      notices.push({ role: 'notice', text: executeUiAction(a, { actions, store, idMap: result.idMap }).notice });
+    }
+    setMsgs((prev) => [...prev, ...notices]);
     scrollDown();
   };
 
@@ -226,8 +250,12 @@ export function AiPanel({ store, federation }: { store: DocStore; federation: Im
   };
 
   const reject = () => {
+    const hadUi = !!plan?.uiActions?.length;
     setPlan(null);
-    setMsgs((prev) => [...prev, { role: 'notice', text: '계획을 거부했습니다 — 문서 무변경' }]);
+    setMsgs((prev) => [
+      ...prev,
+      { role: 'notice', text: `계획을 거부했습니다 — 문서 무변경${hadUi ? ' (뷰 액션도 폐기)' : ''}` },
+    ]);
     scrollDown();
   };
 
@@ -312,6 +340,14 @@ export function AiPanel({ store, federation }: { store: DocStore; federation: Im
                 <li key={i}>{s}</li>
               ))}
             </ol>
+            {plan.uiActions?.length ? (
+              <div className="ai-plan-note">
+                {/* 동반 뷰 액션 — 승인과 함께 실행됨을 사용자가 보게(리뷰: 미표시 = 몰래 실행) */}
+                {plan.uiActions.map((a, i) => (
+                  <div key={i}>🎬 {a.summary} (승인 후 실행)</div>
+                ))}
+              </div>
+            ) : null}
             {plan.lintFindings?.length ? (
               <div className="ai-plan-lint">
                 {plan.lintFindings.map((f, i) => (

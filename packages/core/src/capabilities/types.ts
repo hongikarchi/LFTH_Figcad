@@ -19,7 +19,8 @@ export type CapabilityCategory =
   | 'edit' // 이동/복사/배열/분할/연장/대칭/회전/수정/삭제
   | 'level' // 레벨(층)
   | 'annotation' // 치수·텍스트
-  | 'type'; // 타입(패밀리) 정의 — create_type
+  | 'type' // 타입(패밀리) 정의 — create_type
+  | 'view'; // ui-action(B-P1) — 문서 무변경·비undo·비브로드캐스트, run=파라미터 해소만(클라 실행)
 // 확장: 'interop' | 'version' (별 패키지/계약이라 강제 통합 금지)
 
 export interface Capability {

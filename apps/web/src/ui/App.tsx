@@ -82,7 +82,7 @@ export function App({
       )}
       <ViewportCluster store={store} actions={actions} />
       <ViewGizmo actions={actions} />
-      <AiPanel store={store} federation={federation} />
+      <AiPanel store={store} federation={federation} actions={actions} />
       <DrawingPanel store={store} />
       <CommandPalette store={store} actions={actions} />
     </>

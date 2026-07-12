@@ -46,6 +46,14 @@ export function isMutatingCapability(id: string): boolean {
   return REGISTRY.get(id)?.mutating ?? false;
 }
 
+/**
+ * ui-action(B-P1) 판별 — category 'view'. 서버 agent 루프가 opLog 대신 uiActions[]로
+ * 분류하고, 클라(uiActionExecutor)가 카메라/뷰 상태로 실행한다 (문서 op 아님 — 불변② 비대상).
+ */
+export function isViewCapability(id: string): boolean {
+  return REGISTRY.get(id)?.category === 'view';
+}
+
 /** op 실행 — 미존재 시 'unknown op' throw (구 executeOp 계약 보존) */
 export function runCapability(
   store: DocStore,
