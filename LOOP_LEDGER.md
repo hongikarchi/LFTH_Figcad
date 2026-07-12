@@ -52,3 +52,43 @@
 - **수용/큐**: 뷰포인트 ortho 투영 미저장(persp 복원 — 페이로드 확장은 롤아웃 결정) · 구빌드에 φ>π/2 뷰포인트 = 클램프 복원(롤아웃 창) · plan 진입 스윙(φ>π/2, 시각 확인) · bottom 반사=RCP 관례 채택 → 전부 MORNING_SUMMARY 결정 큐.
 - **게이트**: T0 632/632 ✅ (web 46) · 스모크 11종 ✅ (review-smoke chirality·ortho 단언 라이브 통과)
 - **결과**: DONE — `f5fc50d`
+
+## 회차 2: A-S3 포즈 트윈 + Auto Perspective (2026-07-12)
+
+- **구현**: 단일 트윈 구조(θ 최단호·φ·distance·target, forceComplete/swapToOrtho) — plan 진입과 프리셋/뷰포인트 비행 통합. Auto Perspective(축뷰=persp 비행→도착 ortho 스왑, rotate 시 autoOrtho만 persp 복귀). 뷰포인트 점프 §C-5 거리 절충. setProjection 신설(S2 대비). 렌더 티커 syncMirrorComp 멱등 동기.
+- **스윕**: 매 4회차 도래 — `--all` 29/29 GREEN (T0 648 시점).
+- **리뷰**: 3렌즈(tween-statemachine·consumer-timing·hotkey-phonesheet)×13에이전트 — **제기 10 / 확정 10 / 기각 0** (검증 통과 확인 항목 2건 포함). 수정:
+  - [major] 같은 축뷰 재클릭 = persp 강등+X미러 왕복 플래시 → no-op 가드 (+회귀 테스트)
+  - [major] 폰 바텀바 7버튼(선택 시) AI 클리핑 → CSS min-width:0+말줄임
+  - [minor] 평면→걷기 진입 시 복원 트윈 t=0 킬 = 걷기 북향 굳음 → 끝값 채택 (+테스트)
+  - [minor] 한글 IME서 핫키 14종 무반응 → e.code 폴백 hotkeyChar (+테스트) · 1/2/3 중복 등록 제거(CommandPalette)
+  - [minor] ortho 스왑 프레임 HUD 1프레임 스테일 → apply서 updateMatrixWorld · plan 진입 비행 중 거울 텍스트 → syncMirrorComp 술어 = rig.isOrtho(실제 반사 상태) · review-smoke iso 트윈 동결 함정 → tick(2)
+  - **수용**: Auto Perspective 도착 프레임 1회 미러 팝(상태 무손상 — 마스킹은 S2와 재평가, 주석 명시)
+- **게이트**: T0 652/652 ✅ (web 58) · 스모크 6종 재검증 ✅
+- **결과**: DONE — `d54dd0d`(S3) + `f0ae559`(리뷰 수정: 핫키·바텀바)
+
+## 선행: 회차 4 B-P1 구현 (리뷰 대기 중 병행 — 커밋 전 리뷰 필수)
+
+- core: category 'view' + ui_* 6종(catalog — run=이름→id 해소·정규화만, store 무접촉) + isViewCapability + ApplyResult.idMap 노출. capabilities-view.test 8케이스.
+- server: agent.ts 디스패치 view 분기 — uiActions[] 수집(opIndex 포함)+'ui' 스트림 이벤트+done 3경로 동봉. 시스템 프롬프트에 사용 기준(남발 금지·명시 요청 시만) 추가.
+- web: agentClient(UiActionEntry·onUiAction·done 파싱) + uiActionExecutor 신설(walkActive 가드·idMap 재매핑) + AiPanel(순수 뷰 응답=즉시 실행 / 혼합=승인 후 실행·거부 시 폐기) + App actions 전달.
+- **실행 정책(설계 확정)**: 혼합 응답(문서 op 동반)의 뷰 액션은 applyOpLog **후** idMap 재매핑 실행 — "만들고 봐줘" 순서·드라이런 id·fit 새 bbox 문제 해소. 순수 뷰 응답만 즉시(§C-3).
+- 게이트: T0 652 ✅(core 443 포함) · ai-panel/agent-live 스모크 ✅. **실 AI 왕복 검증은 키 필요(아침 큐)**.
+- **리뷰(회차 4 확정)**: 3렌즈(contract-safety·flow-edge·schema-regression)×18에이전트 — **제기 15 / 확정 15 / 기각 0**. 전부 수정:
+  - [major] ui_set_clip이 uiStore.clip 락스텝 누락 — ClipControl 위젯 불능 + saveViewpoint가 stale clip을 문서 채널에 영속(비영속 계약 위반) → setClipState 선행
+  - [major] ui_set_story idMap 재매핑 누락 — "2층 만들고 봐줘"의 드라이런 레벨 id 미해소 → idMap 경유
+  - [minor 13] executor 전체 try/catch(승인 카드 잔존→opLog 이중 적용 방어) · throw 이름 목록 JSON 프레이밍+프롬프트 데이터-가드 확장(인젝션) · 승인 카드에 🎬 동반 뷰 액션 표시 · critic 라운드 uiActions dedupe · ?op=apply 응답서 idMap(Map→{}) 제외 · ui_focus [] 정규화 · 프롬프트 '승인 카드 없이' 문구 정합 · strict 주석 카운트 · 스냅샷 불변 테스트에 store-조회 2종 추가 등
+- **결과**: DONE — `cb36906` (회차 4로 승격 완료)
+
+## 선행: 회차 5 걷기 v1.1 구현 (B-P1 리뷰 대기 중 병행 — 커밋 전 리뷰 진행 중)
+
+- **벽 충돌**: moveWithCollision — 수평 변위를 눈높이+허리(-0.9m) 2레이 검사(반경 0.35m), 벽이면 허용 거리까지 직진+잔여 접선 슬라이드(2회 반복=코너). 법선 |y|≥0.7=바닥/램프 통과. 수직(Q/E)은 기존 경로.
+- **BVH**: three-mesh-bvh 0.9.11 추가(사용자 승인) — engine/bvh.ts 전역 배선(boundsTree 있는 지오메트리만 가속 = Picker 무영향), 걷기 진입 시 20k-tri 이상 메시 점진 빌드(프레임당 1개, 지오메트리 캐시=재진입 재사용). 예산 킬스위치는 안전망 유지.
+- **클립 인지**: 스냅·충돌 히트를 renderer.clippingPlanes로 필터 — 단면으로 잘린 슬래브 착지/잘린 벽 충돌 제거.
+- **보이드 정책**: 착지면 없으면 현 높이 유지(추락 없음 — 발코니·보이드 검토 우선, 주석 명문화).
+- CameraRig: walkDeltaWorld/walkMoveWorld 신설.
+- **검증물**: walk-collision.test 7케이스(헤드리스 three 실 레이캐스트 시뮬 — 정지·슬라이드·바닥 통과·클립 양방향·보이드·기저 패리티) + walk-smoke 브라우저 벽 충돌 케이스(실 store 벽 → 홀드 전진 → 관통 없음).
+- **리뷰(중단됨)**: adversarial verify 패스가 **세션 한도(18:50 KST 리셋)로 14/16 에이전트 실패** — 리뷰어 2명의 findings만 확보, 전부 미검증. **명백 4건 인라인 자가검증 후 반영**: ①스프라이트 있는 루트 레이캐스트 TypeError(raycaster.camera 지정) ②nearestWallHit Line threshold 미적용(생성자 상시 0) ③킬스위치가 BVH 빌드 전 발화 = 자기모순(큐 소진 전 유예) ④DoubleSide 매몰 데드락(distance<0.08 탈출 허용).
+- **미검증 잔여 findings (리셋 후 재검증 또는 아침 판단)**: 글랜싱 각도 클리어런스 붕괴(카psule 아님의 근본 한계 — v1.2 후보: 법선 방향 디페너트레이션 패스) · 허리 레이 vs 계단 등반 고속(달리기) 스터터 가능성(보행속도는 기하 분석상 안전 — 계단 케이스 스모크 추가 후보) · 45° 램프 경계 마진 0.57° · computeBoundsTree 동기 1프레임 프리즈(대형 단일 메시 수백 ms 1회 — 수용 or 워커화) · bvh.ts 정적 번들 +~30-45KB gz(걷기 미사용자도 로드 — dynamic import 후보) · '힙 할당 0' 주석 뉘앙스(intersectObjects 자체 할당은 기존 스냅 레이와 동일).
+- **게이트**: web tsc ✅ · web vitest 65 ✅ · walk-smoke(충돌 포함) ✅
+- **결과**: DONE — `77e10f6` (미검증 findings는 위 큐)
