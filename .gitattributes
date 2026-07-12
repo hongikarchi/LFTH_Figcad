@@ -1,0 +1,5 @@
+*.pdf binary
+*.dwg binary
+*.3dm binary
+*.glb binary
+*.ifc -text
