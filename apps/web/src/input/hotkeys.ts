@@ -32,6 +32,19 @@ const MODE_KEYS: Record<string, WorkspaceMode> = { 1: 'review', 2: 'model', 3: '
 
 export type HotkeyAction = { kind: 'tool'; tool: ToolName } | { kind: 'mode'; mode: WorkspaceMode };
 
+/** 도구 → 핫키 문자 (Toolbox/ToolPalette 툴팁 힌트) — 리뷰 모드 오버라이드(C=코멘트)는 mode로 해소 */
+export function hotkeyForTool(tool: ToolName, mode: WorkspaceMode = 'model'): string | null {
+  const ov = MODE_OVERRIDES[mode];
+  if (ov) for (const [k, t] of Object.entries(ov)) if (t === tool) return k.toUpperCase();
+  for (const [k, t] of Object.entries(TOOL_KEYS)) {
+    if (t !== tool) continue;
+    // 이 모드에서 오버라이드에 밀린 키(리뷰 C=코멘트가 기둥을 가림)는 힌트 생략
+    if (ov && ov[k]) return null;
+    return k.toUpperCase();
+  }
+  return null;
+}
+
 /** 순수 해석 — 단위 테스트 대상. null = 이 키는 핫키 아님(다른 핸들러 몫). */
 export function resolveHotkey(key: string, mode: WorkspaceMode): HotkeyAction | null {
   const m = MODE_KEYS[key];

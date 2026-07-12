@@ -1,4 +1,5 @@
 import { useUiStore, type ToolName } from '../state/uiStore';
+import { hotkeyForTool } from '../input/hotkeys';
 import { Icon } from './icons/Icon';
 
 /**
@@ -59,12 +60,13 @@ export function Toolbox() {
       {GROUPS.map((g) => (
         <div key={g.title} className="toolbox-group">
           <div className="toolbox-group-title">{g.title}</div>
-          {g.items.map((item) =>
-            item.tool ? (
+          {g.items.map((item) => {
+            const key = item.tool ? hotkeyForTool(item.tool, 'model') : null; // 핫키 힌트 (Slice 11 후속)
+            return item.tool ? (
               <button
                 key={item.label}
                 className={activeTool === item.tool ? 'active' : ''}
-                title={item.label}
+                title={key ? `${item.label} (${key})` : item.label}
                 onClick={() => setTool(item.tool!)}
               >
                 <Icon name={item.icon} />
@@ -75,8 +77,8 @@ export function Toolbox() {
                 <Icon name={item.icon} />
                 <span>{item.label}</span>
               </button>
-            ),
-          )}
+            );
+          })}
         </div>
       ))}
     </div>
