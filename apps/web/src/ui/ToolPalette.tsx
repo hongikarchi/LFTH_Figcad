@@ -1,4 +1,5 @@
 import { useUiStore, type ToolName } from '../state/uiStore';
+import { hotkeyForTool } from '../input/hotkeys';
 import { Icon } from './icons/Icon';
 
 /**
@@ -16,6 +17,7 @@ const TOOL_META: Partial<Record<ToolName, { label: string; icon: string }>> = {
 export function ToolPalette({ tools, title }: { tools: ToolName[]; title?: string }) {
   const activeTool = useUiStore((s) => s.activeTool);
   const setTool = useUiStore((s) => s.setTool);
+  const mode = useUiStore((s) => s.activeMode);
   return (
     <div className="toolbox">
       <div className="toolbox-group">
@@ -23,11 +25,12 @@ export function ToolPalette({ tools, title }: { tools: ToolName[]; title?: strin
         {tools.map((t) => {
           const m = TOOL_META[t];
           if (!m) return null;
+          const key = hotkeyForTool(t, mode); // 핫키 힌트 — Toolbox와 일관(리뷰)
           return (
             <button
               key={t}
               className={activeTool === t ? 'active' : ''}
-              title={m.label}
+              title={key ? `${m.label} (${key})` : m.label}
               onClick={() => setTool(t)}
             >
               <Icon name={m.icon} />

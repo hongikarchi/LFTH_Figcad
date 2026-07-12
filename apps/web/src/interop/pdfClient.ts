@@ -22,8 +22,9 @@ export interface RenderedPdf {
  */
 export async function renderPdfPage(bytes: ArrayBuffer, pageNo = 1): Promise<RenderedPdf> {
   const task = getDocument({ data: new Uint8Array(bytes) });
-  const doc = await task.promise;
   try {
+    // 로딩 실패(손상 PDF)도 finally destroy에 잡히게 — await를 try 안으로(리뷰: 재시도마다 태스크 누수)
+    const doc = await task.promise;
     const pageCount = doc.numPages;
     const n = Math.min(Math.max(1, Math.round(pageNo)), Math.max(1, pageCount));
     const page = await doc.getPage(n);

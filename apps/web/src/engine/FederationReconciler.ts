@@ -166,7 +166,15 @@ export class FederationReconciler {
 
   private load(s: FederationSource): void {
     const myGen = ++this.gen;
-    this.local.set(s.id, { status: 'loading', ref: s.ref, sourceType: s.sourceType, gen: myGen });
+    const prev = this.local.get(s.id);
+    this.local.set(s.id, {
+      status: 'loading', ref: s.ref, sourceType: s.sourceType, gen: myGen,
+      // pdf 페이지 전환·↻ 재로드 중에도 스테퍼가 언마운트되지 않게 표시 정보 보존(리뷰 —
+      // 같은 파일일 때만: ref가 바뀌면 페이지 수도 무효).
+      ...(prev && prev.ref === s.ref && prev.pageCount !== undefined
+        ? { pageCount: prev.pageCount, rasterPage: prev.rasterPage }
+        : {}),
+    });
 
     // 2D 언더레이(DWG/DXF) = 메시 아닌 라인워크 경로 — fetch+파싱 → 배치(레벨/origin/회전/스케일) → addUnderlay.
     if (UNDERLAY_TYPES.has(s.sourceType) && this.underlayExtractor) {
@@ -285,16 +293,23 @@ export class FederationReconciler {
         if (!live) return;
         this.placeRaster(live, raster);
         this.ref.setVisible(s.id, live.visible);
+        // rasterPageReq = **실제 렌더에 넘긴** 요청(로드 시작 s 기준) — live 기준으로 기록하면
+        // 로드 중 협업자가 page를 바꿨을 때 '렌더=구, req=신'으로 영구 스테일(리뷰 major).
+        const requested = s.underlay?.page ?? 1;
         this.local.set(s.id, {
           status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen,
           raster, placementSig: placementSigOf(live),
-          // pdf: 렌더된 페이지·요청 페이지·총 페이지 기록 — 변경 감지(요청 기준) + UI 표시/상한
           ...(raster.page !== undefined
-            ? { rasterPage: raster.page, rasterPageReq: live.underlay?.page ?? 1 }
+            ? { rasterPage: raster.page, rasterPageReq: requested }
             : {}),
           ...(raster.pageCount !== undefined ? { pageCount: raster.pageCount } : {}),
         });
         this.notify();
+        // completion-time 재검 — 로드 중 도착한 page 변경은 reconcile이 loading이라 무행동으로
+        // 소비(sig는 갱신됨) → 여기서 즉시 재로드해 수렴(gen 가드가 체이닝 안전).
+        if (s.sourceType === 'pdf' && (live.underlay?.page ?? 1) !== requested) {
+          this.load(live);
+        }
       })
       .catch((err: unknown) => {
         const cur = this.local.get(s.id);

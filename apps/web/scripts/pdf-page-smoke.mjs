@@ -66,7 +66,6 @@ try {
   );
   console.log('PASS  범위 밖 페이지(99) → 렌더는 pageCount로 클램프(2)');
 
-  // 4) 구빌드 폴백 시뮬 — page 필드 strip된 소스도 정상(1페이지)
   if (errors.length) fail(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
   if (process.exitCode !== 1) console.log('\nPDF PAGE SMOKE PASS');
 } finally {

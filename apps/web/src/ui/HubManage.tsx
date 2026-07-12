@@ -141,30 +141,37 @@ export function HubManage({
                   <span title={err ?? statusLabel}>{dot}</span> {SOURCE_BADGE[s.sourceType]}
                 </span>
               </button>
-              {/* PDF 다중 페이지 — 문서(underlay.page) 공유라 협업자 전원이 같은 페이지를 봄 */}
-              {s.sourceType === 'pdf' && (federation.pageCountOf(s.id) ?? 1) > 1 && (
-                <>
-                  <button
-                    className="nav-edit"
-                    title="이전 페이지"
-                    disabled={status !== 'ready' || (s.underlay?.page ?? 1) <= 1}
-                    onClick={() => store.setUnderlayPage(s.id, (s.underlay?.page ?? 1) - 1)}
-                  >
-                    ‹
-                  </button>
-                  <span className="nav-meta" title="PDF 페이지">
-                    {federation.pageOf(s.id) ?? s.underlay?.page ?? 1}/{federation.pageCountOf(s.id)}
-                  </span>
-                  <button
-                    className="nav-edit"
-                    title="다음 페이지"
-                    disabled={status !== 'ready' || (federation.pageOf(s.id) ?? 1) >= (federation.pageCountOf(s.id) ?? 1)}
-                    onClick={() => store.setUnderlayPage(s.id, (s.underlay?.page ?? 1) + 1)}
-                  >
-                    ›
-                  </button>
-                </>
-              )}
+              {/* PDF 다중 페이지 — 문서(underlay.page) 공유라 협업자 전원이 같은 페이지를 봄.
+                  스텝·표시·disabled 기준 = **렌더된 페이지(pageOf)** 단일화(리뷰 — doc 요청 기준이면
+                  클램프 상태(doc 99·렌더 2)에서 죽은 클릭). underlay 없는 소스(fed-register 유래)는
+                  setUnderlayPage가 no-op이라 스테퍼 비노출. */}
+              {s.sourceType === 'pdf' && s.underlay && (federation.pageCountOf(s.id) ?? 1) > 1 && (() => {
+                const cur = federation.pageOf(s.id) ?? s.underlay.page ?? 1;
+                const total = federation.pageCountOf(s.id) ?? 1;
+                return (
+                  <>
+                    <button
+                      className="nav-edit"
+                      title="이전 페이지"
+                      disabled={status !== 'ready' || cur <= 1}
+                      onClick={() => store.setUnderlayPage(s.id, cur - 1)}
+                    >
+                      ‹
+                    </button>
+                    <span className="nav-meta" title="PDF 페이지">
+                      {cur}/{total}
+                    </span>
+                    <button
+                      className="nav-edit"
+                      title="다음 페이지"
+                      disabled={status !== 'ready' || cur >= total}
+                      onClick={() => store.setUnderlayPage(s.id, cur + 1)}
+                    >
+                      ›
+                    </button>
+                  </>
+                );
+              })()}
               <button
                 className="nav-edit"
                 title="최신 다시 가져오기 (소스가 갱신됐을 때)"

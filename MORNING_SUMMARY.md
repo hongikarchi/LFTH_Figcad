@@ -28,7 +28,7 @@
 
 ## 아침 결정 대기 (당신 몫)
 
-1. **master 머지 + 배포** — 루프 산출물 검토 후 ff-merge + `railway up`. (직전 미배포 커밋 8개도 함께 나감 — 재질 페인트 opacity strip 롤아웃 창 유의: 배포 후 열린 탭 새로고침 안내)
+1. **master 머지 + 배포** — 루프 산출물 검토 후 ff-merge + `railway up`. (직전 미배포 커밋 8개도 함께 나감 — 롤아웃 창 유의: **배포 후 열린 구빌드 탭 전부 새로고침 안내**. ① 재질 페인트 opacity strip ② 구빌드 탭이 PDF 소스 가시성 토글/클립 편집 시 underlay.page가 소거될 수 있음(whole-entry LWW write-back) — 둘 다 같은 클래스)
 2. **AI 키 + US 리전** — 설정되면 `node apps/web/scripts/run-smokes.mjs --tags agent`로 실 AI 왕복 검증 즉시 가능 (agent-live-smoke는 키 없으면 SKIP). **신규 ui-action 6종의 실 왕복("2층 평면 봐줘")도 키 이후 검증 항목.**
 3. **뷰포인트 projection 필드** — 입면 ortho 뷰포인트는 persp로 복원(페이로드 미확장 — 구빌드 안전). optional 필드 추가 여부는 배포 창 결정.
 4. **Auto Perspective 도착 미러 팝** — 축뷰 비행 도착 프레임에 1회 좌우 반전 팝(상태 무손상, 리뷰 수용). 마스킹(크로스페이드/트윈 내 X스케일)은 S2 기즈모와 함께 재평가.

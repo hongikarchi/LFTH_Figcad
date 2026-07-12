@@ -34,6 +34,7 @@ export type HotkeyAction = { kind: 'tool'; tool: ToolName } | { kind: 'mode'; mo
 
 /** 도구 → 핫키 문자 (Toolbox/ToolPalette 툴팁 힌트) — 리뷰 모드 오버라이드(C=코멘트)는 mode로 해소 */
 export function hotkeyForTool(tool: ToolName, mode: WorkspaceMode = 'model'): string | null {
+  if (!MODE_TOOLS[mode].includes(tool)) return null; // 그 모드 팔레트에 없는 도구 = 핫키도 안 먹음 — 오표기 방지(리뷰)
   const ov = MODE_OVERRIDES[mode];
   if (ov) for (const [k, t] of Object.entries(ov)) if (t === tool) return k.toUpperCase();
   for (const [k, t] of Object.entries(TOOL_KEYS)) {
