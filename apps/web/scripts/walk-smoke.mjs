@@ -74,6 +74,38 @@ try {
   const moved = Math.hypot(p1.x - p0.x, p1.z - p0.z);
   if (moved < 0.3) fail(`W 전진 미동작 (이동 ${moved.toFixed(3)}m)`);
 
+  // 2b) 벽 충돌(v1.1) — 전방 2m에 벽 생성 → 홀드 전진해도 관통 없음(반경 0.35 앞 정지)
+  const col = await page.evaluate(() => {
+    const F = window.__figcad;
+    const { store, seed, rig } = F;
+    const d = rig.active.position.clone(); // Vector3 스크래치
+    rig.walkDeltaWorld(1, 0, d); // 단위 전방(수평)
+    const eye = rig.active.position;
+    const cx = (eye.x + d.x * 2) * 1000;
+    const cz = (eye.z + d.z * 2) * 1000;
+    const px = -d.z, pz = d.x; // 수평 수직(벽 진행 방향)
+    const id = store.createWall({
+      levelId: seed.levelId, typeId: seed.wallTypeIds[0],
+      a: [Math.round(cx - px * 4000), Math.round(cz - pz * 4000)],
+      b: [Math.round(cx + px * 4000), Math.round(cz + pz * 4000)],
+    });
+    return { id, sx: eye.x, sz: eye.z, dx: d.x, dz: d.z };
+  });
+  await new Promise((r) => setTimeout(r, 300)); // derive→scene 반영
+  await page.keyboard.down('w');
+  await new Promise((r) => setTimeout(r, 2500)); // 충돌 없으면 ~5m — 벽(2m) 훨씬 지남
+  await page.keyboard.up('w');
+  await new Promise((r) => setTimeout(r, 400));
+  const pc = await page.evaluate(() => {
+    const p = window.__figcad.rig.active.position;
+    return { x: p.x, z: p.z };
+  });
+  const along = (pc.x - col.sx) * col.dx + (pc.z - col.sz) * col.dz; // 전방 진행 거리
+  if (along > 1.95) fail(`벽 관통 (전방 ${along.toFixed(2)}m — 벽면 1.9m)`);
+  if (along < 0.8) fail(`벽 훨씬 앞에서 정지 (전방 ${along.toFixed(2)}m)`);
+  await page.evaluate((id) => window.__figcad.store.deleteElements([id]), col.id); // 후속 스텝 무영향
+  await new Promise((r) => setTimeout(r, 200));
+
   // 3) 시선 룩 — 마우스 LMB 드래그 >3px → 카메라 방향 회전 (도구 미발동)
   const q0 = await page.evaluate(() => window.__figcad.rig.active.quaternion.toArray());
   await page.mouse.move(640, 450);

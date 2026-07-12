@@ -498,6 +498,20 @@ export class CameraRig {
     this.apply();
   }
 
+  /** 걷기 수평 이동의 월드 변위 (벽 충돌 검사용, y=0) — walkMove와 동일 yaw 기저 */
+  walkDeltaWorld(dForward: number, dRight: number, out: THREE.Vector3): THREE.Vector3 {
+    const sin = Math.sin(this.walkYaw);
+    const cos = Math.cos(this.walkYaw);
+    return out.set(dForward * sin - dRight * cos, 0, dForward * cos + dRight * sin);
+  }
+
+  /** 충돌 해소된 월드 변위 적용 (걷기 전용 — walkMove의 월드 좌표 버전) */
+  walkMoveWorld(dx: number, dz: number): void {
+    this.walkPos.x += dx;
+    this.walkPos.z += dz;
+    this.apply();
+  }
+
   /** 걷기 눈 위치 (지면 스냅 레이 원점용, out에 기록) */
   getWalkEye(out: THREE.Vector3): THREE.Vector3 {
     return out.copy(this.walkPos);

@@ -14,3 +14,8 @@ const mem = new Map<string, string>();
   setItem: (k: string, v: string) => void mem.set(k, String(v)),
   removeItem: (k: string) => void mem.delete(k),
 };
+// WalkController가 visibilitychange 리스너만 등록 — 최소 document 스텁
+(globalThis as unknown as { document: unknown }).document = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+};

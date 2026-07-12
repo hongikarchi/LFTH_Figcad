@@ -403,6 +403,7 @@ const walk = new WalkController(rig, {
   levelElevationM: () => (store.getLevel(ctx.levelId())?.elevation ?? 0) / 1000,
   requestRender: () => engine.requestRender(),
   onToast: (m) => hud.toast(m),
+  clipPlanes: () => engine.renderer.clippingPlanes, // 단면으로 잘린 면에 스냅/충돌 방지(v1.1)
 });
 engine.addTicker(walk.update);
 const joystick = new WalkJoystick((x, y) => walk.setJoystick(x, y));
