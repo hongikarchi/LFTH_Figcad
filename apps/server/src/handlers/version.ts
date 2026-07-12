@@ -27,9 +27,20 @@ export interface CommitLog {
 
 const MAX_MESSAGE = 200;
 const MAX_AUTHOR = 40;
-// log.json 비대화 방지 — 초과 시 오래된 메타부터 잘림.
-// TODO(M6.5): 잘려나간 메타가 참조하던 blob GC + 커밋 레이트리밋 (현재 blob은 영구 보존)
-const MAX_LOG_COMMITS = 500;
+
+/** 커밋 상한 정책 — 테스트에서 주입 가능, 프로덕션은 DEFAULT_LIMITS. */
+export interface CommitLimits {
+  /** log.json 메타 상한 — 초과 시 오래된 메타부터 잘리고 blob GC(아래) */
+  maxLogCommits: number;
+  /** 레이트리밋: rateWindowMs 안에 rateMax 초과 커밋 시 거부(무변경 스킵은 미소모) */
+  rateMax: number;
+  rateWindowMs: number;
+}
+export const DEFAULT_LIMITS: CommitLimits = {
+  maxLogCommits: 500,
+  rateMax: 12, // 사람 커밋 흐름 대비 넉넉, 폭주 클라이언트(루프 버그)만 차단
+  rateWindowMs: 60_000,
+};
 
 /**
  * BlobStore 키가 `projects/<room>/...` 템플릿이므로 room에 '/' 등이 들어오면
@@ -89,18 +100,25 @@ async function readLog(store: BlobStore, room: string): Promise<CommitLog> {
   }
 }
 
-/** 커밋 생성 — 내용 무변경(head 해시 동일)이면 스킵 */
+/** 커밋 생성 — 내용 무변경(head 해시 동일)이면 스킵, 윈도 내 과다 커밋이면 limited */
 export async function createCommit(
   store: BlobStore,
   room: string,
   snap: DocSnapshot,
   author: string,
   message: string,
-): Promise<{ skipped: boolean; meta?: CommitMeta; hash: string }> {
+  limits: CommitLimits = DEFAULT_LIMITS,
+): Promise<{ skipped: boolean; limited?: boolean; meta?: CommitMeta; hash: string }> {
   const canonical = canonicalSnapshotJson(snap);
   const hash = await sha256Hex(canonical);
   const log = await readLog(store, room);
   if (log.head === hash) return { skipped: true, hash };
+
+  // 레이트리밋 — log 메타 ts 기반(무상태: DO/Node 재시작·다중 인스턴스와 무관하게 동일 판정).
+  // 무변경 스킵(위)은 리밋을 소모하지 않고, 거부 시 blob도 쓰지 않는다.
+  const now = Date.now();
+  const recent = log.commits.filter((c) => now - c.ts < limits.rateWindowMs).length;
+  if (recent >= limits.rateMax) return { skipped: false, limited: true, hash };
 
   // blob은 콘텐츠 주소 — 복원→재커밋으로 같은 해시가 재등장해도 같은 내용 덮어쓰기라 무해
   await store.put(commitKey(room, hash), canonical, 'application/json');
@@ -109,11 +127,28 @@ export async function createCommit(
     parent: log.head,
     author: author.slice(0, MAX_AUTHOR) || '익명',
     message: message.slice(0, MAX_MESSAGE) || '(메시지 없음)',
-    ts: Date.now(),
+    ts: now,
     elements: snap.elements.length,
   };
   log.commits.push(meta);
-  if (log.commits.length > MAX_LOG_COMMITS) log.commits = log.commits.slice(-MAX_LOG_COMMITS);
+  if (log.commits.length > limits.maxLogCommits) {
+    const dropped = log.commits.slice(0, log.commits.length - limits.maxLogCommits);
+    log.commits = log.commits.slice(-limits.maxLogCommits);
+    // blob GC — 잘린 메타의 해시 중 잔존 타임라인이 참조하지 않는 것만 삭제.
+    // (콘텐츠 주소 dedup: 복원→재커밋으로 같은 해시가 잔존 메타에 살아있을 수 있다)
+    // best-effort: GC 실패가 커밋을 실패시키지 않는다 — 다음 잘림 때 재시도되진 않지만 누적 무해.
+    if (store.delete) {
+      const retained = new Set(log.commits.map((c) => c.hash));
+      for (const d of dropped) {
+        if (retained.has(d.hash)) continue;
+        try {
+          await store.delete(commitKey(room, d.hash));
+        } catch (e) {
+          console.warn(`[version] blob GC 실패 (${room}/${d.hash.slice(0, 8)}):`, e);
+        }
+      }
+    }
+  }
   log.head = hash;
   await store.put(logKey(room), JSON.stringify(log), 'application/json');
   return { skipped: false, meta, hash };
@@ -145,6 +180,7 @@ export async function handleVersionRequest(
   store: BlobStore | undefined,
   snapshot: () => DocSnapshot,
   roomKey: string | undefined,
+  limits: CommitLimits = DEFAULT_LIMITS,
 ): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(request.url);
@@ -166,7 +202,9 @@ export async function handleVersionRequest(
       snapshot(),
       String(body.author ?? ''),
       String(body.message ?? ''),
+      limits,
     );
+    if (result.limited) return json(429, { error: '커밋 레이트리밋 — 잠시 후 다시 시도하세요', ...result });
     return json(200, result);
   }
   if (op === 'log' && request.method === 'GET') {

@@ -10,6 +10,9 @@ export function fakeStore(): BlobStore & { store: Map<string, Uint8Array> } {
     put: async (key, data) => {
       store.set(key, norm(data));
     },
+    delete: async (key) => {
+      store.delete(key);
+    },
     get: async (key): Promise<StoredBlob | null> => {
       const v = store.get(key);
       if (!v) return null;

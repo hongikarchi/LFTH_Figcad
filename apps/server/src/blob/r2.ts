@@ -14,4 +14,7 @@ export class R2BlobStore implements BlobStore {
       contentType ? { httpMetadata: { contentType } } : undefined,
     );
   }
+  async delete(key: string): Promise<void> {
+    await this.bucket.delete(key);
+  }
 }

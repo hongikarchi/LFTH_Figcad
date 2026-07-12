@@ -47,4 +47,14 @@ export class DiskBlobStore implements BlobStore {
     await fs.writeFile(full, body);
     // contentType은 디스크선 미저장 — federation/version이 ext/경로로 content-type 재유도(핸들러 책임).
   }
+
+  async delete(key: string): Promise<void> {
+    const full = this.resolve(key);
+    if (!full) return;
+    try {
+      await fs.unlink(full);
+    } catch {
+      // 없는 파일 = no-op (GC 재시도 안전)
+    }
+  }
 }

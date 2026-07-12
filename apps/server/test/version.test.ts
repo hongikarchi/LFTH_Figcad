@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { DocStore, seedDocument, SEED_IDS } from '@figcad/core';
-import { canonicalSnapshotJson, createCommit, isSafeRoom, sha256Hex } from '../src/handlers/version';
+import {
+  canonicalSnapshotJson,
+  createCommit,
+  handleVersionRequest,
+  isSafeRoom,
+  sha256Hex,
+  type CommitLimits,
+} from '../src/handlers/version';
 import { fakeStore } from './fakeStore';
 
 /** 저장된 blob(Uint8Array) → JSON 파싱 (테스트 검사용). */
@@ -94,5 +101,92 @@ describe('createCommit', () => {
     const r2 = await createCommit(bucket, 'r', snap(2), '', '');
     expect(r2.meta!.author).toBe('익명');
     expect(r2.meta!.message).toBe('(메시지 없음)');
+  });
+});
+
+describe('CommitLimits — blob GC + 레이트리밋 (M6.5)', () => {
+  const limits = (o: Partial<CommitLimits>): CommitLimits => ({
+    maxLogCommits: 500,
+    rateMax: 100,
+    rateWindowMs: 60_000,
+    ...o,
+  });
+
+  it('log 잘림 시 참조 잃은 blob GC, 잔존 타임라인 blob 보존', async () => {
+    const bucket = fakeStore();
+    const hashes: string[] = [];
+    for (let i = 1; i <= 5; i++) {
+      const r = await createCommit(bucket, 'r', snap(i), 'x', `c${i}`, limits({ maxLogCommits: 3 }));
+      hashes.push(r.hash);
+    }
+    const log = readJson(bucket.store, 'projects/r/log.json');
+    expect(log.commits).toHaveLength(3);
+    expect(bucket.store.has(`projects/r/commits/${hashes[0]}.json`)).toBe(false);
+    expect(bucket.store.has(`projects/r/commits/${hashes[1]}.json`)).toBe(false);
+    for (const h of hashes.slice(2)) expect(bucket.store.has(`projects/r/commits/${h}.json`)).toBe(true);
+  });
+
+  it('잘린 해시가 잔존 타임라인에 살아있으면(복원-재커밋 dedup) 삭제 안 함', async () => {
+    const bucket = fakeStore();
+    const a = snap(1);
+    const l = limits({ maxLogCommits: 2 });
+    const r1 = await createCommit(bucket, 'r', a, 'x', 'A', l);
+    await createCommit(bucket, 'r', snap(2), 'x', 'B', l);
+    // A로 복원 후 재커밋 — 잘림으로 첫 A 메타는 드롭되지만 같은 해시가 잔존 [B, A']에 살아있다
+    const r3 = await createCommit(bucket, 'r', a, 'x', 'A 복원', l);
+    expect(r3.hash).toBe(r1.hash);
+    expect(bucket.store.has(`projects/r/commits/${r1.hash}.json`)).toBe(true);
+  });
+
+  it('delete 미구현 스토어에선 GC 조용히 스킵 (잘림은 정상 동작)', async () => {
+    const bucket = fakeStore();
+    delete (bucket as { delete?: unknown }).delete;
+    for (let i = 1; i <= 4; i++) {
+      await createCommit(bucket, 'r', snap(i), 'x', `c${i}`, limits({ maxLogCommits: 2 }));
+    }
+    const log = readJson(bucket.store, 'projects/r/log.json');
+    expect(log.commits).toHaveLength(2);
+    expect(bucket.store.size).toBe(5); // log 1 + blob 4 전부 잔존
+  });
+
+  it('레이트리밋 — 윈도 내 rateMax 초과 시 limited, blob/log 무변경', async () => {
+    const bucket = fakeStore();
+    const l = limits({ rateMax: 2 });
+    await createCommit(bucket, 'r', snap(1), 'x', 'c1', l);
+    await createCommit(bucket, 'r', snap(2), 'x', 'c2', l);
+    const r3 = await createCommit(bucket, 'r', snap(3), 'x', 'c3', l);
+    expect(r3.limited).toBe(true);
+    const log = readJson(bucket.store, 'projects/r/log.json');
+    expect(log.commits).toHaveLength(2);
+    expect(bucket.store.has(`projects/r/commits/${r3.hash}.json`)).toBe(false);
+  });
+
+  it('무변경 재커밋(스킵)은 리밋 미소모·미차단', async () => {
+    const bucket = fakeStore();
+    const l = limits({ rateMax: 1 });
+    const s = snap(1);
+    await createCommit(bucket, 'r', s, 'x', 'c1', l);
+    const r = await createCommit(bucket, 'r', s, 'x', 'again', l);
+    expect(r.skipped).toBe(true);
+    expect(r.limited).toBeUndefined();
+  });
+
+  it('핸들러 — limited는 HTTP 429', async () => {
+    const bucket = fakeStore();
+    const l = limits({ rateMax: 1 });
+    const post = (msg: string, walls: number) =>
+      handleVersionRequest(
+        new Request('http://x/parties/doc/r?op=commit', {
+          method: 'POST',
+          body: JSON.stringify({ message: msg, author: 'x' }),
+        }),
+        'r',
+        bucket,
+        () => snap(walls),
+        undefined,
+        l,
+      );
+    expect((await post('c1', 1)).status).toBe(200);
+    expect((await post('c2', 2)).status).toBe(429);
   });
 });

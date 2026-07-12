@@ -12,4 +12,6 @@ export interface StoredBlob {
 export interface BlobStore {
   get(key: string): Promise<StoredBlob | null>;
   put(key: string, data: ArrayBuffer | Uint8Array | string, contentType?: string): Promise<void>;
+  /** 없는 키 삭제는 no-op. 미구현 스토어(옵셔널)면 GC가 조용히 건너뜀 — 기능 저하 없음(누적만). */
+  delete?(key: string): Promise<void>;
 }
