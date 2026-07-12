@@ -16,7 +16,7 @@
 corepack pnpm install
 corepack pnpm dev        # Vite dev server (API/WS는 apps/server dev-node 8787)
 corepack pnpm build      # web dist + Railway node-server bundle
-corepack pnpm test       # core + server + interop
+corepack pnpm test       # core + server + interop + web
 corepack pnpm deploy     # Railway 안내만 출력
 corepack pnpm deploy:cf  # Cloudflare rollback 배포
 ```
