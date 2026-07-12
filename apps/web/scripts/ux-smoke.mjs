@@ -187,6 +187,29 @@ try {
   if (mv.action !== null) throw new Error(`move 후 editAction 미해제: ${mv.action}`);
   console.log(`PASS  편집액션 move → boundary[0]=${JSON.stringify(mv.v0)}, action 해제 (EditActionController)`);
 
+  // per-tool 핫키 레이어(Slice 11) — 실 keydown 디스패치 경로: W=벽(모델), 1=협업·리뷰 모드, 게이팅(리뷰서 W 무반응)
+  const hk = await page.evaluate(() => {
+    const ui = window.__figcad.ui;
+    const press = (key) => window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    ui.getState().setMode('model');
+    ui.getState().setTool('select');
+    press('w');
+    const wallTool = ui.getState().activeTool;
+    press('1');
+    const mode1 = ui.getState().activeMode;
+    press('w'); // 리뷰 모드 — 팔레트에 벽 없음 = 무반응
+    const reviewTool = ui.getState().activeTool;
+    press('c'); // 리뷰 오버라이드 = 코멘트
+    const commentTool = ui.getState().activeTool;
+    ui.getState().setMode('review');
+    return { wallTool, mode1, reviewTool, commentTool };
+  });
+  if (hk.wallTool !== 'wall') throw new Error(`핫키 W 실패: ${hk.wallTool}`);
+  if (hk.mode1 !== 'review') throw new Error(`핫키 1(모드) 실패: ${hk.mode1}`);
+  if (hk.reviewTool === 'wall') throw new Error('핫키 게이팅 실패: 리뷰 모드서 벽 활성');
+  if (hk.commentTool !== 'comment') throw new Error(`핫키 C(리뷰=코멘트) 실패: ${hk.commentTool}`);
+  console.log('PASS  핫키 레이어 — W=벽, 1=리뷰 모드, 게이팅, C=코멘트 (Slice 11)');
+
   if (errors.length) throw new Error(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
   console.log('\nUX 스모크 통과');
 } catch (err) {

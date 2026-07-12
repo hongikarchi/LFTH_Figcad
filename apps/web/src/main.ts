@@ -18,6 +18,7 @@ import { FederationReconciler } from './engine/FederationReconciler';
 import { MaterialReconciler } from './engine/MaterialReconciler';
 import { FEDERATION_EXTRACTORS, fetchDwgUnderlay } from './interop/federationExtract';
 import { InputManager } from './input/InputManager';
+import { initHotkeys } from './input/hotkeys';
 import { WalkController } from './input/WalkController';
 import { HudLayer } from './hud/HudLayer';
 import { WalkJoystick } from './hud/WalkJoystick';
@@ -245,6 +246,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') fitView();
   else if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey) fitSelection(); // 줌-선택 (Ctrl/⌘+Z=undo는 별도 핸들러)
 });
+initHotkeys(() => engine.requestRender()); // per-tool 핫키 레이어 (Slice 11 — W=벽·V=선택·1/2/3=모드)
 // federation 소스가 처음 ready 되면 1회 자동 맞춤(오버레이가 화면 밖이면 무의미하므로).
 let didFitFed = false;
 let clipRefreshTimer: ReturnType<typeof setTimeout> | null = null;
