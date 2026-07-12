@@ -64,6 +64,10 @@ try {
   await shot(7, 'dwg-underlay-1f');    // 방 몇 개 — 텍스트(방이름·치수) 가독 확인
 
   console.log(JSON.stringify({ ...result, pageErrors: errs }, null, 2));
+  // 게이트 단언 — 스크린샷 캡처만으로는 파싱/렌더 회귀(0세그)도 PASS였음
+  const ok = result.visibleSegs > 1000 && errs.length === 0;
+  if (!ok) console.error(`FAIL — visibleSegs=${result.visibleSegs} pageErrors=${errs.length}`);
+  process.exitCode = ok ? 0 : 1;
 } finally {
   await browser.close();
 }

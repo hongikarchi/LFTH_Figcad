@@ -1,0 +1,48 @@
+{
+  "$comment": "스모크 러너(run-smokes.mjs) 매니페스트. backend: none=vite만 | node=dev-node.mjs | miniflare=dev.mjs(?op= 라우트·버전 API·fed-upload는 miniflare 전용 — dev-node 503). vite:false=브라우저/vite 불필요. optIn=--all에서 제외(태그로만). fixtures=없으면 SKIP. extraArgs의 {backendPort} 치환.",
+  "scripts": [
+    { "script": "beam-smoke.mjs", "backend": "none", "tags": ["tools", "geometry", "ifc"] },
+    { "script": "column-smoke.mjs", "backend": "none", "tags": ["tools", "geometry", "ifc"] },
+    { "script": "d1b-smoke.mjs", "backend": "none", "tags": ["tools", "geometry", "ifc", "stair"] },
+    { "script": "d2-smoke.mjs", "backend": "none", "tags": ["tools", "dimension", "hud"] },
+    { "script": "label-smoke.mjs", "backend": "none", "tags": ["label", "hud"] },
+    { "script": "sketch-smoke.mjs", "backend": "none", "tags": ["sketch", "markup", "tools"] },
+    { "script": "select-box-smoke.mjs", "backend": "none", "tags": ["input", "tools", "select"] },
+    { "script": "walk-smoke.mjs", "backend": "none", "tags": ["walk", "camera", "input"] },
+    { "script": "paint-smoke.mjs", "backend": "none", "tags": ["paint", "materials", "ui"] },
+    { "script": "reference-layer-smoke.mjs", "backend": "none", "tags": ["federation", "engine"] },
+    { "script": "mobile-smoke.mjs", "backend": "node", "tags": ["ui", "mobile"] },
+    { "script": "ifc-smoke.mjs", "backend": "none", "tags": ["interop", "ifc"], "timeoutMs": 240000 },
+    { "script": "comment-smoke.mjs", "backend": "none", "tags": ["comments", "ui"] },
+    { "script": "ux-smoke.mjs", "backend": "none", "tags": ["ui", "drawing"] },
+    { "script": "fork-smoke.mjs", "backend": "none", "tags": ["collab", "ui"] },
+    { "script": "drawing-smoke.mjs", "backend": "none", "tags": ["drawing", "tools"] },
+    { "script": "dwg-underlay-smoke.mjs", "backend": "none", "tags": ["dwg", "interop", "underlay"], "fixtures": ["apps/web/public/__dwgtest.dwg"], "timeoutMs": 240000 },
+    { "script": "agent-live-smoke.mjs", "backend": "miniflare", "vite": false, "tags": ["ai", "agent"], "timeoutMs": 300000 },
+
+    { "script": "browser-e2e.mjs", "backend": "node", "tags": ["collab", "e2e"] },
+    { "script": "comment-e2e.mjs", "backend": "node", "tags": ["comments", "collab", "e2e"] },
+    { "script": "lint-panel-smoke.mjs", "backend": "node", "tags": ["lint", "ui"] },
+    { "script": "ai-panel-smoke.mjs", "backend": "node", "tags": ["ai", "ui"] },
+    { "script": "e2e-multiplayer.mjs", "backend": "node", "vite": false, "tags": ["collab", "protocol", "e2e"] },
+    { "script": "stress-2k.mjs", "backend": "node", "optIn": true, "tags": ["perf"], "timeoutMs": 300000 },
+
+    { "script": "connector-e2e.mjs", "backend": "miniflare", "tags": ["connector", "server", "e2e"], "extraArgs": ["{backendPort}"] },
+    { "script": "ref-interact-smoke.mjs", "backend": "miniflare", "tags": ["federation", "snap", "ai", "label"], "timeoutMs": 240000 },
+    { "script": "review-smoke.mjs", "backend": "miniflare", "tags": ["review", "camera", "viewpoints", "version", "measure"], "timeoutMs": 240000 },
+    { "script": "section-smoke.mjs", "backend": "miniflare", "tags": ["section", "engine"], "timeoutMs": 240000 },
+    { "script": "dwg-e2e.mjs", "backend": "miniflare", "tags": ["dwg", "federation", "e2e"], "fixtures": ["apps/web/public/__dwgtest.dwg"], "timeoutMs": 300000 },
+    { "script": "version-smoke.mjs", "backend": "miniflare", "tags": ["version", "server"], "timeoutMs": 240000 }
+  ],
+  "excluded": [
+    { "script": "_seed-room.mjs", "reason": "룸 시드 헬퍼 (유틸)" },
+    { "script": "gen-icons.mjs", "reason": "PWA 아이콘 재생성 (유틸)" },
+    { "script": "orient-test.mjs", "reason": "방위 육안 실증 (수동)" },
+    { "script": "pick-test.mjs", "reason": "픽킹 육안 실증 (수동)" },
+    { "script": "sketch-orient-check.mjs", "reason": "스케치 방위 육안 실증 (수동)" },
+    { "script": "figcad-vs-rhino.mjs", "reason": "스크린샷 비교 (수동)" },
+    { "script": "fed-overlay-demo.mjs", "reason": "데모 — BLOB_KEY 등 수동 환경 필요" },
+    { "script": "connector-golden.mjs", "reason": "라이브 Rhino MCP 필요 — 무인 불가" },
+    { "script": "sketch-live-e2e.mjs", "reason": "실 Claude 키 + 배포 URL 필요" }
+  ]
+}

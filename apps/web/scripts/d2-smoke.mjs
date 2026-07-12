@@ -1,5 +1,7 @@
 /**
- * M8-D2 스모크 — 주석/치수: 텍스트 도구(DOM 입력) + 치수 도구(2점) + 바인딩 + 그리드 라벨 회귀.
+ * M8-D2 스모크 — 주석 회귀: 그리드 라벨 + 치수 바인딩(ops 레벨 back-compat) + lint.
+ * 텍스트 도구(M17)·치수 도구(M18)는 생성 서피스가 의도 제거됨 — 스키마·derive·ops는
+ * back-compat 보존이므로 ops 경유 바인딩 회귀만 유지한다.
  * 사전: vite dev. 사용: node scripts/d2-smoke.mjs [vite 포트=5173]
  */
 import puppeteer from 'puppeteer-core';
@@ -33,28 +35,7 @@ try {
   if (await countKind('grid') !== 1) throw new Error('그리드 생성 실패');
   console.log('PASS  그리드 라벨 채널 회귀 (버블 렌더)');
 
-  // 2) 텍스트 도구 — 클릭 → DOM 입력 → 문자 → Enter
-  await page.evaluate(() => window.__figcad.ui.getState().setTool('text'));
-  await new Promise((r) => setTimeout(r, 150));
-  await page.mouse.click(640, 400);
-  await page.waitForSelector('input[type=text]', { timeout: 3000 });
-  await page.type('input[type=text]', '거실');
-  await page.keyboard.press('Enter');
-  await new Promise((r) => setTimeout(r, 200));
-  if (await countKind('text') !== 1) throw new Error(`텍스트 생성 실패 (${await countKind('text')})`);
-  console.log('PASS  텍스트 도구 DOM 입력 배치');
-
-  // 3) 치수 도구 — 2점 클릭
-  await page.evaluate(() => window.__figcad.ui.getState().setTool('dimension'));
-  await new Promise((r) => setTimeout(r, 150));
-  await page.mouse.click(500, 550);
-  await new Promise((r) => setTimeout(r, 80));
-  await page.mouse.click(800, 550);
-  await new Promise((r) => setTimeout(r, 200));
-  if (await countKind('dimension') !== 1) throw new Error(`치수 생성 실패 (${await countKind('dimension')})`);
-  console.log('PASS  치수 도구 2점 배치');
-
-  // 4) 바인딩 추종 — 벽 끝점에 치수 → 벽 이동 시 측정값 갱신
+  // 2) 바인딩 추종 — 벽 끝점에 치수(ops 경유) → 벽 이동 시 측정값 갱신
   const followed = await page.evaluate(() => {
     const { store, seed } = window.__figcad;
     const w = store.createWall({ levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [4000, 0] });
@@ -69,12 +50,12 @@ try {
   if (!followed) throw new Error('치수 바인딩 캡처/추종 실패');
   console.log('PASS  치수 바인딩 자동 캡처 + 벽 이동');
 
-  // 5) lint 클린
+  // 3) lint 클린
   const findings = await page.evaluate(() => window.__figcad.lint(window.__figcad.store).length);
   if (findings !== 0) throw new Error(`lint 경고 ${findings}건`);
   console.log('PASS  lint 클린');
 
-  // 6) 3D 전환 — 렌더 에러 없는지
+  // 4) 3D 전환 — 렌더 에러 없는지 (기존 dimension 요소 back-compat 렌더 포함)
   await page.evaluate(() => window.__figcad.ui.getState().setViewMode('3d'));
   await new Promise((r) => setTimeout(r, 250));
 

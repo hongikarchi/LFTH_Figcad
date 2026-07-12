@@ -42,8 +42,10 @@ try {
     return { refList: F.referenceLayer.list(), status: F.federation.statusOf?.(id), error: F.federation.errorOf?.(id), renderedSegments: verts / 2 };
   }, up.id);
   console.log('reconciler 결과:', JSON.stringify(out));
-  console.log(out.refList.includes(up.id) && out.renderedSegments > 1000
+  const ok = out.refList.includes(up.id) && out.renderedSegments > 1000 && errs.length === 0;
+  console.log(ok
     ? `✓ E2E 통과 — 서버 업로드→reconciler 페치·파싱·렌더 (${out.renderedSegments.toLocaleString()} 세그)`
-    : `✗ E2E 실패 — status=${out.status} err=${out.error}`);
+    : `✗ E2E 실패 — status=${out.status} err=${out.error} pageErrors=${errs.length}`);
   console.log('pageErrors:', JSON.stringify(errs));
+  process.exitCode = ok ? 0 : 1; // 러너(exit code 판정) 규약 — 미설정 시 회귀가 PASS로 위장
 } finally { await browser.close(); }
