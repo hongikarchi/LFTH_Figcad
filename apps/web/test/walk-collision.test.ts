@@ -109,6 +109,36 @@ describe('걷기 벽 충돌 (v1.1)', () => {
     walk.exit();
   });
 
+  it('글랜싱 각도(85°) 벽 비비기 — 수직 클리어런스 유지 + 관통 없음 (리뷰 실증 케이스)', () => {
+    // 벽면 x=-0.2(두께 0.4 벽의 +x면이 x=0... 박스 중심 x=-0.4, 폭 0.4 → +x면 = -0.2)
+    const wall = wallMesh(0.4, 4, 40, -0.4, 2, 0);
+    const { rig, walk } = makeWalk([wall]);
+    walk.enter(); // (0, 1.6, 0), -Z 바라봄. 벽면까지 수직거리 0.2
+    walk.setJoystick(-0.97, 0.24); // 전진+강한 좌측(-x쪽) = 벽으로 글랜싱 압박
+    simulate(walk, 300); // 5초 비비기
+    const eye = eyePos(rig);
+    // 구현이 레이 방향 차감이면 클리어런스가 R·cosθ≈3cm로 붕괴 + 0.08 탈출구 오발 → 관통(x<-0.2)
+    expect(eye.x).toBeGreaterThan(-0.2); // 관통 없음
+    expect(-0.2 - eye.x < 0 && eye.x - -0.2 >= 0.3).toBe(true); // 수직 클리어런스 ≈R 유지(≥0.3)
+    walk.exit();
+  });
+
+  it('DoubleSide 메시 내부 시작 = 데드락 없이 걸어나옴 (내부 백페이스 비차단)', () => {
+    // 0.5m 기둥(DoubleSide) 중심에서 시작 — 4면 모두 0.25m = 구현이 백페이스를 차단하면 전방위 고착
+    const col = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 4, 0.5),
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+    );
+    col.position.set(0, 2, 0);
+    col.updateMatrixWorld(true);
+    const { rig, walk } = makeWalk([col]);
+    walk.enter(); // 기둥 중심 (0,1.6,0)
+    walk.setJoystick(0, 1); // 전진(-Z)
+    simulate(walk, 240);
+    expect(Math.abs(eyePos(rig).z)).toBeGreaterThan(1); // 탈출 성공 (데드락이면 ≈0)
+    walk.exit();
+  });
+
   it('낭떠러지/보이드 = 현 높이 유지 (추락 없음 — 의도된 v1.1 정책)', () => {
     const { rig, walk } = makeWalk([]); // 바닥 없음
     walk.enter();

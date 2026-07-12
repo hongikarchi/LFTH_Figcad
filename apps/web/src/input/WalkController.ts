@@ -13,7 +13,9 @@ const SNAP_MAX_DROP = 10; // 이 이상 아래 바닥은 무시(m) — 낭떠러
 const PROBE_BUDGET_MS = 10; // 레이 예산 초과 → 세션 스냅 비활성(BVH 빌드 전 첫 레이 등 안전망)
 const SPEED_MIN = 0.25;
 const SPEED_MAX = 4;
-// 벽 충돌(v1.1) — 눈높이 + 허리(허리벽·난간·가구) 2레이, 반경 내 히트 시 접선 슬라이드
+// 벽 충돌(v1.1) — 눈높이 + 허리(허리벽·난간·가구) 2레이, 반경 내 히트 시 접선 슬라이드.
+// 허리(-0.9) 레이는 달리기+고배속에서 계단 라이저·스냅 지연과 경합해 자기치유 스터터/등반속도
+// 캡(~4m/s)을 만든다(리뷰 시뮬 실증 — 보행 2m/s 무영향, '못 오름' 아님. v1.1 의도 수용).
 const COLLIDE_RADIUS = 0.35; // m
 const COLLIDE_HEIGHT_OFFSETS = [0, -0.9]; // eye 기준
 const WALKABLE_NORMAL_Y = 0.7; // 히트 법선 |y|가 이 이상 = 바닥/램프(걸을 수 있음) — 충돌 아님
@@ -164,8 +166,13 @@ export class WalkController {
 
     const moving = Math.abs(this.vel.x) + Math.abs(this.vel.y) + Math.abs(this.vel.z) > 1e-3;
     if (moving) {
+      // 램프 고속 등반 침수 가드(리뷰 실증) — 스냅 lerp 용량을 넘는 상승 지연(lag>1m)이면 수평을
+      // 한 프레임 유보해 높이가 따라잡게 함. 안 하면 eye가 45° 램프면 아래로 침수 → 하방 레이가
+      // 면을 놓쳐(레이 원점 뒤) 램프 몸통 관통·아래층 추락. 계단은 라이저 차단이 자체 캡이라 무관.
+      this.rig.getWalkEye(this.eye);
+      const climbLagHold = this.targetY !== null && this.targetY - this.eye.y > 1.0;
       // 수평은 벽 충돌 해소 후 적용(v1.1 — 관통 방지·접선 슬라이드), 수직은 그대로
-      this.moveWithCollision(this.vel.z * dt, this.vel.x * dt);
+      if (!climbLagHold) this.moveWithCollision(this.vel.z * dt, this.vel.x * dt);
       if (Math.abs(this.vel.y) > 1e-6) this.rig.walkMove(0, 0, this.vel.y * dt);
       if (kv !== 0) this.targetY = null; // 수동 높이 조절 = 진행 중 스냅 lerp 취소
     }
@@ -199,10 +206,14 @@ export class WalkController {
    * 벽 충돌 해소 이동(v1.1) — 의도 수평 변위를 눈높이+허리 2레이로 검사, 반경 내 벽이면
    * 허용 거리까지 직진 후 잔여를 벽 접선으로 투영(슬라이드). 최대 2회 반복(코너).
    * 바닥/램프(법선 |y|≥0.7)는 충돌 아님 — 지면 스냅이 처리. 클립으로 잘린 면은 필터.
+   * 허용 거리는 **수직 클리어런스 기준**(리뷰 실증: 레이 방향 차감이면 글랜싱 θ=85°에서
+   * 클리어런스 R·cosθ≈3cm까지 붕괴 → near 0.1m 시스루 + 탈출구 오발 관통).
+   * 마무리로 히트 법선 방향 푸시아웃 1발 — 탐지 사각(수직 접근)으로 스며든 밀착 해소.
    */
   private moveWithCollision(dForward: number, dRight: number): void {
     const remaining = this.rig.walkDeltaWorld(dForward, dRight, this._delta);
     const applied = this._applied.set(0, 0, 0);
+    let lastWallNormal: THREE.Vector3 | null = null;
     for (let iter = 0; iter < 2; iter++) {
       const len = remaining.length();
       if (len < 1e-7) break;
@@ -212,14 +223,12 @@ export class WalkController {
         applied.add(remaining);
         break;
       }
-      // 깊은 매몰 탈출구(리뷰) — DoubleSide/뒤집힌 노멀 메시 **안**에서 시작하면 negate 법선이
-      // 전방위 이동을 막아 데드락. 벽 표면에 정상 접촉한 경우(distance≈R)와 달리 매몰은
-      // distance가 극소 → 이 프레임은 충돌 무시하고 걸어나가게 허용.
-      if (hit.distance < 0.08) {
-        applied.add(remaining);
-        break;
-      }
-      const allowed = Math.max(0, hit.distance - COLLIDE_RADIUS);
+      lastWallNormal = this._normal;
+      // 수직 클리어런스 R 유지: cos = 이동방향·(−법선), 수직거리 p = d·cos.
+      // 이동량 a만큼 p가 a·cos 감소 → a = (d·cos − R)/cos. cos≈0(거의 평행)이면 전진이
+      // 수직거리를 거의 안 줄이므로 자유 통과에 가깝게 두되 푸시아웃이 밀착을 정리.
+      const cos = -this._dir.dot(this._normal);
+      const allowed = cos < 0.05 ? len : Math.max(0, (hit.distance * cos - COLLIDE_RADIUS) / cos);
       if (allowed >= len) {
         applied.add(remaining);
         break;
@@ -232,6 +241,22 @@ export class WalkController {
       if (into < 0) remaining.addScaledVector(n, -into);
     }
     if (applied.lengthSq() > 0) this.rig.walkMoveWorld(applied.x, applied.z);
+    // 푸시아웃 — 이동 후 마지막 벽 법선 반대 방향으로 R 프로브: 수직 접근 등 탐지 사각으로
+    // R 안까지 스며든 밀착을 법선 방향으로 밀어내 클리어런스 복원(캡슐 스윕의 저비용 근사).
+    if (lastWallNormal && applied.lengthSq() > 0) {
+      this.rig.getWalkEye(this.eye);
+      this._dir.copy(lastWallNormal).negate(); // 벽 쪽
+      this.rayOrigin.set(this.eye.x, this.eye.y, this.eye.z);
+      this.raycaster.set(this.rayOrigin, this._dir);
+      this.raycaster.far = COLLIDE_RADIUS;
+      this.raycaster.camera = this.rig.active;
+      const hits = this.raycaster.intersectObjects(this.deps.groundRoots(), true);
+      const h = hits.find((x) => (x.object as THREE.Mesh).isMesh && x.face && this.isVisible(x.object));
+      if (h) {
+        const push = COLLIDE_RADIUS - h.distance;
+        if (push > 1e-4) this.rig.walkMoveWorld(lastWallNormal.x * push, lastWallNormal.z * push);
+      }
+    }
   }
 
   /** 수평 방향 최근접 벽 히트 — 2 높이 레이, 가시·클립 필터, 걷기 가능 경사 제외. _normal에 수평화 법선 기록 */
@@ -251,6 +276,11 @@ export class WalkController {
         if (clips.some((p) => p.distanceToPoint(h.point) < -1e-6)) continue; // 클립으로 잘린 면
         this._candN.copy(h.face.normal).transformDirection(h.object.matrixWorld);
         if (Math.abs(this._candN.y) >= WALKABLE_NORMAL_Y) continue; // 바닥/램프 — 통과
+        // 내부 백페이스 제외(리뷰 실증) — DoubleSide 임포트 메시 **안**에서는 원시 법선이 이동
+        // 방향과 같은 쪽(뒷면을 안에서 봄) + 지근거리. 차단하면 기둥/가구 내부 전방위 데드락
+        // (구 0.08 탈출구는 0.08~0.35 밴드를 못 구제 — 대체). 뒤집힌 법선 벽을 밖에서 R 이내로
+        // 보는 경우는 이미 관통 후에만 발생하므로 트레이드오프 안전.
+        if (this._candN.dot(dir) > 0 && h.distance < COLLIDE_RADIUS) continue;
         if (!nearest || h.distance < nearest.distance) {
           nearest = h;
           this._normal.copy(this._candN);
