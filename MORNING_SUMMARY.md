@@ -1,41 +1,32 @@
-# 야간 자율 작업 요약 (2026-07-01, Phase 9 PRD 루프)
+# 자율 개선 루프 요약 (2026-07-12, feat/loop-260712)
 
-> 지시: "단면 그래픽 마무리 → 그 다음 PRD 기준 기획자 검토 → 개발 → 재검토 루프를 8시까지 자율 진행."
-> 방식: **기획자(planner) 검토 → 개발자 구현 → 어드버서리얼 리뷰어 검증 → 수정** 루프를 5사이클 돌림.
-> 결과 = 브랜치 `feat/prd-loop` (**미배포** — 검토 후 배포 결정). master 무변경. 라이브(Railway) 영향 없음.
+> 세션 진행 중 지속 갱신. 상세 감사 로그 = `LOOP_LEDGER.md`.
+> 플랜: `~/.claude/plans/fable-fluffy-adleman.md` (사용자 승인 2026-07-12 — 스트림 A뷰·C걷기·E하드닝·F소품, §C 권장 디폴트 채택, B-P1 포함·즉시실행)
 
 ## TL;DR
-실시간 단면(클립+절단선)을 사용자 요구대로 완성하고, 거기서 PRD 기준으로 "중립 리뷰 허브 마무리" 갭을 메웠습니다. 핵심 신규 = **실시간 단면(굵은 절단선)** + **줄자 측정**. 정체성 3축(웹·실시간·AI)에 정렬, 드리프트 없음. 모든 기능은 멀티에이전트 적대적 리뷰 통과 + 실모델(신정동 정리본 35MB / 60MB) 스모크 검증.
 
-## 한 일 (브랜치 7커밋, 이번 루프)
-| 커밋 | 내용 |
-|---|---|
-| `704c505` | **실시간 단면선** — 클립이 3D서 라이브로 동작하면서 절단면에 도면화(절단선). CPU 메시∩평면 윤곽 = **열린 매싱서도 동작**(스텐실 캡은 새서 폐기). |
-| `6f04166` | fork 버튼 제거 — F2 branch/merge 미검증인데 조기 출하라 정리(핸드오프 배선은 보존). |
-| `c0f6d62` | 단면선 리뷰 수정 — **"60MB 렉" 주장을 실측으로 기각**(단일 1.25M tri 메시 ~31ms, AABB cull은 0% no-op). 진짜 버그만 수정(숨긴/2D 오버레이 유령선, flip 깜빡임, 버퍼 churn). |
-| `48055d8` | **줄자 측정** — 임포트 오버레이 메시 위 3D 거리 측정(일회성·비저장 = 읽기전용서도 됨). |
-| `20014cf` | 측정 리뷰 수정(8건) + **폰 측정 버튼** — 모드전환 리셋·숨김 오버레이 비스냅·최소길이 가드 등. |
-| `cd7a5a9` | **굵은 단면선** — LineSegments2/LineMaterial(라이노식). 1px 헤어라인 → 2.5px. |
-| `ec04371` | ROADMAP 동기화(이 요약의 결정사항 포함). |
+자율 개선 루프 가동 중. loop-0 부트스트랩 완료: **스모크 통합 러너**(29종 자동 오케스트레이션, 전부 GREEN) + **apps/web 첫 단위테스트**(CameraRig 26케이스) + T0 게이트 606케이스. 이후 회차: 뷰 시스템(A-S1~S4) → AI ui-action → 걷기 v1.1 → 하드닝.
 
-(이전 야간 P0 배치 5커밋 = 오버레이 3D 코멘트·pull-latest·폰 리뷰 동사 등은 그 전에 완료.)
+## 커밋 (feat/loop-260712 — master 미머지, 미배포)
 
-## 검증
-- 전체 모노레포 typecheck ✅ · core 388 테스트 ✅
-- 실모델 puppeteer 스모크: 단면선 7979세그, 측정 135.43m 칩 정합, 숨김오버레이 비스냅, 폰 측정버튼, 굵은선 resolution이 resize 추적, mobile-smoke 14, fork-smoke(배선 보존) — 전부 통과.
-- 각 기능마다 멀티에이전트 적대적 리뷰(review→verify): 단면선 10건·측정 8건 확정 → 수정. 굵은선 리뷰 무이슈.
+| 커밋 | 내용 | 게이트 |
+|---|---|---|
+| (loop-0 커밋 후 기입) | 스모크 러너 + web vitest + 소품 | T0 606 ✅ · 스모크 29/29 ✅ |
 
 ## 아침 결정 대기 (당신 몫)
-1. **배포?** — 검토 후 OK면 `railway up` (overnight 규칙상 제가 배포 안 함).
-2. **`create_text` AI 노출 컷** — text 종류는 UI 팔레트선 제거됐는데 AI는 아직 생성 가능(일관성 깨짐). 노출 끄기 권장하나 제품 판단이라 안 건드림.
-3. **공유 단면/뷰포인트** (presence awareness) — "같은 클래시 라이브로 가리키며 조율" = 실시간 해자 정수. greenlight 시 다음 구현 1순위(콜라보 민감해 무인 구현은 보류).
-4. **단면 해치/poché** — 닫힌 솔리드만 가능, 사용자 .3dm은 열린 매싱이라 보류(절단선만 = 정직).
 
-## 알려진 한계
-- 단면선은 **오버레이 메시만**(네이티브 벽/슬라브 X) — 설계상 의도(이중그리기 방지). 모닝 판단.
-- 측정 줄자선은 활성 단면에 클립됨(DimensionTool과 동일) — 단 **거리 숫자는 DOM 칩이라 항상 보임**.
-- 굵은선 색 `0x1d1d1f`(흰 클레이 대비 양호).
+1. **master 머지 + 배포** — 루프 산출물 검토 후 ff-merge + `railway up`. (직전 미배포 커밋 8개도 함께 나감 — 재질 페인트 opacity strip 롤아웃 창 유의: 배포 후 열린 탭 새로고침 안내)
+2. **AI 키 + US 리전** — 설정되면 `node apps/web/scripts/run-smokes.mjs --tags agent`로 실 AI 왕복 검증 즉시 가능 (agent-live-smoke는 키 없으면 SKIP).
+
+## 알려진 한계 / 리뷰 수용 항목
+
+- (진행 중 기입)
 
 ## 검토 방법
-- 로컬: `corepack pnpm -F @figcad/web dev` (vite) + `node apps/server/dev-node.mjs` → import 신정동 .3dm → 우하단 **단면** 토글 + 좌측 **측정**. (주의: dev-node는 WS 동기 전용 — 커넥터 `?op=` API 검증은 `node apps/server/dev.mjs` 사용, dev-node는 /parties/ op에 503.)
-- 브랜치: `git checkout feat/prd-loop` (master에서 분기, 11커밋).
+
+```bash
+git log master..feat/loop-260712 --oneline
+corepack pnpm typecheck && corepack pnpm test          # T0: 606케이스
+node apps/web/scripts/run-smokes.mjs --all             # 전 스모크 (vite/백엔드 자동 기동)
+node apps/web/scripts/run-smokes.mjs --list            # 매니페스트 요약
+```
