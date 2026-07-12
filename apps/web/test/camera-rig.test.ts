@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CameraRig, lensMmToFovDeg } from '../src/engine/CameraRig';
 
-// CameraRig 현행동작 고정(characterization) — 뷰 시스템 개편(A-S1~S4) 전 안전망.
-// 개편이 의도적으로 바꾸는 동작(입면=원근, phi 상한 등)은 해당 슬라이스에서 테스트도 함께 갱신한다.
+// CameraRig 동작 고정 — S1(입면 true ortho + projection 축)·S4(full-sphere 오빗) 반영본.
+// 남은 개편(S3 포즈 트윈)이 바꾸는 동작은 해당 슬라이스에서 테스트도 함께 갱신한다.
 
 const MIN_PHI = 0.05;
-const MAX_PHI = Math.PI / 2 - 0.02;
+const MAX_PHI = Math.PI - 0.05; // A-S4 full-sphere (극점 특이점만 회피)
 
 function makeRig(): CameraRig {
   return new CameraRig(1280 / 800);
@@ -78,49 +78,157 @@ describe('기본 상태·모드 전환', () => {
   });
 });
 
-describe('setView 프리셋 (현행: 입면=원근 스냅 — S1에서 ortho로 교체 예정)', () => {
-  it('front = 남쪽에서 북(+Z) 바라봄, 수평 시선, active=원근', () => {
+describe('setView 프리셋 (S1: 입면/저면 = true ortho, iso = 원근)', () => {
+  it('front = 남쪽에서 북(+Z) 바라봄, 수평 시선, active=직교(입면)', () => {
     const rig = makeRig();
     rig.setView('front');
     const pose = rig.getPose();
     expect(pose.theta).toBeCloseTo(Math.PI, 9);
-    expect(pose.phi).toBeCloseTo(Math.PI / 2, 9); // setView는 phi 클램프 미적용(현행)
-    const cam = rig.active as THREE.PerspectiveCamera;
-    expect(cam.isPerspectiveCamera).toBe(true);
+    expect(pose.phi).toBeCloseTo(Math.PI / 2, 9); // full-sphere라 π/2가 클램프 내 (오빗 튐 해소)
+    const cam = rig.active as THREE.OrthographicCamera;
+    expect(cam.isOrthographicCamera).toBe(true); // 8b — 원근 왜곡 없는 입면
     expect(cam.position.z).toBeLessThan(pose.target[2]); // 카메라가 타깃 남쪽(-Z)
     expect(Math.abs(cam.position.y - pose.target[1])).toBeLessThan(1e-6); // 수평
+    // 입면 ortho도 X반사(plan과 동일 이유 — 문서→월드 매핑 반사 교정)
+    expect(cam.left).toBeGreaterThan(0);
+    expect(cam.right).toBeLessThan(0);
+  });
+
+  it('chirality — 남측 입면에서 동쪽(+X)이 화면 오른쪽 (실세계·Rhino Front·plan과 일치)', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    rig.active.updateMatrixWorld();
+    const eastFront = new THREE.Vector3(5, 0, 0).project(rig.active).x;
+    expect(eastFront).toBeGreaterThan(0); // 반사 교정 전엔 −0.24(왼쪽 거울상)
+    // 자체 plan 뷰와도 일관 — 같은 동쪽 점이 양쪽 모두 화면 오른쪽
+    rig.setMode('plan');
+    finishTween(rig);
+    rig.active.updateMatrixWorld();
+    expect(new THREE.Vector3(5, 0, 0).project(rig.active).x).toBeGreaterThan(0);
+  });
+
+  it('입면 ortho 프러스텀 반높이 = distance·tan(fov/2) — persp↔ortho 스왑 무봉합', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    const cam = rig.active as THREE.OrthographicCamera;
+    const pose = rig.getPose();
+    const expected = pose.distance * Math.tan((55 / 2) * (Math.PI / 180));
+    expect(cam.top - cam.bottom).toBeCloseTo(2 * expected, 9);
+    // worldPerPixel 3d 공식이 ortho 프러스텀 매핑과 정확히 일치
+    expect(rig.worldPerPixel()).toBeCloseTo((cam.top - cam.bottom) / 800, 9);
   });
 
   it('right = 동쪽서 서쪽 바라봄 (+X측)', () => {
     const rig = makeRig();
     rig.setView('right');
-    const cam = rig.active as THREE.PerspectiveCamera;
+    const cam = rig.active as THREE.OrthographicCamera;
     expect(cam.position.x).toBeGreaterThan(rig.getPose().target[0]);
   });
 
-  it('top = plan 모드 경로 재사용', () => {
+  it('bottom = 아래서 올려다봄 (φ=MAX_PHI, 직교)', () => {
     const rig = makeRig();
-    rig.setView('top');
-    expect(rig.mode).toBe('plan');
+    rig.setView('bottom');
+    const cam = rig.active as THREE.OrthographicCamera;
+    expect(cam.isOrthographicCamera).toBe(true);
+    expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9);
+    expect(cam.position.y).toBeLessThan(rig.getPose().target[1]); // 카메라가 타깃 아래
   });
 
-  it('iso = 기본 등각 복귀', () => {
+  it('입면 ortho에서 orbit = 팬 (Rhino 평행 뷰 의미론, X반사 방향 고정)', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    const before = rig.getPose();
+    rig.orbit(100, 0); // 오른쪽 드래그 → 콘텐츠가 커서 따라옴 → target은 -X (plan과 동일 부호 반전)
+    const after = rig.getPose();
+    expect(after.theta).toBeCloseTo(before.theta, 9); // 회전 안 함
+    expect(after.target[0]).toBeLessThan(before.target[0]);
+    expect(rig.isOrtho).toBe(true); // ortho 유지
+  });
+
+  it('입면 ortho에서 setPivot 무시 — RMB 피벗이 축정렬 입면을 기울이지 않음', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    const before = rig.getPose();
+    rig.setPivot(5, 2, 3); // 리뷰 실증: 가드 없으면 시선축 12° 기울어 사선 액소노로 변형
+    expect(rig.getPose()).toEqual(before);
+    expect(rig.isOrtho).toBe(true);
+  });
+
+  it('입면 ortho fitBounds = tan(fov/2) 공식 (sin 공식이면 실여유율 1.30 과줌아웃)', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    rig.fitBounds(new THREE.Vector3(-50, 0, -50), new THREE.Vector3(50, 10, 50));
+    const expected = (50 / Math.tan((55 / 2) * (Math.PI / 180))) * 1.15;
+    expect(rig.getPose().distance).toBeCloseTo(expected, 6);
+  });
+
+  it('front 입면 = 북축 퇴화 — northScreenAngle 마지막 유효각 유지(float 노이즈 각도 금지)', () => {
+    const rig = makeRig();
+    const isoAngle = rig.northScreenAngle(); // 등각에서 유한 유효각
+    rig.setView('front'); // 북(0,0,1)이 시선과 평행 → 화면 Δ≈1e-15px
+    expect(rig.northScreenAngle()).toBeCloseTo(isoAngle, 9);
+  });
+
+  it('top = plan 모드 경로 재사용 (입면 ortho 상태서도 plan 경로로 정상 진입)', () => {
+    const rig = makeRig();
+    rig.setView('front');
+    rig.setView('top');
+    expect(rig.mode).toBe('plan');
+    finishTween(rig);
+    const cam = rig.active as THREE.OrthographicCamera;
+    expect(cam.left).toBeGreaterThan(0); // plan X반사 프러스텀 (입면 표준 방향 잔존 없음)
+    expect(cam.right).toBeLessThan(0);
+  });
+
+  it('iso = 기본 등각 + 원근 복귀', () => {
     const rig = makeRig();
     rig.setView('front');
     rig.setView('iso');
     const pose = rig.getPose();
     expect(pose.theta).toBeCloseTo(Math.PI / 4, 9);
     expect(pose.phi).toBeCloseTo(Math.PI / 4.5, 9);
+    expect(rig.isOrtho).toBe(false);
+  });
+
+  it('setMode·setPose·enterWalk는 입면 ortho를 원근으로 리셋', () => {
+    const a = makeRig();
+    a.setView('front');
+    a.setMode('plan');
+    finishTween(a);
+    a.setMode('3d');
+    finishTween(a);
+    expect(a.isOrtho).toBe(false);
+
+    const b = makeRig();
+    b.setView('front');
+    b.setPose({ target: [0, 0, 0], distance: 30, theta: 1, phi: 1 }); // 뷰포인트 점프 = 원근 의미론
+    expect(b.isOrtho).toBe(false);
+
+    const c = makeRig();
+    c.setView('front');
+    c.enterWalk(1.6); // 걷기 = 항상 원근
+    expect((c.active as THREE.PerspectiveCamera).isPerspectiveCamera).toBe(true);
   });
 });
 
 describe('오빗·줌·팬', () => {
-  it('rotate는 phi를 [MIN_PHI, MAX_PHI]로 클램프 (현행: 아래서 올려다보기 불가 — S4 대상)', () => {
+  it('rotate는 phi를 [MIN_PHI, MAX_PHI=π−0.05]로 클램프 — full-sphere(S4)', () => {
     const rig = makeRig();
-    rig.rotate(0, -10000); // phi 증가 방향(수평 시선 쪽)
+    rig.rotate(0, -10000); // phi 증가 방향(수평 지나 아래서 올려다보기까지)
     expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9);
     rig.rotate(0, 10000); // phi 감소 방향(탑다운 쪽)
     expect(rig.getPose().phi).toBeCloseTo(MIN_PHI, 9);
+  });
+
+  it('full-sphere: rotate로 수평(π/2)을 지나 아래서 올려다보기 도달', () => {
+    const rig = makeRig();
+    rig.rotate(0, -400); // phi: π/4.5 + 2.0 ≈ 2.698 — 수평 넘어 하방 시점
+    const phi = rig.getPose().phi;
+    expect(phi).toBeGreaterThan(Math.PI / 2);
+    expect(phi).toBeLessThan(MAX_PHI);
+    // 아래서 본 상태에서 카메라가 실제로 타깃보다 낮은가
+    const cam = rig.active as THREE.PerspectiveCamera;
+    expect(cam.position.y).toBeLessThan(rig.getPose().target[1]);
   });
 
   it('zoom은 distance를 [1, 5000]으로 클램프', () => {
@@ -194,11 +302,13 @@ describe('getPose/setPose', () => {
     expect(p.phi).toBeCloseTo(0.9, 9);
   });
 
-  it('setPose는 phi/distance 클램프 (현행 MAX_PHI 상한 — S4 대상)', () => {
+  it('setPose는 phi/distance 클램프 — full-sphere 상한(π−0.05), 하방 포즈 보존', () => {
     const rig = makeRig();
     rig.setPose({ target: [0, 0, 0], distance: 99999, theta: 0, phi: 3 });
     expect(rig.getPose().distance).toBe(5000);
-    expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9);
+    expect(rig.getPose().phi).toBeCloseTo(3, 9); // 구 상한(π/2−0.02)이면 잘렸을 포즈 — 입면 뷰포인트 복원 정확
+    rig.setPose({ target: [0, 0, 0], distance: 30, theta: 0, phi: 3.2 });
+    expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9); // 극점 밖만 클램프
   });
 });
 
@@ -258,15 +368,25 @@ describe('걷기(1인칭)', () => {
     expect(rig.getPose().distance).toBe(50); // WALK_EXIT_MAX_DIST 정확값
   });
 
-  it('exitWalk 수평 시선(phi 클램프 발동)에서도 위치 점프 0 — walkToOrbit 역산 불변식', () => {
+  it('exitWalk 수평 시선 = 정확 복원 (S4: π/2가 클램프 내 — 시선 하향 근사 소멸)', () => {
     const rig = makeRig();
-    rig.enterWalk(1.6); // pitch=0 → phi_raw=π/2 > MAX_PHI → 클램프 분기 실행
+    rig.enterWalk(1.6); // pitch=0 → phi=π/2 그대로 유효
     const cam = rig.active as THREE.PerspectiveCamera;
     const eye = cam.position.clone();
     rig.exitWalk();
     expect(cam.position.distanceTo(eye)).toBeLessThan(1e-6);
-    // 클램프가 실제로 발동했는지 고정 — S4에서 MAX_PHI 변경 시 이 기대값도 의도 갱신 대상
-    expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9);
+    expect(rig.getPose().phi).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it('exitWalk 극단 상방 시선(phi 클램프 발동)에서도 위치 점프 0 — walkToOrbit 역산 불변식', () => {
+    const rig = makeRig();
+    rig.enterWalk(1.6);
+    rig.walkLook(0, -5000); // pitch=+1.54 → phi_raw≈π−0.031 > MAX_PHI → 클램프 분기 실행
+    const cam = rig.active as THREE.PerspectiveCamera;
+    const eye = cam.position.clone();
+    rig.exitWalk();
+    expect(cam.position.distanceTo(eye)).toBeLessThan(1e-6); // 클램프된 phi 역방향 target 역산 = 위치 보존
+    expect(rig.getPose().phi).toBeCloseTo(MAX_PHI, 9); // 클램프 실제 발동 고정
   });
 
   it('걷기 중 getPose = 합성 오빗 포즈 (phi 클램프 내)', () => {

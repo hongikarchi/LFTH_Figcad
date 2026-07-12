@@ -357,15 +357,27 @@ export class SceneManager {
   }
 
   /**
-   * 라벨/핀 스프라이트 X 역-flip — plan 직교뷰는 프로젝션 X가 음수(동=右 위해 반사)라 스프라이트
+   * 라벨/핀 스프라이트 X 역-flip — X반사 프로젝션(plan 탑다운 + 입면/저면 ortho)은 스프라이트
    * quad(텍스트)가 거울로 그려진다. **텍스처 U를 뒤집어** 상쇄(반사×반사=정방향). scale.x 부호는
-   * 스프라이트 렌더러가 무시(|scale|)라 안 먹힘. 3D는 반사 없음 → repeat.x=1. 멱등.
+   * 스프라이트 렌더러가 무시(|scale|)라 안 먹힘. 원근 3D는 반사 없음 → repeat.x=1. 멱등.
+   * 반사 여부는 mirrorComp — main이 뷰 상태 변화(모드·프리셋·걷기·뷰포인트) 시 동기.
    */
+  private mirrorComp = false;
+
+  /** 프로젝션 X 반사 상쇄 상태 동기 (plan 또는 입면 ortho) — 변화 시 전 스프라이트 재적용 */
+  setMirrorComp(on: boolean): void {
+    if (on === this.mirrorComp) return;
+    this.mirrorComp = on;
+    for (const entry of this.entries.values()) for (const s of entry.sprites) this.flipSprite(s);
+    for (const s of this.commentPins.values()) this.flipSprite(s);
+    this.engine.requestRender();
+  }
+
   private flipSprite(s: THREE.Sprite): void {
     const map = (s.material as THREE.SpriteMaterial).map;
     if (!map) return;
     map.center.set(0.5, 0.5);
-    map.repeat.x = this.viewMode === 'plan' ? -1 : 1;
+    map.repeat.x = this.mirrorComp ? -1 : 1;
     map.needsUpdate = true;
   }
 

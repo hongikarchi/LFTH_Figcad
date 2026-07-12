@@ -7,6 +7,19 @@ const plane = new THREE.Plane();
 const hit = new THREE.Vector3();
 const wtsScratch = new THREE.Vector3(); // worldToScreen 재사용(프레임 루프 할당 0 — HUD 재투영 핫패스)
 
+// 그레이징 가드 — 입면 true ortho(φ=π/2)에서 cos(π/2) float 잔차(≈6e-17)로 레이가 지면과
+// "거의 평행"인데 intersectPlane의 분모≠0 통과 → t≈1e17 m 히트 = 문서에 1e20 mm 요소 커밋 경로.
+// |dir·n| ε 컷 + 히트 거리 상한 이중 가드 (정상 히트는 km 단위 이내).
+const GRAZING_EPS = 1e-9;
+const MAX_HIT_M = 1e5;
+
+function planeHit(out: THREE.Vector3): THREE.Vector3 | null {
+  if (Math.abs(raycaster.ray.direction.dot(plane.normal)) < GRAZING_EPS) return null;
+  if (!raycaster.ray.intersectPlane(plane, out)) return null;
+  if (Math.abs(out.x) > MAX_HIT_M || Math.abs(out.y) > MAX_HIT_M || Math.abs(out.z) > MAX_HIT_M) return null;
+  return out;
+}
+
 /** 화면 좌표 → 지면 평면(레벨 elevation, m) 교차점 → 문서 mm 좌표 */
 export function screenToDoc(
   clientX: number,
@@ -17,7 +30,7 @@ export function screenToDoc(
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   plane.set(new THREE.Vector3(0, 1, 0), -elevationM);
-  if (!raycaster.ray.intersectPlane(plane, hit)) return null;
+  if (!planeHit(hit)) return null;
   return [hit.x * 1000, hit.z * 1000];
 }
 
@@ -108,8 +121,7 @@ export function screenToWorldPlane(
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   plane.setFromNormalAndCoplanarPoint(normal, origin);
-  const out = new THREE.Vector3();
-  return raycaster.ray.intersectPlane(plane, out) ? out : null;
+  return planeHit(new THREE.Vector3());
 }
 
 /** 월드(m) → 화면 px (HUD 배치용). z = NDC 깊이 — |z|>1이면 절두체 밖(특히 카메라 뒤=미러 좌표). */

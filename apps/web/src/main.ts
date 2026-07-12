@@ -114,8 +114,17 @@ const sceneManager = new SceneManager(store, engine, hud);
 // M13 멀티모델 허브: 외부 모델 read-only 오버레이(별도 표현, derive·store 밖 — 불변①).
 // reconciler가 동기화된 federation 채널을 ReferenceLayer(로컬 메시)에 반영(명령형 — 불변③).
 const referenceLayer = new ReferenceLayer(engine);
-referenceLayer.setPlanFlipped(useUiStore.getState().viewMode === 'plan'); // 초기 모드 반영(뷰모드 변경 훅이 init엔 안 불림 → 평면서 업로드 시 텍스트 미러 방지)
 const federation = new FederationReconciler(store, referenceLayer, FEDERATION_EXTRACTORS, fetchDwgUnderlay);
+// 프로젝션 X 반사 상쇄 동기 — plan 탑다운 또는 입면/저면 ortho(A-S1)면 스프라이트 텍스트가 거울로
+// 그려지므로 텍스처 U 반전으로 상쇄. rig.projection은 rig 내부 상태라 뷰 상태를 바꾸는 모든 경로
+// (viewMode 구독·setView 프리셋·뷰포인트 점프·걷기 진입)에서 이 헬퍼로 재동기한다.
+const syncMirrorComp = () => {
+  const mirrored =
+    useUiStore.getState().viewMode === 'plan' || (rig.mode === '3d' && !rig.isWalking && rig.isOrtho);
+  sceneManager.setMirrorComp(mirrored);
+  referenceLayer.setPlanFlipped(mirrored);
+};
+syncMirrorComp(); // 초기 모드 반영(뷰모드 변경 훅이 init엔 안 불림 → 평면서 업로드 시 텍스트 미러 방지)
 // 재질 오버라이드(materials 채널) → ReferenceLayer 재질 재적용 (페인트 도구 — 임포트 레이어/카테고리 도색)
 new MaterialReconciler(store, referenceLayer);
 const diffOverlay = new DiffOverlay(engine.scene); // 버전 비교 3D 오버레이(항목4) — VersionPanel이 previewDiff로 구동
@@ -456,7 +465,7 @@ useUiStore.subscribe((state, prev) => {
   if (state.viewMode !== prev.viewMode || state.activeLevelId !== prev.activeLevelId) {
     rig.setMode(state.viewMode);
     sceneManager.setViewContext(state.viewMode, state.activeLevelId);
-    referenceLayer.setPlanFlipped(state.viewMode === 'plan'); // 언더레이 텍스트 미러 상쇄
+    syncMirrorComp(); // plan/입면 ortho 반사 상쇄 (라벨·핀·언더레이 텍스트)
     // 측정 중/완료 상태에서 모드·층 전환 = 3D 표면점과 지면점이 섞여 잘못된 거리 → 리셋(Codex 리뷰).
     if (tools.active instanceof MeasureTool) tools.active.cancel();
     engine.requestRender();
@@ -471,7 +480,8 @@ useUiStore.subscribe((state, prev) => {
     document.body.classList.add('walk-active');
     tools.cancel(); // 진행 중 드로우 체인 정리 (도구 자체는 유지 — 탭 클릭 계속 동작)
     rig.setFov(lensMmToFovDeg(state.lensMm));
-    walk.enter();
+    walk.enter(); // enterWalk가 projection persp 리셋 — 입면 ortho서 진입해도 원근
+    syncMirrorComp();
     if (hasTouch) joystick.show();
     hud.toast(hasTouch ? '왼쪽 스틱 이동 · 화면 드래그 둘러보기' : 'WASD 이동 · 드래그 둘러보기 · 휠 속도 · Esc 종료');
     engine.requestRender();
@@ -585,7 +595,8 @@ const viewActions = {
     exitWalk();
     const s = useUiStore.getState();
     s.setViewMode(vp.viewMode); // 구독이 rig.setMode + sceneManager.setViewContext
-    rig.setPose(vp.camera);
+    rig.setPose(vp.camera); // projection persp 리셋 포함
+    syncMirrorComp();
     s.setClipState(vp.clip);
     currentClip = vp.clip;
     applyClip();
@@ -602,6 +613,7 @@ const viewActions = {
     exitWalk();
     rig.setView(preset);
     useUiStore.getState().setViewMode(rig.mode);
+    syncMirrorComp(); // 입면/저면 ortho = X반사 — viewMode 무변화(3d 유지)라 구독이 안 불림
     engine.requestRender();
   },
 };

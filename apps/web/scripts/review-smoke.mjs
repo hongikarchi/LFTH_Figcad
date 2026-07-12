@@ -229,15 +229,37 @@ try {
 
   if (!(await clickGizmo('Front'))) throw new Error('ViewGizmo Front 버튼 없음');
   await sleep(200);
-  const front = await page.evaluate(() => ({
-    mode: window.__figcad.rig.mode,
-    viewMode: window.__figcad.ui.getState().viewMode,
-    pose: window.__figcad.rig.getPose(),
-  }));
+  const front = await page.evaluate(() => {
+    const cam = window.__figcad.rig.active;
+    cam.updateMatrixWorld();
+    // 동쪽(+X 5m) 점의 NDC x — 남측 입면에서 동=화면 오른쪽(>0)이어야 실세계·plan과 일치(chirality)
+    const V = cam.matrixWorldInverse.elements, P = cam.projectionMatrix.elements;
+    const mul = (M, v) => [0, 1, 2, 3].map((r) => M[r] * v[0] + M[r + 4] * v[1] + M[r + 8] * v[2] + M[r + 12] * v[3]);
+    const c = mul(P, mul(V, [5, 0, 0, 1]));
+    return {
+      mode: window.__figcad.rig.mode,
+      viewMode: window.__figcad.ui.getState().viewMode,
+      pose: window.__figcad.rig.getPose(),
+      ortho: cam.isOrthographicCamera === true,
+      eastNdcX: c[0] / c[3],
+    };
+  });
   if (front.mode !== '3d' || front.viewMode !== '3d') throw new Error(`Front 후 mode 기대 3d: rig=${front.mode} ui=${front.viewMode}`);
   if (Math.abs(front.pose.theta - Math.PI) > 1e-3) throw new Error(`Front 후 theta 기대 π, 실제 ${front.pose.theta}`);
   if (Math.abs(front.pose.phi - Math.PI / 2) > 1e-3) throw new Error(`Front 후 phi 기대 π/2(수평), 실제 ${front.pose.phi}`);
-  console.log(`PASS  뷰 기즈모 Front — 3D 남→북 입면 방위 (theta=${front.pose.theta.toFixed(3)}, phi=${front.pose.phi.toFixed(3)})`);
+  if (!front.ortho) throw new Error('Front(입면) 후 활성 카메라가 직교가 아님 — 8b true ortho 회귀');
+  if (!(front.eastNdcX > 0)) throw new Error(`Front 입면 chirality 반전 — 동쪽이 화면 왼쪽 (ndcX=${front.eastNdcX})`);
+  console.log(`PASS  뷰 기즈모 Front — 남측 입면 true ortho·동=오른쪽 (phi=${front.pose.phi.toFixed(3)}, eastNdcX=${front.eastNdcX.toFixed(3)})`);
+
+  // 입면 ortho → Iso 복귀 = 원근 재개 (projection 잔존 회귀 가드)
+  if (!(await clickGizmo('Iso'))) throw new Error('ViewGizmo Iso 버튼 없음');
+  await sleep(200);
+  const iso = await page.evaluate(() => ({
+    ortho: window.__figcad.rig.active?.isOrthographicCamera === true,
+    pose: window.__figcad.rig.getPose(),
+  }));
+  if (iso.ortho) throw new Error('Iso 복귀 후에도 직교 잔존');
+  console.log(`PASS  뷰 기즈모 Iso 복귀 — 원근 재개 (phi=${iso.pose.phi.toFixed(3)})`);
 
   if (errors.length) throw new Error(`콘솔/페이지 에러: ${errors.slice(0, 3).join(' | ')}`);
   console.log('\n리뷰 기능 스모크 통과 (줄자 · 뷰포인트 · 버전 3D 비교 · 뷰 기즈모)');
