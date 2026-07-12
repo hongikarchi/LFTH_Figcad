@@ -1378,6 +1378,18 @@ export class DocStore {
     this.transact(() => this.yFederation.set(id, next));
   }
 
+  /**
+   * PDF 언더레이 페이지 선택(1-base). underlay 없는 소스·pdf 아닌 소스면 no-op.
+   * 상한 검증은 클라(리컨실러가 pageCount로 클램프) — 문서엔 요청 페이지만 기록.
+   */
+  setUnderlayPage(id: Id, page: number): void {
+    const cur = this.federationSources.get(id);
+    if (!cur?.underlay || cur.sourceType !== 'pdf') return;
+    const underlay = { ...cur.underlay, page: Math.max(1, Math.round(page)) };
+    const next = FederationSourceSchema.parse({ ...cur, underlay });
+    this.transact(() => this.yFederation.set(id, next));
+  }
+
   listFederationSources(): FederationSource[] {
     return [...this.federationSources.values()];
   }

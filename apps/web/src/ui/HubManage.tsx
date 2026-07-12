@@ -141,6 +141,30 @@ export function HubManage({
                   <span title={err ?? statusLabel}>{dot}</span> {SOURCE_BADGE[s.sourceType]}
                 </span>
               </button>
+              {/* PDF 다중 페이지 — 문서(underlay.page) 공유라 협업자 전원이 같은 페이지를 봄 */}
+              {s.sourceType === 'pdf' && (federation.pageCountOf(s.id) ?? 1) > 1 && (
+                <>
+                  <button
+                    className="nav-edit"
+                    title="이전 페이지"
+                    disabled={status !== 'ready' || (s.underlay?.page ?? 1) <= 1}
+                    onClick={() => store.setUnderlayPage(s.id, (s.underlay?.page ?? 1) - 1)}
+                  >
+                    ‹
+                  </button>
+                  <span className="nav-meta" title="PDF 페이지">
+                    {federation.pageOf(s.id) ?? s.underlay?.page ?? 1}/{federation.pageCountOf(s.id)}
+                  </span>
+                  <button
+                    className="nav-edit"
+                    title="다음 페이지"
+                    disabled={status !== 'ready' || (federation.pageOf(s.id) ?? 1) >= (federation.pageCountOf(s.id) ?? 1)}
+                    onClick={() => store.setUnderlayPage(s.id, (s.underlay?.page ?? 1) + 1)}
+                  >
+                    ›
+                  </button>
+                </>
+              )}
               <button
                 className="nav-edit"
                 title="최신 다시 가져오기 (소스가 갱신됐을 때)"

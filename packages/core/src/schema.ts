@@ -610,6 +610,12 @@ export const FederationSourceSchema = z.object({
        * 라인워크(dwg/dxf)엔 무의미(부재). image는 scale = mm/px(쿼드 크기), origin/rotation 동일 의미.
        */
       opacity: z.number().min(0).max(1).optional(),
+      /**
+       * PDF 페이지 번호(1-base, sourceType 'pdf' 전용) — 다중 페이지 도면집에서 깔 페이지.
+       * 부재 = 1페이지. additive optional(clip/opacity 선례): 구빌드 zod는 미지 키 strip →
+       * 1페이지 표시로 우아한 강등(크래시·드롭 없음), schemaVersion 미bump.
+       */
+      page: z.number().int().min(1).optional(),
     })
     .optional(),
 });

@@ -33,6 +33,13 @@ interface LocalState {
   snapIndex?: UnderlaySnapIndex;
   /** 래스터(image/pdf): 디코드 결과 캐시 — 배치만 바뀌면 재페치·재디코드 없이 재렌더. */
   raster?: { source: ImageBitmap | HTMLCanvasElement; wMm: number; hMm: number };
+  /** 렌더된 PDF 페이지(1-base, 클램프 반영) — UI 표시용. */
+  rasterPage?: number;
+  /** 로드 시점의 **요청** 페이지(underlay.page) — 변경 감지는 이 값 기준(클램프된 요청 99가
+   *  렌더 2와 달라도 재로드 루프에 안 빠지게). */
+  rasterPageReq?: number;
+  /** PDF 총 페이지 수 — UI 스테퍼 상한 (image=1). */
+  pageCount?: number;
   /** 마지막 적용한 배치(origin/rotation/scale/clip/opacity) 시그 — 변경 감지용. */
   placementSig?: string;
 }
@@ -82,6 +89,15 @@ export class FederationReconciler {
   statusOf(id: Id): SourceStatus | undefined {
     return this.local.get(id)?.status;
   }
+  /** PDF 총 페이지 수 (ready 후) — 페이지 스테퍼 상한. 비PDF/미로드 = undefined */
+  pageCountOf(id: Id): number | undefined {
+    return this.local.get(id)?.pageCount;
+  }
+  /** 실제 렌더된 PDF 페이지(1-base, 클램프 반영) */
+  pageOf(id: Id): number | undefined {
+    return this.local.get(id)?.rasterPage;
+  }
+
   errorOf(id: Id): string | undefined {
     return this.local.get(id)?.error;
   }
@@ -126,6 +142,12 @@ export class FederationReconciler {
         const isMesh = !UNDERLAY_TYPES.has(s.sourceType) && !RASTER_TYPES.has(s.sourceType);
         // origin 변경 + 메시 오버레이 = baked offset 스테일 → 재로드(재offset). 언더레이/래스터는 placement서 elevation만 써 무관.
         if (originChanged && isMesh) {
+          this.load(s);
+          continue;
+        }
+        // PDF 페이지 변경 = 캐시(구 페이지 텍스처) 재배치로는 불가 — 재렌더 필요(재페치 포함).
+        // 비교는 로드 시점 **요청** 페이지 기준 — 클램프(요청 99→렌더 2) 상태서 재로드 루프 방지.
+        if (st.raster && s.sourceType === 'pdf' && (s.underlay?.page ?? 1) !== (st.rasterPageReq ?? 1)) {
           this.load(s);
           continue;
         }
@@ -228,16 +250,19 @@ export class FederationReconciler {
     this.ref.addImageUnderlay(s.id, raster.source, raster.wMm, raster.hMm, placement, elev, opacity);
   }
 
-  /** 래스터 로드 — blob 페치 → image=createImageBitmap / pdf=1페이지 렌더 → 캐시 + 배치 → ref.addImageUnderlay. */
+  /** 래스터 로드 — blob 페치 → image=디코드 / pdf=지정 페이지 렌더 → 캐시 + 배치 → ref.addImageUnderlay. */
   private loadRaster(s: FederationSource, myGen: number): void {
     const PT_TO_MM = 25.4 / 72;
-    (async (): Promise<NonNullable<LocalState['raster']>> => {
+    (async (): Promise<NonNullable<LocalState['raster']> & { page?: number; pageCount?: number }> => {
       const res = await fetch(s.ref);
       if (!res.ok) throw new Error(`래스터 페치 실패 (${res.status})`);
       if (s.sourceType === 'pdf') {
-        const { renderPdfFirstPage } = await import('../interop/pdfClient');
-        const r = await renderPdfFirstPage(await res.arrayBuffer());
-        return { source: r.canvas, wMm: r.ptWidth * PT_TO_MM, hMm: r.ptHeight * PT_TO_MM };
+        const { renderPdfPage } = await import('../interop/pdfClient');
+        const r = await renderPdfPage(await res.arrayBuffer(), s.underlay?.page ?? 1);
+        return {
+          source: r.canvas, wMm: r.ptWidth * PT_TO_MM, hMm: r.ptHeight * PT_TO_MM,
+          page: r.page, pageCount: r.pageCount,
+        };
       }
       // ImageBitmap을 그대로 THREE.Texture에 넣으면 three가 flipY를 무시(r0.184 isImageBitmap 분기) →
       // 이미지가 상하반전(북남 뒤집힘, PDF=canvas 경로와 불일치). canvas로 변환하면 flipY 정상 = 정위치.
@@ -263,6 +288,11 @@ export class FederationReconciler {
         this.local.set(s.id, {
           status: 'ready', ref: s.ref, sourceType: s.sourceType, gen: myGen,
           raster, placementSig: placementSigOf(live),
+          // pdf: 렌더된 페이지·요청 페이지·총 페이지 기록 — 변경 감지(요청 기준) + UI 표시/상한
+          ...(raster.page !== undefined
+            ? { rasterPage: raster.page, rasterPageReq: live.underlay?.page ?? 1 }
+            : {}),
+          ...(raster.pageCount !== undefined ? { pageCount: raster.pageCount } : {}),
         });
         this.notify();
       })

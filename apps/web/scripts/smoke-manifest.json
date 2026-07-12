@@ -18,6 +18,7 @@
     { "script": "fork-smoke.mjs", "backend": "none", "tags": ["collab", "ui"] },
     { "script": "drawing-smoke.mjs", "backend": "none", "tags": ["drawing", "tools"] },
     { "script": "dwg-underlay-smoke.mjs", "backend": "none", "tags": ["dwg", "interop", "underlay"], "fixtures": ["apps/web/public/__dwgtest.dwg"], "timeoutMs": 240000 },
+    { "script": "pdf-page-smoke.mjs", "backend": "none", "tags": ["pdf", "interop", "underlay"], "fixtures": ["apps/web/public/__pdftest.pdf"], "timeoutMs": 240000 },
     { "script": "agent-live-smoke.mjs", "backend": "miniflare", "vite": false, "tags": ["ai", "agent"], "timeoutMs": 300000 },
 
     { "script": "browser-e2e.mjs", "backend": "node", "tags": ["collab", "e2e"] },
