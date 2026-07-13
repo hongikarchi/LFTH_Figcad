@@ -37,6 +37,14 @@ namespace Figcad
         }
         public static double VolTolFraction => VolTolPercent / 100.0;
 
+        // M3 층 자동 구조화 (베타) — 기본 OFF (OFF = v0.6 단일 레벨 경로 동일). 서버가 M2 dedup
+        // 절대z 정규화 배포본이어야 재푸시 무중복 — 구서버에선 add_level unknown op = 신규층 요소 드롭(정직).
+        public static bool MultiLevel
+        {
+            get { var s = S; return s != null && s.GetBool("multiLevel", false); }
+            set { var s = S; if (s != null) s.SetBool("multiLevel", value); }
+        }
+
         // 최근 룸 = 개행 join 문자열(룸 id는 A-Za-z0-9_-라 개행 충돌 없음 — GetStringList 의존 회피).
         public static string[] RecentRooms()
         {

@@ -22,6 +22,8 @@
 
 ## Slices
 
+> **상태 (2026-07-13)**: M1~M4 구현 완료·미배포. 커밋 = M1+M2 TS `0caeaa0`, M2감지기+M3+M4 C#/문서(후속 커밋). deferred 게이트(사용자 Rhino 세션) = GoldenMultiPush·StoryCensusToFile(260629)·story-smoke(miniflare 복구)·배포(서버 M2 먼저). 오너 결정 7건 중 M1 census 필요분(datum·이름 관례)은 실모델 census 후 확정 — 현재 코드는 절대표고 유지·'N층' 오름차순 디폴트.
+
 ### M1 — Report-only story detector (telemetry, zero product change)
 - In connector `ClassifyForPush`: anchors = slab top-z (area-weighted primary) + wall/column base-z; beams excluded. Gap-split clustering + weighted median + min-support threshold; roof-slab demotion rule.
 - Output = story census in push report (no ops change). Panel shows census; FIDELITY re-run on 260629 copy must stay 782/782 PASS (byte-identical ops).

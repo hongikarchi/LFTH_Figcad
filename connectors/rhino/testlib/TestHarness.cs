@@ -171,6 +171,10 @@ namespace Figcad
             sb.Append("Lane-2:"); foreach (var kv in c.Lane2Reasons) sb.Append(" " + kv.Key + "=" + kv.Value); sb.AppendLine();
             sb.Append("타입 필요:"); foreach (var k in c.TypeNeeds.Keys) sb.Append(" [" + k + "]"); sb.AppendLine();
 
+            // 층 감지 census (M1 리포트-온리) — 실모델 튜닝 게이트의 1차 산출물.
+            var stories = FigcadConnector.DetectStories(c.Candidates);
+            sb.AppendLine("층: " + stories.Report());
+
             // 상세(≤80) 또는 레이어×처분 집계(대형 실문서) — 처분 문자열은 단일 포매터(두 갈래 표기 드리프트 방지).
             if (c.Candidates.Count <= 80)
             {
@@ -179,7 +183,9 @@ namespace Figcad
                 {
                     string layer, name; LookupObj(doc, cand.Id, out layer, out name);
                     var bb = cand.Bbox;
-                    sb.AppendLine("#" + (i++) + " | " + layer + " | " + name + " | " + Dispo(cand) +
+                    string si = cand.Kind == null ? "-"
+                        : "S" + stories.ResolveLevel(FigcadStories.AnchorZ(cand.Kind, bb.Min.Z, bb.Max.Z));
+                    sb.AppendLine("#" + (i++) + " | " + layer + " | " + name + " | " + Dispo(cand) + " | " + si +
                         " | " + Math.Round(bb.Min.X) + "," + Math.Round(bb.Min.Y) + "," + Math.Round(bb.Min.Z) +
                         " ~ " + Math.Round(bb.Max.X) + "," + Math.Round(bb.Max.Y) + "," + Math.Round(bb.Max.Z));
                 }
@@ -279,6 +285,46 @@ namespace Figcad
             };
             RhinoApp.Idle += run;
             return "Idle-큐 실모델 push 예약 → " + outPath;
+        }
+
+        // ---------- 실모델 층 census (파일 사본 headless — 레벨 구조화 M1 실측 게이트) ----------
+        // Census(분류+층 감지+층별 배정)를 파일로 — 260629류 실모델을 오너가 검토하는 1차 산출물.
+        public static string StoryCensusToFile(string filePath, string baseUrl, string room, double volTol, string outPath)
+        {
+            EventHandler run = null;
+            run = (s, e) =>
+            {
+                RhinoApp.Idle -= run;
+                RhinoDoc doc = null;
+                try
+                {
+                    doc = RhinoDoc.OpenHeadless(filePath);
+                    if (doc == null) { System.IO.File.WriteAllText(outPath, "ERROR: OpenHeadless 실패 " + filePath); return; }
+                    var sb = new StringBuilder();
+                    sb.AppendLine("file=" + filePath);
+                    sb.Append(Census(doc, baseUrl, room, volTol));
+                    // 층별 × kind 집계 (census 상세는 ≤80만 개별행 — 대형 실모델용 요약)
+                    var cfg = new FigcadConfig { BaseUrl = baseUrl, Room = room };
+                    var c = FigcadConnector.ClassifyForPush(doc, cfg, null, false, volTol);
+                    var stories = FigcadConnector.DetectStories(c.Candidates);
+                    var agg = new SortedDictionary<string, int>();
+                    foreach (var cand in c.Candidates)
+                    {
+                        if (cand.Kind == null) continue;
+                        var bb = cand.Bbox;
+                        int si = stories.ResolveLevel(FigcadStories.AnchorZ(cand.Kind, bb.Min.Z, bb.Max.Z));
+                        string key = "S" + si + " " + cand.Kind;
+                        int v; agg.TryGetValue(key, out v); agg[key] = v + 1;
+                    }
+                    sb.AppendLine("층×kind:");
+                    foreach (var kv in agg) sb.AppendLine(kv.Value.ToString().PadLeft(5) + "  " + kv.Key);
+                    System.IO.File.WriteAllText(outPath, sb.ToString());
+                }
+                catch (Exception ex) { try { System.IO.File.WriteAllText(outPath, "ERROR: " + ex); } catch { } }
+                finally { if (doc != null) doc.Dispose(); }
+            };
+            RhinoApp.Idle += run;
+            return "Idle-큐 층 census 예약 → " + outPath;
         }
 
         // ---------- 충실도 리포트 — 원본 brep bbox vs 파생 지오메트리 bbox (분석 재구성) ----------
@@ -630,6 +676,110 @@ namespace Figcad
                 report.AppendLine(WithGoldenDoc(doc =>
                     FigcadConnector.PushAll(doc, new FigcadConfig { BaseUrl = baseUrl, Room = room }, null, volTol)));
             }
+            return report.ToString();
+        }
+
+        // ---------- 골든 다층 씬 (레벨 구조화 M3) ----------
+        // 2개 층 + 지붕 강등 센티널 + 층 관통 계단. 기대: 층 [0, 3400] · 지붕 슬라브 = 2층 zOffset 3200 ·
+        // 보(축 2900) = 1층 · 시드 '1층'@0 재사용 + '2층' 1개 생성. 2회차 = 레벨 신규 0 + 전량 dedup.
+        public static string BuildGoldenMultiStory(RhinoDoc doc)
+        {
+            int lCol = EnsureLayer(doc, "S-Column");
+            int lBeam = EnsureLayer(doc, "S-Connection");
+            int lWall = EnsureLayer(doc, "A-Wall");
+            int lSlab = EnsureLayer(doc, "S-Slab");
+            int lStair = EnsureLayer(doc, "S-Stair");
+
+            // L1: 슬라브 top=0 + 기둥 2 + 벽 + 보(축 z 2900 — L2 바닥판 아래)
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(0, 0, -200), new Point3d(8000, 6000, 0))), lSlab, "slab-l1");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(800, 700, 0), new Point3d(1200, 1100, 3300))), lCol, "col-l1a");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(6800, 700, 0), new Point3d(7200, 1100, 3300))), lCol, "col-l1b");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(1000, 4900, 0), new Point3d(5000, 5100, 3300))), lWall, "wall-l1");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(1000, 1850, 2600), new Point3d(7000, 2150, 3200))), lBeam, "beam-l1");
+
+            // L2: 슬라브 3200~3400 + 기둥 2 + 벽
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(0, 0, 3200), new Point3d(8000, 6000, 3400))), lSlab, "slab-l2");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(800, 700, 3400), new Point3d(1200, 1100, 6400))), lCol, "col-l2a");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(6800, 700, 3400), new Point3d(7200, 1100, 6400))), lCol, "col-l2b");
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(1000, 4900, 3400), new Point3d(5000, 5100, 6400))), lWall, "wall-l2");
+
+            // 지붕 슬라브 6400~6600 — 위에 아무것도 없음 = 층 강등 센티널 (2층 zOffset 3200 기대)
+            Add(doc, Brep.CreateFromBox(new BoundingBox(new Point3d(0, 0, 6400), new Point3d(8000, 6000, 6600))), lSlab, "slab-roof");
+
+            // 층 관통 직선 계단 — 단 20 × (run 280 · rise 170) = 상승 3400, 폭 1200. base=0 → 1층 배정 기대.
+            {
+                var pts = new List<double> { 0, 0 };
+                for (int i = 0; i < 20; i++)
+                {
+                    pts.Add(i * 280); pts.Add((i + 1) * 170);
+                    pts.Add((i + 1) * 280); pts.Add((i + 1) * 170);
+                }
+                pts.Add(5600); pts.Add(0);
+                var stair = ExtrudeZ(ClosedPoly(pts.ToArray()), 1200);
+                stair.Transform(Transform.Rotation(Math.PI / 2, Vector3d.XAxis, Point3d.Origin));
+                Add(doc, PlaceAt(stair, 9000, 0, 0), lStair, "stair-span");
+            }
+
+            return "골든 다층 씬 생성: " + doc.Objects.Count + "개 객체";
+        }
+
+        static string WithGoldenMultiDoc(Func<RhinoDoc, string> body)
+        {
+            var doc = RhinoDoc.CreateHeadless(null);
+            try
+            {
+                doc.AdjustModelUnitSystem(UnitSystem.Millimeters, false);
+                doc.ModelAbsoluteTolerance = 0.01;
+                BuildGoldenMultiStory(doc);
+                return body(doc);
+            }
+            finally { doc.Dispose(); }
+        }
+
+        // 2회 push(multiLevel=ON) + 서버 스냅샷 자기검증. 신선한 시드 룸(레벨 '1층'@0 1개) 전제.
+        public static string GoldenMultiPush(string baseUrl, string room, double volTol)
+        {
+            var report = new StringBuilder();
+            report.AppendLine("lib=" + typeof(TestHarness).Assembly.Location);
+            for (int pass = 1; pass <= 2; pass++)
+            {
+                report.AppendLine("== MULTI PUSH " + pass + "/2 (층 자동 구조화 ON — 2회차 = 레벨 신규 0 + 전량 dedup) ==");
+                report.AppendLine(WithGoldenMultiDoc(doc =>
+                    FigcadConnector.PushAll(doc, new FigcadConfig { BaseUrl = baseUrl, Room = room }, null, volTol, true)));
+            }
+            // 자기검증 — 스냅샷 레벨/요소 배정
+            try
+            {
+                using (var http = new System.Net.Http.HttpClient())
+                {
+                    var body = http.GetStringAsync(baseUrl + "/parties/doc/" + room + "?op=pull").GetAwaiter().GetResult();
+                    var snap = (Dictionary<string, object>)ParseJson(body);
+                    var levels = (List<object>)snap["levels"];
+                    var els = (List<object>)snap["elements"];
+                    report.AppendLine(levels.Count == 2 ? "ASSERT PASS 레벨 2개" : "ASSERT FAIL 레벨 " + levels.Count + "개 (기대 2)");
+                    string l2id = null;
+                    bool has0 = false, has3400 = false;
+                    foreach (Dictionary<string, object> l in levels)
+                    {
+                        double e = ToD(l["elevation"]);
+                        if (Math.Abs(e) <= 250) has0 = true;
+                        if (Math.Abs(e - 3400) <= 250) { has3400 = true; l2id = (string)l["id"]; }
+                    }
+                    report.AppendLine(has0 && has3400 ? "ASSERT PASS 레벨 elevation 0·3400" : "ASSERT FAIL 레벨 elevation 세트");
+                    int onL2 = 0, roofOk = 0;
+                    foreach (Dictionary<string, object> el in els)
+                    {
+                        if (l2id != null && el.ContainsKey("levelId") && (string)el["levelId"] == l2id)
+                        {
+                            onL2++;
+                            if ((string)el["kind"] == "slab" && el.ContainsKey("zOffset") && Math.Abs(ToD(el["zOffset"]) - 3200) <= 10) roofOk++;
+                        }
+                    }
+                    report.AppendLine(onL2 >= 4 ? "ASSERT PASS 2층 요소 " + onL2 + "개(슬라브+기둥2+벽+지붕)" : "ASSERT FAIL 2층 요소 " + onL2 + "개 (기대 ≥4)");
+                    report.AppendLine(roofOk >= 1 ? "ASSERT PASS 지붕 슬라브 = 2층 zOffset≈3200 (층 강등)" : "ASSERT FAIL 지붕 슬라브 zOffset");
+                }
+            }
+            catch (Exception ex) { report.AppendLine("ASSERT ERROR " + ex.Message); }
             return report.ToString();
         }
     }

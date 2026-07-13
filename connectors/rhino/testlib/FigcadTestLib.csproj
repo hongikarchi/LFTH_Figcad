@@ -29,6 +29,7 @@
     <Compile Include="..\FigcadClassify.cs" />
     <Compile Include="..\FigcadFit.cs" />
     <Compile Include="..\FigcadCleanup.cs" />
+    <Compile Include="..\FigcadStories.cs" />
   </ItemGroup>
 
 </Project>

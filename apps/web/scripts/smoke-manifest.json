@@ -29,6 +29,7 @@
     { "script": "stress-2k.mjs", "backend": "node", "optIn": true, "tags": ["perf"], "timeoutMs": 300000 },
 
     { "script": "connector-e2e.mjs", "backend": "miniflare", "tags": ["connector", "server", "e2e"], "extraArgs": ["{backendPort}"] },
+    { "script": "story-smoke.mjs", "backend": "miniflare", "tags": ["connector", "level", "story", "ai"], "extraArgs": ["{backendPort}"], "timeoutMs": 240000 },
     { "script": "ref-interact-smoke.mjs", "backend": "miniflare", "tags": ["federation", "snap", "ai", "label"], "timeoutMs": 240000 },
     { "script": "review-smoke.mjs", "backend": "miniflare", "tags": ["review", "camera", "viewpoints", "version", "measure"], "timeoutMs": 240000 },
     { "script": "section-smoke.mjs", "backend": "miniflare", "tags": ["section", "engine"], "timeoutMs": 240000 },

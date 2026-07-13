@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    FigcadStories 순수 감지기 헤드리스 단위검증 — Rhino 불필요.
+    실행: dotnet test connectors/rhino/tests  (레벨 구조화 게이트 G4)
+    FigcadStories.cs만 링크(RhinoCommon 의존 0) — 커넥터 본체는 testlib(Rhino-in-process)가 담당.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\FigcadStories.cs" />
+  </ItemGroup>
+
+</Project>

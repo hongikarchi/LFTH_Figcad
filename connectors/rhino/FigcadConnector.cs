@@ -56,6 +56,15 @@ namespace Figcad
         public string Kind;      // null = 잔여(Lane-2)
         public bool Approx;      // 근사 리프트(계단/난간 bbox·슬라브 개구 무시 등) — preview 주황
         public string FailReason;// 잔여 사유(Kind=null) 또는 근사 사유
+        public int Story;        // 배정 층 인덱스 (multiLevel 방출·census 표시 — 단일 레벨 경로 = 0)
+    }
+
+    // 방출 레벨 참조 1개 — 기존 레벨 재사용(id) 또는 신규 토큰("{LEVELID:k}", POST-A가 실 id로 치환).
+    public class StoryLevelRef
+    {
+        public string Ref;   // 레벨 id 또는 "{LEVELID:k}" 토큰
+        public bool IsToken;
+        public double Elev;  // 방출 z 재기저 기준 (재사용 = 그 레벨의 실제 elevation)
     }
 
     // 리프트 op 1건 — 타입은 2단계 POST 후 canonical key로 해석(JsonTemplate의 {TYPEID} 치환).
@@ -90,6 +99,11 @@ namespace Figcad
         public int NOpenBrep, NMesh, NSkippedOther, NApprox;
         public Dictionary<string, int> ApproxReasons = new Dictionary<string, int>();
         public Dictionary<string, int> Lane2Reasons = new Dictionary<string, int>();
+        // ---- 레벨 구조화 (M3) ----
+        public StoryTable Stories;                                              // 층 감지 (항상 계산 — 리포트/미리보기)
+        public List<StoryLevelRef> LevelTable = new List<StoryLevelRef>();      // 방출 레벨 참조 (1개 = 단일 레벨 경로 = v0.6 동일)
+        public List<string> LevelCreateOps = new List<string>();                // POST-A add_level ops (LevelTokens와 정렬)
+        public List<string> LevelTokens = new List<string>();                   // "{LEVELID:k}" 토큰 (생성 순서 = createdIds 매핑)
     }
 
     // 수집 항목(내부) — 블록 재귀 후 지오 + 레이어 + 객체 figcad:kind + top-level id.
@@ -399,14 +413,18 @@ namespace Figcad
         // ===== v0.4 Push 통합 — 커브 레인 + 브렙 리프트 + Lane-2 + 통합 충실도 보고 1장 =====
         public static string PushAll(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map) => PushAll(doc, cfg, map, 0.03);
 
-        public static string PushAll(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction)
+        public static string PushAll(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction) =>
+            PushAll(doc, cfg, map, volTolFraction, false);
+
+        // multiLevel = 층 자동 구조화 (M3, 패널 토글 — 브렙 레인만. 커브 레인 = 스케치용, 첫 레벨 유지).
+        public static string PushAll(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction, bool multiLevel)
         {
             // origin 1회 해석(전체 모델 extent) + 1회 POST → 두 레인이 *같은* origin을 차감.
             // 종전엔 커브 레인=raw · 브렙 레인=recenter라 측량좌표 모델에서 커브 요소만 +origin 오프셋(비대칭 버그).
             double ox, oy;
             ResolvePushOrigin(doc, cfg, out ox, out oy);
             var cv = PushCurvesCore(doc, cfg, ox, oy);
-            var br = PushBrepsCore(doc, cfg, map, volTolFraction, ox, oy);
+            var br = PushBrepsCore(doc, cfg, map, volTolFraction, ox, oy, multiLevel);
             if (br.Error != null)
                 return "Push: " + br.Error + (cv.NWall + cv.NSlab > 0 ? " ([커브] 벽" + cv.NWall + "·슬라브" + cv.NSlab + "는 전송됨)" : "");
             string curvePart = "[커브] 벽" + cv.NWall + "·슬라브" + cv.NSlab + (cv.Failed > 0 ? "(실패" + cv.Failed + ")" : "");
@@ -453,22 +471,91 @@ namespace Figcad
         {
             public PushClassification C;
             public int Applied, Failed, Deduped, TypesNew, TypesReused, DroppedNoType;
+            public int LevelsNew, LevelsReused, DroppedNoLevel; // 레벨 구조화 (M3)
             public bool OldServer;
+            public bool OldServerLevels; // 구서버 add_level 미지원 — 토큰 요소 드롭(지오 오염 방지)
             public string Lane2Note = "";
+            public string StoryNote = ""; // 층 감지 census (M1 리포트-온리 — ops 무변경)
             public string Error; // 선행 실패(레벨 없음 등)
+        }
+
+        // 층 감지 어댑터 — 분류 후보(bbox z 범위)를 순수 감지기 입력으로. 리센터는 XY 전용이라 z 불변.
+        public static StoryTable DetectStories(IEnumerable<PushCandidate> cands)
+        {
+            var anchors = new List<StoryAnchor>();
+            foreach (var pc in cands)
+            {
+                if (pc == null || pc.Kind == null) continue;
+                var bb = pc.Bbox;
+                anchors.Add(new StoryAnchor
+                {
+                    Kind = pc.Kind,
+                    MinZ = bb.Min.Z,
+                    MaxZ = bb.Max.Z,
+                    PlanAreaMm2 = Math.Max(0, (bb.Max.X - bb.Min.X) * (bb.Max.Y - bb.Min.Y)),
+                });
+            }
+            return FigcadStories.Detect(anchors);
         }
 
         // 레거시(PushBreps 별칭) 경로 — origin은 종전대로 ClassifyForPush가 자체 해석·POST.
         static BrepLaneResult PushBrepsCore(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction) =>
-            PushBrepsCore(doc, cfg, map, volTolFraction, double.NaN, double.NaN);
+            PushBrepsCore(doc, cfg, map, volTolFraction, double.NaN, double.NaN, false);
+
+        static BrepLaneResult PushBrepsCore(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction, double presetOx, double presetOy) =>
+            PushBrepsCore(doc, cfg, map, volTolFraction, presetOx, presetOy, false);
 
         // presetOx/presetOy = PushAll이 이미 해석·POST한 origin(NaN = 미지정) — 두 번째 origin POST 금지.
-        static BrepLaneResult PushBrepsCore(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction, double presetOx, double presetOy)
+        // multiLevel = 층 자동 구조화 (M3) — POST-A(레벨 확보)가 POST-B/C 앞에 선행.
+        static BrepLaneResult PushBrepsCore(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, double volTolFraction, double presetOx, double presetOy, bool multiLevel)
         {
             var r = new BrepLaneResult();
-            var c = ClassifyForPush(doc, cfg, map, true, volTolFraction, presetOx, presetOy); // setOrigin=true — recenter offset 기억(Pull 복원용)
+            var c = ClassifyForPush(doc, cfg, map, true, volTolFraction, presetOx, presetOy, multiLevel); // setOrigin=true — recenter offset 기억(Pull 복원용)
             r.C = c;
             if (!c.HasLevel) { r.Error = "룸에 레벨 없음 (Figcad 앱이 먼저 시드해야 함)"; return r; }
+
+            // --- POST-A: 레벨 확보 (M3) — add_level을 요소 옵과 *별도 요청*으로 선행 (서버 dedup 절대z
+            //     정규화가 실 레벨 id를 봐야 함 + add_level은 서버 미dedup → 커넥터가 elevation 매치로 확보).
+            var levelIds = new Dictionary<string, string>(); // "{LEVELID:k}" → 실 id
+            if (c.LevelCreateOps.Count > 0)
+            {
+                var outA = PostOps(cfg, c.LevelCreateOps, false);
+                if (outA.Failed == 0 && outA.CreatedIds.Count >= c.LevelTokens.Count)
+                {
+                    // createdIds = op 순서(전수 성공일 때만 보장) → 토큰 매핑
+                    for (int i = 0; i < c.LevelTokens.Count; i++) levelIds[c.LevelTokens[i]] = outA.CreatedIds[i];
+                    r.LevelsNew = c.LevelTokens.Count;
+                }
+                else if (outA.Applied == 0 && outA.FirstError != null && outA.FirstError.Contains("unknown op"))
+                {
+                    // 구서버 — add_level 미지원. 토큰 레벨 요소는 z가 그 층 기준으로 재기저돼 있어
+                    // 첫 레벨로 폴백하면 지오메트리가 층만큼 내려앉음 → 드롭이 정직 (아래 POST-C서 카운트).
+                    r.OldServerLevels = true;
+                }
+                else
+                {
+                    // 부분 실패 — 재pull 후 elevation ±250 매치로 성공분 회수 (POST-B 폴백 패턴)
+                    try
+                    {
+                        string body2 = Http.GetStringAsync(Url(cfg, "pull")).GetAwaiter().GetResult();
+                        var snap2 = (Dictionary<string, object>)Json.Parse(body2);
+                        var lv2 = new List<(string Id, double Elev)>();
+                        foreach (Dictionary<string, object> l in (List<object>)snap2["levels"])
+                            lv2.Add(((string)l["id"], Opt(l, "elevation", 0)));
+                        for (int k = 0; k < c.LevelTable.Count; k++)
+                        {
+                            var lref = c.LevelTable[k];
+                            if (!lref.IsToken || levelIds.ContainsKey(lref.Ref)) continue;
+                            foreach (var lv in lv2)
+                                if (Math.Abs(lv.Elev - lref.Elev) <= 250) { levelIds[lref.Ref] = lv.Id; break; }
+                        }
+                        r.LevelsNew = levelIds.Count;
+                    }
+                    catch { }
+                }
+            }
+            if (c.LevelTable.Count > 1)
+                foreach (var lref in c.LevelTable) { if (!lref.IsToken) r.LevelsReused++; }
 
             // --- POST-B: 타입 해석 — 스냅샷 canonical key 매치 우선, 미매치만 create_type ---
             // 단일 POST placeholder 리맵을 안 쓰는 이유: dedup 콘텐츠키가 리맵 *전* 계산 + 배치 분할 시 placeholder 좌초.
@@ -522,14 +609,21 @@ namespace Figcad
                 }
             }
 
-            // --- POST-C: 요소 ops — {TYPEID} 치환 + &dedup=1(재푸시 정확중첩 차단) ---
+            // --- POST-C: 요소 ops — {TYPEID}·{LEVELID:k} 치환 + &dedup=1(재푸시 정확중첩 차단) ---
+            //     레벨 토큰 치환은 dedup POST *전* — 서버 절대z 키가 실 레벨 id를 해석해야 크로스레벨 매칭.
             var elOps = new List<string>();
             foreach (var op in c.Ops)
             {
-                if (op.TypeKey == null) { elOps.Add(op.JsonTemplate); continue; }
-                string tid;
-                if (typeIds.TryGetValue(op.TypeKey, out tid)) elOps.Add(op.JsonTemplate.Replace("{TYPEID}", tid));
-                else r.DroppedNoType++; // 타입 생성 실패분 — 조용히 근사하지 않고 드롭 카운트
+                string tmpl = op.JsonTemplate;
+                if (op.TypeKey != null)
+                {
+                    string tid;
+                    if (typeIds.TryGetValue(op.TypeKey, out tid)) tmpl = tmpl.Replace("{TYPEID}", tid);
+                    else { r.DroppedNoType++; continue; } // 타입 생성 실패분 — 조용히 근사하지 않고 드롭 카운트
+                }
+                foreach (var kv in levelIds) tmpl = tmpl.Replace(kv.Key, kv.Value);
+                if (tmpl.Contains("{LEVELID:")) { r.DroppedNoLevel++; continue; } // 미해석 레벨 — 지오 오염 대신 드롭
+                elOps.Add(tmpl);
             }
             if (elOps.Count > 0)
             {
@@ -549,6 +643,9 @@ namespace Figcad
                 // 남음(stale). 빈 파일 업로드로 교체하는 건 서버 거동 미검증이라 안 함 — 정직하게 보고만.
                 r.Lane2Note = " → 잔여 0 — 이전 Lane-2 오버레이가 있으면 수동 삭제 필요";
             }
+
+            // --- 층 감지 census (M1 리포트-온리) — 실패해도 푸시 결과 무영향 ---
+            try { r.StoryNote = " · " + (c.Stories != null ? c.Stories : DetectStories(c.Candidates)).Report(); } catch { }
             return r;
         }
 
@@ -576,6 +673,11 @@ namespace Figcad
             if (r.DroppedNoType > 0) sb.Append(" · 타입미해석 드롭" + r.DroppedNoType);
             if (c.NSkippedOther > 0) sb.Append(" · 기타스킵" + c.NSkippedOther);
             if (r.OldServer) sb.Append(" · 서버 구버전 — 단면 타입 생성 불가(기존 타입 근사)");
+            if (r.C.LevelTable.Count > 1 || r.LevelsNew > 0)
+                sb.Append(" · 레벨 신규" + r.LevelsNew + "·재사용" + r.LevelsReused);
+            if (r.DroppedNoLevel > 0) sb.Append(" · 레벨미해석 드롭" + r.DroppedNoLevel);
+            if (r.OldServerLevels) sb.Append(" · 서버 구버전 — 층 자동 구조화 미지원(신규층 요소 드롭 — 토글 끄고 재푸시)");
+            sb.Append(r.StoryNote);
             sb.Append(r.Lane2Note);
             return sb.ToString();
         }
@@ -602,21 +704,28 @@ namespace Figcad
             ClassifyForPush(doc, cfg, map, setOrigin, 0.03);
 
         public static PushClassification ClassifyForPush(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, bool setOrigin, double volTolFraction) =>
-            ClassifyForPush(doc, cfg, map, setOrigin, volTolFraction, double.NaN, double.NaN);
+            ClassifyForPush(doc, cfg, map, setOrigin, volTolFraction, double.NaN, double.NaN, false);
+
+        static PushClassification ClassifyForPush(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, bool setOrigin, double volTolFraction, double presetOx, double presetOy) =>
+            ClassifyForPush(doc, cfg, map, setOrigin, volTolFraction, presetOx, presetOy, false);
 
         // presetOx/presetOy = 호출측(PushAll)이 이미 해석·POST한 origin(NaN = 자체 해석) — 레인 간 origin 단일화.
-        static PushClassification ClassifyForPush(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, bool setOrigin, double volTolFraction, double presetOx, double presetOy)
+        // multiLevel = 층 자동 구조화 (M3, 패널 토글 — false = v0.6 단일 레벨 경로 동일).
+        static PushClassification ClassifyForPush(RhinoDoc doc, FigcadConfig cfg, FigcadLayerMap map, bool setOrigin, double volTolFraction, double presetOx, double presetOy, bool multiLevel)
         {
             var result = new PushClassification();
             string snapBody = Http.GetStringAsync(Url(cfg, "pull")).GetAwaiter().GetResult();
             var snap = (Dictionary<string, object>)Json.Parse(snapBody);
             string levelId = null;
             double levelElev = 0;
+            // 스냅샷 레벨 전수 (M3 재사용 매칭·이름 충돌 검사) — 첫 레벨 = 레거시/OFF 경로 기준.
+            var snapLevels = new List<(string Id, double Elev, string Name)>();
             foreach (Dictionary<string, object> l in (List<object>)snap["levels"])
             {
-                levelId = (string)l["id"];
-                levelElev = Opt(l, "elevation", 0);
-                break; // 멀티레벨 배정 = v1.5(현행 first-level)
+                string lid = (string)l["id"];
+                double le = Opt(l, "elevation", 0);
+                snapLevels.Add((lid, le, l.ContainsKey("name") ? l["name"] as string : null));
+                if (levelId == null) { levelId = lid; levelElev = le; }
             }
             foreach (Dictionary<string, object> t in (List<object>)snap["types"])
             {
@@ -714,19 +823,74 @@ namespace Figcad
                 foreach (var it in items) GeoOf(it).Transform(shiftNeg);
             }
 
+            // 2.5) 층 감지 프리패스 (항상 — 리포트/미리보기 census) — recenter는 XY 전용이라 z 불변.
+            //      감지 입력 = 리프트 대상 솔리드의 해석 kind + bbox (Lane-2 낙오는 이후 인식에서 결정되나
+            //      bbox z는 여전히 유의미 — 감지엔 무해).
+            {
+                var anchors = new List<StoryAnchor>();
+                foreach (var it in items)
+                {
+                    if (it.B == null || it.Open) continue;
+                    string k = FigcadClassify.ResolveKind(it.KindOverride, it.Layer, map);
+                    if (k == null) continue;
+                    var abb = it.B.GetBoundingBox(true);
+                    if (!abb.IsValid) continue;
+                    anchors.Add(new StoryAnchor
+                    {
+                        Kind = k,
+                        MinZ = abb.Min.Z,
+                        MaxZ = abb.Max.Z,
+                        PlanAreaMm2 = Math.Max(0, (abb.Max.X - abb.Min.X) * (abb.Max.Y - abb.Min.Y)),
+                    });
+                }
+                result.Stories = FigcadStories.Detect(anchors);
+            }
+
+            // 2.6) 방출 레벨 테이블 — multiLevel + 층 2개 이상일 때만 다중 (아니면 단일 = v0.6 동일 경로).
+            //      기존 레벨 elevation ±250mm 매치 = 재사용(이름·층고 불변경) / 미스 = add_level 토큰.
+            if (multiLevel && result.Stories != null && result.Stories.Stories.Count >= 2)
+            {
+                var takenNames = new HashSet<string>();
+                foreach (var sl in snapLevels) if (sl.Name != null) takenNames.Add(sl.Name);
+                for (int k = 0; k < result.Stories.Stories.Count; k++)
+                {
+                    var st = result.Stories.Stories[k];
+                    string matched = null; double matchedElev = 0;
+                    foreach (var sl in snapLevels)
+                        if (Math.Abs(sl.Elev - st.ElevationMm) <= 250) { matched = sl.Id; matchedElev = sl.Elev; break; }
+                    if (matched != null)
+                        result.LevelTable.Add(new StoryLevelRef { Ref = matched, IsToken = false, Elev = matchedElev });
+                    else
+                    {
+                        // 이름 '1층·2층·…' 오름차순 (지하 추론 없음, v1 — 오너 결정 #3) + 충돌 시 -n 접미
+                        string baseName = (k + 1) + "층";
+                        string name = baseName;
+                        int sfx = 2;
+                        while (takenNames.Contains(name)) name = baseName + "-" + (sfx++);
+                        takenNames.Add(name);
+                        string token = "{LEVELID:" + k + "}";
+                        result.LevelTokens.Add(token);
+                        result.LevelCreateOps.Add("{\"op\":\"add_level\",\"args\":{\"name\":\"" + JStr(name) +
+                            "\",\"elevation\":" + st.ElevationMm + ",\"height\":" + st.HeightMm + ",\"order\":" + k + "}}");
+                        result.LevelTable.Add(new StoryLevelRef { Ref = token, IsToken = true, Elev = st.ElevationMm });
+                    }
+                }
+            }
+            else if (levelId != null)
+                result.LevelTable.Add(new StoryLevelRef { Ref = levelId, IsToken = false, Elev = levelElev });
+
             // 3) 인식 → ops. modelBB(recentered) = outlier 가드. 분류는 shift 불변(좌표·modelBB 동시 이동).
             var modelBB = BoundingBox.Empty;
             foreach (var it in items) modelBB.Union(GeoOf(it).GetBoundingBox(true));
             var shiftPos = new Vector3d(ox, oy, 0);
             var ctx = new RecoCtx
             {
-                LevelId = levelId,
-                LevelElev = levelElev,
                 Tol = tol,
                 VolTol = volTolFraction,
                 SlabTypeId = result.FirstTypeOfKind.ContainsKey("slab") ? result.FirstTypeOfKind["slab"] : null,
                 ModelBB = modelBB,
             };
+            bool multiStory = result.LevelTable.Count > 1;
             foreach (var it in items)
             {
                 var geo = GeoOf(it);
@@ -750,9 +914,16 @@ namespace Figcad
                 string resolved = FigcadClassify.ResolveKind(it.KindOverride, it.Layer, map);
                 string fail = null, bucket = null;
                 RecognizedOp rec = null;
+                int si = 0;
                 if (levelId == null) { fail = "레벨 없음"; bucket = "기타"; }
                 else if (resolved == null) { fail = "미분류(레이어)"; bucket = "미분류"; }
-                else rec = RecognizeElement(it.B, resolved, FigcadClassify.IsExplicitKind(it.KindOverride, it.Layer, map), ctx, result, out fail, out bucket);
+                else
+                {
+                    // 층 배정 — 단일 테이블(OFF/1층) = 인덱스 0 고정 = v0.6 동일. rbb z는 recenter 불변.
+                    if (multiStory) si = result.Stories.ResolveLevel(FigcadStories.AnchorZ(resolved, rbb.Min.Z, rbb.Max.Z));
+                    var lref = result.LevelTable[si];
+                    rec = RecognizeElement(it.B, resolved, FigcadClassify.IsExplicitKind(it.KindOverride, it.Layer, map), ctx, lref.Ref, lref.Elev, result, out fail, out bucket);
+                }
 
                 if (rec == null)
                 {
@@ -776,7 +947,7 @@ namespace Figcad
                     result.Candidates.Add(new PushCandidate
                     {
                         Id = it.Id, Bbox = obb, Kind = rec.Kind, Approx = rec.Approx,
-                        FailReason = rec.Approx ? rec.ApproxReason : null,
+                        FailReason = rec.Approx ? rec.ApproxReason : null, Story = si,
                     });
                 }
             }
@@ -800,8 +971,7 @@ namespace Figcad
         // ===== v0.4 RecognizeElement — kind=레이어(불변), 파라미터=FigcadFit 실측 =====
         sealed class RecoCtx
         {
-            public string LevelId;
-            public double LevelElev; // 첫 레벨 elevation — baseOffset/zOffset 레벨 상대화
+            // 레벨은 per-item 인자(levelRef/levelElev)로 — M3 층 배정이 항목마다 달라 ctx 보관 금지(스테일 참조 방지).
             public double Tol;
             public double VolTol;    // CheckFidelity 임계(패널 1~10%)
             public string SlabTypeId; // stair/railing 시드 타입은 v0.5 파라메트릭 전환으로 소멸
@@ -821,7 +991,8 @@ namespace Figcad
         // "조용히 근사 금지": 단면 분류/각도 게이트/부피 게이트 실패는 bbox 폴백 없이 Lane-2.
         // explicitKind = 사용자가 figcad:kind/레이어맵으로 명시 지정 → 타당성 *상한*만 스킵
         // (기하 유효성 게이트 — 프리즘·aspect·부피 — 는 명시 지정도 통과 못 하면 Lane-2).
-        static RecognizedOp RecognizeElement(Brep b, string kind, bool explicitKind, RecoCtx ctx, PushClassification result, out string fail, out string bucket)
+        // levelRef/levelElev = 이 요소가 배정된 레벨 (M3 — 다중이면 항목별, 단일이면 첫 레벨 고정).
+        static RecognizedOp RecognizeElement(Brep b, string kind, bool explicitKind, RecoCtx ctx, string levelRef, double levelElev, PushClassification result, out string fail, out string bucket)
         {
             fail = null; bucket = null;
             var bb = b.GetBoundingBox(true);
@@ -841,7 +1012,7 @@ namespace Figcad
                 bool xl = dxx >= dyy; // 수평 장축(폴백·난간 축)
                 double rax = xl ? bb.Min.X : cx, ray = xl ? cy : bb.Min.Y;
                 double rbx = xl ? bb.Max.X : cx, rby = xl ? cy : bb.Max.Y;
-                string baseOffJson = ",\"baseOffset\":" + R(bb.Min.Z - ctx.LevelElev);
+                string baseOffJson = ",\"baseOffset\":" + R(bb.Min.Z - levelElev);
 
                 if (kind == "railing")
                 {
@@ -849,7 +1020,7 @@ namespace Figcad
                     if (h < 1) { fail = "난간 높이 0(퇴화)"; bucket = "기타"; return null; }
                     string rkey = "h:" + h;
                     RegisterTypeNeed(result, "railing", rkey, "R-" + h, "\"height\":" + h + ",\"postSpacing\":1200");
-                    string rjson = "{\"op\":\"create_railing\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
+                    string rjson = "{\"op\":\"create_railing\",\"args\":{\"levelId\":\"" + levelRef + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
                         R(rax) + "," + R(ray) + "],\"b\":[" + R(rbx) + "," + R(rby) + "]" + baseOffJson + "}}";
                     return new RecognizedOp { Kind = "railing", TypeKey = "railing|" + rkey, JsonTemplate = rjson, Approx = true, ApproxReason = "난간(축bbox·포스트근사)" };
                 }
@@ -860,7 +1031,7 @@ namespace Figcad
                     string skey = "w:" + sf.Width + "r:" + sf.Riser;
                     RegisterTypeNeed(result, "stair", skey, "ST-" + sf.Width, "\"width\":" + sf.Width + ",\"riser\":" + sf.Riser);
                     // rise = 실측 총상승 — v0.6 core가 노출(종전 "층고 고정" 근사 해소). 구서버 = 조용히 무시.
-                    string sjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
+                    string sjson = "{\"op\":\"create_stair\",\"args\":{\"levelId\":\"" + levelRef + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
                         R(sf.Ax) + "," + R(sf.Ay) + "],\"b\":[" + R(sf.Bx) + "," + R(sf.By) + "]" + baseOffJson +
                         (sf.Rise >= 1 ? ",\"rise\":" + R(sf.Rise) : "") + "}}";
                     return new RecognizedOp { Kind = "stair", TypeKey = "stair|" + skey, JsonTemplate = sjson, Approx = true, ApproxReason = "계단(파라)" };
@@ -900,10 +1071,10 @@ namespace Figcad
                 string key, name;
                 if (!SectionTypeKey(sec, kind, out key, out name)) { fail = "단면 키 생성 실패"; bucket = "단면"; return null; }
                 RegisterTypeNeed(result, kind, key, name, "\"section\":" + SectionJson(sec));
-                double baseOff = Math.Min(fit.Axis.From.Z, fit.Axis.To.Z) - ctx.LevelElev; // 레벨 상대(raw Z 버그 수정)
+                double baseOff = Math.Min(fit.Axis.From.Z, fit.Axis.To.Z) - levelElev; // 레벨 상대(raw Z 버그 수정)
                 // create_column capability가 baseOffset 수용(v0.4 core에서 노출). 구서버는 인자를
                 // 조용히 무시(z=elevation 배치) — create_type 구버전 폴백과 같은 세대 이슈라 별도 플래그 없음.
-                string json = "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"at\":[" +
+                string json = "{\"op\":\"create_column\",\"args\":{\"levelId\":\"" + levelRef + "\",\"typeId\":\"{TYPEID}\",\"at\":[" +
                     R(atx) + "," + R(aty) + "]" + (R(baseOff) != "0" ? ",\"baseOffset\":" + R(baseOff) : "") +
                     ",\"height\":" + R(fit.Length) + "}}";
                 return new RecognizedOp { Kind = "column", TypeKey = kind + "|" + key, JsonTemplate = json };
@@ -948,9 +1119,9 @@ namespace Figcad
                     string key, name;
                     if (!SectionTypeKey(sec, kind, out key, out name)) { fail = "단면 키 생성 실패"; bucket = "단면"; return null; }
                     RegisterTypeNeed(result, kind, key, name, "\"section\":" + SectionJson(sec));
-                    double zOff = (fit.Axis.From.Z + fit.Axis.To.Z) / 2 - ctx.LevelElev; // 레벨 상대 중심축(core deriveBeam)
+                    double zOff = (fit.Axis.From.Z + fit.Axis.To.Z) / 2 - levelElev; // 레벨 상대 중심축(core deriveBeam)
                     // a/b = 실축 평면 투영 — 대각 보존(축정렬 스냅 금지)
-                    string json = "{\"op\":\"create_beam\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
+                    string json = "{\"op\":\"create_beam\",\"args\":{\"levelId\":\"" + levelRef + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
                         R(fit.Axis.From.X) + "," + R(fit.Axis.From.Y) + "],\"b\":[" + R(fit.Axis.To.X) + "," + R(fit.Axis.To.Y) +
                         "],\"zOffset\":" + R(zOff) + "}}";
                     return new RecognizedOp { Kind = "beam", TypeKey = kind + "|" + key, JsonTemplate = json };
@@ -974,8 +1145,8 @@ namespace Figcad
                 int thMm = (int)Math.Max(1, Math.Round(th));
                 string key = "t:" + thMm;
                 RegisterTypeNeed(result, "wall", key, "W-" + thMm, "\"thickness\":" + thMm);
-                double baseOff = Math.Min(fit.Axis.From.Z, fit.Axis.To.Z) - ctx.LevelElev; // 레벨 상대
-                string json = "{\"op\":\"create_wall\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
+                double baseOff = Math.Min(fit.Axis.From.Z, fit.Axis.To.Z) - levelElev; // 레벨 상대
+                string json = "{\"op\":\"create_wall\",\"args\":{\"levelId\":\"" + levelRef + "\",\"typeId\":\"{TYPEID}\",\"a\":[" +
                     R(wax) + "," + R(way) + "],\"b\":[" + R(wbx) + "," + R(wby) + "],\"height\":" + R(fit.Length) +
                     (R(baseOff) != "0" ? ",\"baseOffset\":" + R(baseOff) : "") + "}}"; // create_wall이 baseOffset 수용(v0.4 core)
                 return new RecognizedOp { Kind = "wall", TypeKey = "wall|" + key, JsonTemplate = json };
@@ -1007,9 +1178,9 @@ namespace Figcad
                 // zOffset = 상면 실측 z(레벨 상대) — v0.6 core가 노출(종전 "슬라브z 유실" 근사 해소).
                 // 구서버는 인자 조용히 무시(상면=레벨) — create_type 폴백과 같은 세대 이슈.
                 double topZ = Math.Max(fit.Axis.From.Z, fit.Axis.To.Z);
-                double zOff = topZ - ctx.LevelElev;
+                double zOff = topZ - levelElev;
                 // thicknessOverride = 프리즘 길이(실측) — 종전 "타입 두께 무시" 버그 수정 (create_slab이 노출)
-                string json = "{\"op\":\"create_slab\",\"args\":{\"levelId\":\"" + ctx.LevelId + "\",\"typeId\":\"" + ctx.SlabTypeId +
+                string json = "{\"op\":\"create_slab\",\"args\":{\"levelId\":\"" + levelRef + "\",\"typeId\":\"" + ctx.SlabTypeId +
                     "\",\"boundary\":" + sb + ",\"thicknessOverride\":" + R(fit.Length) +
                     ",\"zOffset\":" + R(zOff) + "}}"; // 0 포함 무조건 방출 — "z 실측됨" 신호(충실도 리포트 오발 방지)
                 return new RecognizedOp { Kind = "slab", JsonTemplate = json, Approx = holes, ApproxReason = holes ? "슬라브개구" : null };

@@ -26,3 +26,9 @@ apps/server/node-dist/
 # 테스트 스크린샷 산출물 (스크립트가 재생성)
 apps/web/scripts/*.png
 /cmp-node.png
+
+# .NET build artifacts (connector tests)
+connectors/rhino/tests/bin/
+connectors/rhino/tests/obj/
+connectors/rhino/**/bin/
+connectors/rhino/**/obj/

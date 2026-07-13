@@ -22,6 +22,7 @@ namespace Figcad
         DropDown _kindPick;
         List<LayerRow> _rows = new List<LayerRow>();
         Button _btnPreview;
+        CheckBox _cbMultiLevel;
         CheckBox _cbDup, _cbStraight, _cbWeld;
         NumericStepper _numAngle, _numWeld, _numVolTol;
         RadioButton _rbModeA, _rbModeB;
@@ -57,10 +58,13 @@ namespace Figcad
             // 왕복 — v0.4: Push 1버튼 통합(커브 레인 + 브렙 리프트 + Lane-2 잔여, 충실도 보고 1장)
             body.AddRow(Header("모델 왕복"));
             body.AddRow(Btn("Pull (3D)", () => RunConn(cfg => FigcadConnector.Pull(RhinoDoc.ActiveDoc, cfg), true)),
-                        Btn("Push", () => RunConn(cfg => FigcadConnector.PushAll(RhinoDoc.ActiveDoc, cfg, CurrentMap(), FigcadSettings.VolTolFraction), false)));
+                        Btn("Push", () => RunConn(cfg => FigcadConnector.PushAll(RhinoDoc.ActiveDoc, cfg, CurrentMap(), FigcadSettings.VolTolFraction, FigcadSettings.MultiLevel), false)));
             _numVolTol = new NumericStepper { MinValue = 1, MaxValue = 10, Increment = 1, DecimalPlaces = 0, Value = 3 };
             body.AddRow(new Label { Text = "부피 오차 %" }, _numVolTol);
             body.AddRow(Hint("브렙 리프트 충실도 게이트 — 재구성 부피(단면×길이)가 실부피와 이 % 넘게 다르면 Lane-2 잔여로 보냄."));
+            _cbMultiLevel = new CheckBox { Text = "층 자동 구조화 (베타)", Checked = false };
+            body.AddRow(_cbMultiLevel);
+            body.AddRow(Hint("z-분포로 층 감지 → 레벨 생성·배정. 끄면 종전 단일층. 서버가 구버전이면 신규층 요소는 드롭됨(보고 명시)."));
 
             // 매핑 — 셀 내 콤보 대신 [행 선택 → 드롭다운 → 적용] (한번에 여러 행, 클릭 자연스러움)
             body.AddRow(Header("레이어 → kind 매핑"));
@@ -129,6 +133,7 @@ namespace Figcad
             _base.Text = FigcadSettings.BaseUrl;
             _key.Text = FigcadSettings.Key;
             _numVolTol.Value = FigcadSettings.VolTolPercent;
+            _cbMultiLevel.Checked = FigcadSettings.MultiLevel;
         }
         void SaveConn()
         {
@@ -136,6 +141,7 @@ namespace Figcad
             FigcadSettings.BaseUrl = _base.Text;
             FigcadSettings.Key = _key.Text;
             FigcadSettings.VolTolPercent = _numVolTol.Value;
+            FigcadSettings.MultiLevel = _cbMultiLevel.Checked == true;
             if (!string.IsNullOrWhiteSpace(_room.Text)) FigcadSettings.PushRecent(_room.Text.Trim());
         }
         void RunConn(Func<FigcadConfig, string> fn, bool redraw)
@@ -216,6 +222,7 @@ namespace Figcad
                     " · 계단 " + c.NStair + " · 난간 " + c.NRail + " · 근사 " + c.NApprox +
                     " · 잔여 " + c.NResidual + " (수집 " + c.BrepCount +
                     (c.NOpenBrep > 0 ? " · 열린브렙 " + c.NOpenBrep : "") + (c.NMesh > 0 ? " · 메시 " + c.NMesh : "") + ")");
+                try { Log(FigcadConnector.DetectStories(c.Candidates).Report()); } catch { } // 층 감지 census (M1)
                 doc.Views.Redraw();
             }
             catch (Exception ex) { Log("Preview 오류: " + ex.Message); }
