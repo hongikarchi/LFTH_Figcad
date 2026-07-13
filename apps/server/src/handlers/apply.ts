@@ -210,23 +210,32 @@ export async function handleConnectorRequest(
     let toApply = log;
     let deduped = 0;
     if (url.searchParams.get('dedup') === '1') {
+      // 프로토콜 가드 (M2): add_level은 dedup 배치와 혼합 금지 — 레벨이 아직 store에 없어 절대 z
+      // 폴드가 전부 v1 폴백되고(멱등 무력화) add_level 자체도 미dedup이라 재시도 = 레벨·요소 전량
+      // 중복(리뷰 실증). 커넥터 규약 = POST-A(레벨, dedup 없음) 선행 → POST-C(요소, dedup=1).
+      if (log.some((e) => e.op === 'add_level'))
+        return json(400, { error: 'add_level은 dedup=1 배치와 분리하세요 (레벨 먼저 별도 POST — 커넥터 POST-A 규약)' });
+      // 레벨 룩업 = 절대 z 폴드 (M2 레벨 구조화) — 평탄 푸시 요소와 층 구조화 재푸시 매칭.
+      const levelLookup = new Map(
+        store.listLevels().map((l) => [l.id, { elevation: l.elevation, height: l.height }]),
+      );
       const seen = new Set<string>();
-      for (const el of store.listElements()) seen.add(elementContentKey(el));
+      for (const el of store.listElements()) seen.add(elementContentKey(el, levelLookup));
+      // 배치 내 delete 대상 키를 *프리패스*로 전부 해제 — 순서 무관하게 "교체" 시맨틱 보장.
+      // 인라인(도달 시점) 해제만 있으면 [create(신층 동일 절대z), delete(평탄 구요소)] 순서에서
+      // create가 dedup 스킵된 뒤 delete가 유일본을 지워 무음 데이터 소실(리뷰 실증).
+      for (const entry of log) {
+        if (entry.op !== 'delete_elements') continue;
+        const ids = (entry.args as { ids?: unknown }).ids;
+        if (!Array.isArray(ids)) continue;
+        for (const id of ids) {
+          const el = typeof id === 'string' ? store.getElement(id) : null;
+          if (el) seen.delete(elementContentKey(el, levelLookup));
+        }
+      }
       const filtered: OpLogEntry[] = [];
       for (const entry of log) {
-        // 같은 배치 내 delete → 그 키를 seen서 제거(삭제-후-재생성이 멱등에 막히지 않게).
-        if (entry.op === 'delete_elements') {
-          const ids = (entry.args as { ids?: unknown }).ids;
-          if (Array.isArray(ids)) {
-            for (const id of ids) {
-              const el = typeof id === 'string' ? store.getElement(id) : null;
-              if (el) seen.delete(elementContentKey(el));
-            }
-          }
-          filtered.push(entry);
-          continue;
-        }
-        const key = createOpContentKey(entry.op, entry.args as Record<string, unknown>);
+        const key = createOpContentKey(entry.op, entry.args as Record<string, unknown>, levelLookup);
         if (key !== null) {
           if (seen.has(key)) {
             deduped++;

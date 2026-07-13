@@ -118,6 +118,90 @@ describe('dedup=1 — 수직 파라미터 겹층 부재 (v0.4 리뷰: zOffset/ba
   });
 });
 
+describe('dedup=1 — 절대 z 정규화 (레벨 구조화 M2)', () => {
+  it('평탄 푸시(1층+오프셋) 후 층 구조화 재푸시(2층+0) = 전량 dedup, 중복 0', async () => {
+    const { store, seed } = setup();
+    const base = store.listElements().length;
+    // 1차: 평탄 푸시 — 전부 1층, 절대 z를 오프셋으로 보존 (v0.6 커넥터 동작)
+    const flat = [
+      { op: 'create_wall', args: { levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0], baseOffset: 3400 } },
+      { op: 'create_column', args: { levelId: seed.levelId, typeId: seed.columnTypeId, at: [1000, 1000], height: 3000, baseOffset: 3400 } },
+      { op: 'create_slab', args: { levelId: seed.levelId, typeId: seed.slabTypeId, boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]], zOffset: 3400 } },
+    ];
+    const first = await apply(store, flat, true);
+    expect(first.json.applied).toBe(3);
+    expect(store.listElements().length).toBe(base + 3);
+
+    // 커넥터 프로토콜: POST-A(레벨 생성)가 요소 옵과 별도 요청으로 선행
+    const l2res = await apply(store, [{ op: 'add_level', args: { name: '2층', elevation: 3400, height: 3000, order: 1 } }], false);
+    expect(l2res.json.applied).toBe(1);
+    const l2 = store.listLevels().find((l) => l.name === '2층')!.id;
+
+    // 2차: 층 구조화 재푸시 — 같은 절대 위치, 2층 기준 오프셋 0
+    const structured = [
+      { op: 'create_wall', args: { levelId: l2, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0] } },
+      { op: 'create_column', args: { levelId: l2, typeId: seed.columnTypeId, at: [1000, 1000], height: 3000 } },
+      { op: 'create_slab', args: { levelId: l2, typeId: seed.slabTypeId, boundary: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]] } },
+    ];
+    const second = await apply(store, structured, true);
+    expect(second.json.applied).toBe(0);
+    expect(second.json.deduped).toBe(3); // M2 핵심 — 전량 중복 차단
+    expect(store.listElements().length).toBe(base + 3);
+  });
+
+  it('교체 배치 [create(신층)→delete(평탄)] — 순서 무관 프리패스 해제 = 데이터 소실 없음 (리뷰 실증)', async () => {
+    const { store, seed } = setup();
+    await apply(
+      store,
+      [{ op: 'create_wall', args: { levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0], baseOffset: 3400 } }],
+      true,
+    );
+    const flatId = store.listElements().find((e) => e.kind === 'wall')!.id;
+    await apply(store, [{ op: 'add_level', args: { name: '2층', elevation: 3400, height: 3000, order: 1 } }], false);
+    const l2 = store.listLevels().find((l) => l.name === '2층')!.id;
+    // create가 delete보다 먼저 — 프리패스 해제 없으면 create가 dedup 스킵된 뒤 delete가 유일본 제거
+    const res = await apply(
+      store,
+      [
+        { op: 'create_wall', args: { levelId: l2, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0] } },
+        { op: 'delete_elements', args: { ids: [flatId] } },
+      ],
+      true,
+    );
+    expect(res.json.applied).toBe(2);
+    const walls = store.listElements().filter((e) => e.kind === 'wall');
+    expect(walls).toHaveLength(1); // 교체 성립 — 소실 없음
+    expect((walls[0] as { levelId: string }).levelId).toBe(l2);
+  });
+
+  it('dedup=1 배치에 add_level 혼합 = 400 (프로토콜 가드 — POST-A 분리 강제)', async () => {
+    const { store, seed } = setup();
+    const res = await apply(
+      store,
+      [
+        { op: 'add_level', args: { name: '2층', elevation: 3400, height: 3000, order: 1 } },
+        { op: 'create_wall', args: { levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0] } },
+      ],
+      true,
+    );
+    expect(res.res.status).toBe(400);
+  });
+
+  it('다른 절대 z(진짜 위층 신규 부재)는 dedup 안 됨', async () => {
+    const { store, seed } = setup();
+    await apply(store, [{ op: 'create_wall', args: { levelId: seed.levelId, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0] } }], true);
+    await apply(store, [{ op: 'add_level', args: { name: '2층', elevation: 3400, height: 3000, order: 1 } }], false);
+    const l2 = store.listLevels().find((l) => l.name === '2층')!.id;
+    const upper = await apply(
+      store,
+      [{ op: 'create_wall', args: { levelId: l2, typeId: seed.wallTypeIds[0], a: [0, 0], b: [3000, 0] } }],
+      true,
+    );
+    expect(upper.json.applied).toBe(1); // 절대 z 3400 ≠ 0
+    expect(upper.json.deduped).toBe(0);
+  });
+});
+
 describe('커넥터 create_type 배치 (v0.4 S1 — placeholder 리맵 + dedup 거동)', () => {
   const H = { shape: 'hsection', width: 150, depth: 300, web: 7, flange: 9 };
   const typeOp = { op: 'create_type', args: { kind: 'beam', name: 'H-300×150', section: H }, result: 'tmp-1' };

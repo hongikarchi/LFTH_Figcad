@@ -7,6 +7,7 @@ import {
   type SlabElement,
   type WallElement,
 } from './schema';
+import { absBaseZ } from './connectorDedup';
 import type { DocStore } from './store';
 
 /**
@@ -40,7 +41,8 @@ export type LintCode =
   | 'orphan-dimension' // 치수 바인딩이 삭제된 요소를 가리킴 (추종 안 됨)
   | 'orphan-label' // 라벨 타깃이 삭제된 요소를 가리킴 (fallback 텍스트 표시)
   | 'arc-wall-opening' // 곡선(sagitta) 벽의 개구부 — derive가 구멍 안 뚫음(미지원, import/머지로 유입 가능)
-  | 'extreme-dimension'; // 극단적으로 짧은 벽/낮은 벽/작은 슬라브 등
+  | 'extreme-dimension' // 극단적으로 짧은 벽/낮은 벽/작은 슬라브 등
+  | 'level-band-mismatch'; // base z가 소속 레벨 층고 밴드를 크게 벗어남 — 평탄 푸시(층 미구조화) 신호
 
 export interface LintFix {
   label: string;
@@ -75,6 +77,8 @@ const WALL_LEN_MIN = 100; // 극단적으로 짧은 벽
 const WALL_HEIGHT_MIN = 300; // 극단적으로 낮은 벽
 const WALL_HEIGHT_INFO = 12000; // 비정상적으로 높은 벽 (정보)
 const SLAB_AREA_MIN = 10000; // 0.01㎡ — 극단적으로 작은 슬라브
+const LEVEL_BAND_UP_TOL = 300; // 밴드 상단 여유 — 층고 3000·오프셋 3400(1층 변위)이 잡혀야 함(리뷰), 파라펫급(밴드 내)은 통과
+const LEVEL_BAND_DOWN_TOL = 1000; // 밴드 하단 여유 — 기초/드롭 슬라브(−수백mm)는 통과, 층 단위 하강만
 
 const dist = (p: Pt, q: Pt): number => Math.hypot(p[0] - q[0], p[1] - q[1]);
 
@@ -470,6 +474,36 @@ export function lint(store: DocStore): LintFinding[] {
         message: `극단적으로 작은 슬라브 (${(area / 1_000_000).toFixed(3)}㎡)`,
         elementIds: [el.id],
         fix: { label: '슬라브 삭제', deleteIds: [el.id] },
+      });
+    }
+  }
+
+  // --- 5. 레벨 밴드 이탈 (레벨 구조화 M2) — 평탄 푸시(전부 1층 + 큰 z 오프셋) 감지 ---
+  // base z가 소속 레벨 [elevation, elevation+height] 밴드를 층고+여유 이상 벗어난 요소를 레벨별 집계.
+  // roof(설계상 레벨 상단 기준)·beam zOffset 부재(파생 기본값 = 레벨 내부)는 제외. info = 안내용.
+  {
+    const byLevel = new Map<string, Id[]>();
+    for (const el of els) {
+      if (!('levelId' in el) || el.kind === 'roof') continue;
+      const lv = store.getLevel(el.levelId);
+      if (!lv) continue; // missing-ref가 이미 error로 잡음
+      const src = el as unknown as Record<string, unknown>;
+      const zAbs = absBaseZ(el.kind, src, { elevation: lv.elevation, height: lv.height });
+      if (zAbs === null) continue; // beam zOffset 부재
+      const rel = zAbs - lv.elevation;
+      if (rel > lv.height + LEVEL_BAND_UP_TOL || rel < -LEVEL_BAND_DOWN_TOL) {
+        const arr = byLevel.get(el.levelId) ?? [];
+        arr.push(el.id);
+        byLevel.set(el.levelId, arr);
+      }
+    }
+    for (const [levelId, ids] of byLevel) {
+      const lv = store.getLevel(levelId);
+      findings.push({
+        code: 'level-band-mismatch',
+        severity: 'info',
+        message: `'${lv?.name ?? levelId}' 레벨 요소 ${ids.length}개의 z가 층고 밴드를 크게 벗어남 — 평탄 푸시(층 미구조화) 의심. 커넥터 '층 자동 구조화' 또는 레벨 재배정 검토`,
+        elementIds: ids,
       });
     }
   }

@@ -851,7 +851,7 @@ export const CAPABILITIES: Capability[] = [
     titleKo: '요소 수정',
     icon: 'pencil',
     descriptionKo:
-      '요소 필드 수정. kind에 맞는 필드만 사용: 벽=a/b/height/typeId, 개구부=offset/widthOverride/heightOverride/sillOverride, 슬라브=boundary/thicknessOverride/zOffset, 그리드=a/b/label, 기둥=at/height/typeId, 계단=a/b/baseOffset/rise.',
+      '요소 필드 수정. kind에 맞는 필드만 사용: 벽=a/b/height/typeId, 개구부=offset/widthOverride/heightOverride/sillOverride, 슬라브=boundary/thicknessOverride/zOffset, 그리드=a/b/label, 기둥=at/height/typeId, 계단=a/b/baseOffset/rise. levelId=소속 층 이동(개구부·그리드 제외 — 개구부는 호스트 종속, 그리드는 전층 공유). 층 이동 시 시각 높이 유지가 필요하면 baseOffset/zOffset을 새 레벨 기준으로 함께 재기저(newOffset = oldOffset − (새elev − 구elev)).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -862,6 +862,8 @@ export const CAPABILITIES: Capability[] = [
         height: { type: 'integer', description: '벽/기둥 높이 mm' },
         sagitta: { type: 'integer', description: '벽 곡선 새지타 mm (부호=휘는 쪽 / 0=직선)' },
         typeId: { type: 'string', description: '타입 교체' },
+        levelId: { type: 'string', description: '소속 레벨 변경 (요소를 다른 층으로 이동)' },
+        baseOffset: { type: 'integer', description: '레벨 바닥 기준 base 오프셋 mm (기둥/벽/계단/난간/지붕/커튼월)' },
         offset: { type: 'integer', description: '개구부 중심 거리 mm' },
         widthOverride: { type: 'integer' },
         heightOverride: { type: 'integer' },
@@ -884,7 +886,15 @@ export const CAPABILITIES: Capability[] = [
     run: (store, a) => {
       const { id, ...patch } = a;
       const elId = asStr(id, 'id');
-      if (!store.getElement(elId)) throw new Error(`element not found: ${elId}`);
+      const el = store.getElement(elId);
+      if (!el) throw new Error(`element not found: ${elId}`);
+      if (typeof patch['levelId'] === 'string') {
+        // levelId 변경 = 존재하는 레벨만 (missing-ref 요소를 op 경계에서 차단)
+        if (!store.getLevel(patch['levelId'] as string))
+          throw new Error(`level not found: ${patch['levelId'] as string}`);
+        // levelId 없는 kind(개구부=호스트 종속·그리드=전층)는 zod가 조용히 strip → 성공 위장 방지
+        if (!('levelId' in el)) throw new Error(`levelId 이동 불가 kind: ${el.kind}`);
+      }
       store.updateElement(elId, patch);
       return null;
     },
