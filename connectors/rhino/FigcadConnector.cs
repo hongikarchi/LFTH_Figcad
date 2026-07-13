@@ -621,6 +621,8 @@ namespace Figcad
                     if (typeIds.TryGetValue(op.TypeKey, out tid)) tmpl = tmpl.Replace("{TYPEID}", tid);
                     else { r.DroppedNoType++; continue; } // 타입 생성 실패분 — 조용히 근사하지 않고 드롭 카운트
                 }
+                // 긴 토큰(자릿수 큰 k) 먼저 치환 — 종료 구분자 '#'로 substring 충돌은 이미 차단되나
+                // 결정적 순서 유지. levelIds 키 = "{LEVELID:k#}".
                 foreach (var kv in levelIds) tmpl = tmpl.Replace(kv.Key, kv.Value);
                 if (tmpl.Contains("{LEVELID:")) { r.DroppedNoLevel++; continue; } // 미해석 레벨 — 지오 오염 대신 드롭
                 elOps.Add(tmpl);
@@ -868,7 +870,9 @@ namespace Figcad
                         int sfx = 2;
                         while (takenNames.Contains(name)) name = baseName + "-" + (sfx++);
                         takenNames.Add(name);
-                        string token = "{LEVELID:" + k + "}";
+                        // 종료 구분자 '#' 필수 — "{LEVELID:1#}"가 "{LEVELID:10#}"의 substring 아니게
+                        // (Replace는 substring 매칭 → 10층+ 모델서 {LEVELID:1}이 {LEVELID:10} 앞부분 오염).
+                        string token = "{LEVELID:" + k + "#}";
                         result.LevelTokens.Add(token);
                         result.LevelCreateOps.Add("{\"op\":\"add_level\",\"args\":{\"name\":\"" + JStr(name) +
                             "\",\"elevation\":" + st.ElevationMm + ",\"height\":" + st.HeightMm + ",\"order\":" + k + "}}");
