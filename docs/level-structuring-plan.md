@@ -22,9 +22,10 @@
 
 ## Slices
 
-> **상태 (2026-07-13)**: M1~M4 구현 완료·미배포. 커밋 = M1+M2 TS `0caeaa0`, M2감지기+M3+M4 C#/문서 `7f2038b`, 토큰 substring 수정 `b33ddcc`.
-> **리뷰 상태**: S1(TS) adversarial 리뷰 완료(제기 13/확정 5 수정). **S2/S3(C#) adversarial 리뷰 미완** — 워크플로 3에이전트 세션 한도로 전멸(재개 필요). 리셋 후 `level-s23-review` 워크플로 재실행(scriptPath 캐시). 선제 self-review 1건 수정됨: 레벨 토큰 substring 충돌(10층+).
-> **deferred 게이트(사용자 Rhino 세션)** = GoldenMultiPush ×2 · StoryCensusToFile(260629) · story-smoke(miniflare workerd 이 세션 크래시 — 복구/재시작 후) · 배포(서버 M2 먼저). 오너 결정 7건 중 M1 census 필요분(datum·이름 관례)은 실모델 census 후 확정 — 현재 코드는 절대표고 유지·'N층' 오름차순 디폴트.
+> **상태 (2026-07-14)**: M1~M4 구현+리뷰 완료·미배포. 커밋 = M1+M2 TS `0caeaa0`, C#/문서 `7f2038b`, 토큰 substring `b33ddcc`, **S2/S3 리뷰 수정 `b9c762b`**.
+> **리뷰 완료**: S1(TS) 제기 13/확정 5, S2/S3(C#) 제기 11/확정 7(opus 36에이전트) — 전부 수정. 주요: 지붕 강등 오탐(실층 붕괴)·병합 캐스케이드·census≠emission 앵커셋·add_level order 충돌·구서버 부분착지 중복. dotnet test 14→16.
+> **검증 그린**: typecheck · vitest 688 · dotnet test 16/16 · story-smoke · 스모크 28/29(comment-e2e = 환경 flaky, 레벨 트랙 무관).
+> **deferred 게이트(사용자 Rhino 세션)** = GoldenMultiPush ×2 · StoryCensusToFile(260629 파일 필요) · 배포(서버 M2 먼저 — 구서버는 전 요소 스킵). 오너 결정 7건 중 M1 census 필요분(datum·이름 관례)은 실모델 census 후 확정 — 현재 코드는 절대표고 유지·'N층' 오름차순 디폴트.
 
 ### M1 — Report-only story detector (telemetry, zero product change)
 - In connector `ClassifyForPush`: anchors = slab top-z (area-weighted primary) + wall/column base-z; beams excluded. Gap-split clustering + weighted median + min-support threshold; roof-slab demotion rule.
