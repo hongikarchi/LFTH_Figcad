@@ -222,7 +222,9 @@ namespace Figcad
                     " · 계단 " + c.NStair + " · 난간 " + c.NRail + " · 근사 " + c.NApprox +
                     " · 잔여 " + c.NResidual + " (수집 " + c.BrepCount +
                     (c.NOpenBrep > 0 ? " · 열린브렙 " + c.NOpenBrep : "") + (c.NMesh > 0 ? " · 메시 " + c.NMesh : "") + ")");
-                try { Log(FigcadConnector.DetectStories(c.Candidates).Report()); } catch { } // 층 감지 census (M1)
+                // 층 감지 census (M1) — emission이 쓰는 prepass 테이블(c.Stories) 그대로 표시.
+                // DetectStories(c.Candidates) 재계산은 Lane-2 잔여를 빼 emission과 불일치(리뷰 major).
+                try { if (c.Stories != null) Log(c.Stories.Report()); } catch { }
                 doc.Views.Redraw();
             }
             catch (Exception ex) { Log("Preview 오류: " + ex.Message); }

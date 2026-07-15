@@ -68,6 +68,8 @@ namespace Figcad
         public const double MinSlabAreaMm2 = 1_000_000; // 1㎡ — 클러스터 유효 슬라브 면적
         public const int AssignSnapMm = 250;           // ResolveLevel 아래 방향 노이즈 스냅
         public const int DefaultTopHeightMm = 3000;    // 최상층 층고 폴백 (ifcImport 관례)
+        public const int RoofDemoteMaxGapMm = 2500;    // 지붕 강등 최대 간격 — 최상단 슬라브가 바로 아래층에서 이보다
+                                                       // 가까우면 지붕(얇은 지붕판), 멀면 진짜 상층(강등 안 함)
 
         // 배정 앵커 — 감지와 별개로 모든 kind에 정의:
         // slab=상면(MaxZ) · beam=축 중앙((Min+Max)/2, core 파생 기본값 '레벨 상단 근처' 재현) ·
@@ -110,11 +112,14 @@ namespace Figcad
                 provisional.Add(s);
             }
 
-            // 4) 병합 (메자닌): 직전 유지 층과 elevation 차 < MinStorySeparationMm → 흡수
+            // 4) 병합 (메자닌): 직전 *원래* 클러스터 elevation과 차 < MinStorySeparationMm → 흡수.
+            //    직전 병합 후 이동된 대표값이 아니라 **직전 provisional[i-1] 원본 z**와 비교 —
+            //    안 그러면 병합 대표값이 위로 이동해 원래 2000mm 초과 떨어진 다음 층까지 연쇄 흡수(리뷰 실증).
             var merged = new List<(Story S, List<(int Z, bool Slab, double Area)> Pts)>();
+            int prevProvElev = int.MinValue;
             for (int i = 0; i < provisional.Count; i++)
             {
-                if (merged.Count > 0 && provisional[i].ElevationMm - merged[merged.Count - 1].S.ElevationMm < MinStorySeparationMm)
+                if (merged.Count > 0 && provisional[i].ElevationMm - prevProvElev < MinStorySeparationMm)
                 {
                     merged[merged.Count - 1].Pts.AddRange(clusters[i]);
                     var re = Summarize(merged[merged.Count - 1].Pts);
@@ -122,9 +127,11 @@ namespace Figcad
                     table.MergedClusters++;
                 }
                 else merged.Add((provisional[i], new List<(int, bool, double)>(clusters[i])));
+                prevProvElev = provisional[i].ElevationMm; // 다음 비교 기준 = 이번 클러스터 원본(이동 전)
             }
 
             // 5) 최소지지 필터 — 슬라브 1㎡ 이상 or 벽/기둥 3개 이상. 전멸 방지: 최다 지지 1개는 유지.
+            //    다음 *존속* elevation 힌트를 층고에 쓰기 위해 merged 순서를 유지(드롭도 위치 앎).
             var kept = new List<Story>();
             foreach (var (s, _) in merged)
             {
@@ -140,14 +147,25 @@ namespace Figcad
                 table.DroppedClusters--; // best는 탈락 아님
             }
 
-            // 6) 지붕 강등 — 생존 ≥2 이고 최상단이 슬라브-단독(base 0)이면 층 아님 (아래층 지붕 슬라브)
-            if (kept.Count >= 2 && kept[kept.Count - 1].BaseCount == 0 && kept[kept.Count - 1].SlabCount > 0)
+            // 6) 지붕 강등 — 최상단이 슬라브-단독(base 0)이고 아래층에 매우 근접(< RoofDemoteMaxGap,
+            //    통상 층고보다 훨씬 작음 = 얇은 파라펫/지붕판이 최상층 슬라브 바로 위에 겹친 형상)일 때만.
+            //    통상 층고 간격(≥2500)이면 강등 안 함 — "최상단 슬라브 = 항상 위에 아무것도 없음"이라
+            //    간격 없이 강등하면 상부 벽/기둥이 Lane-2/미분류인 실층을 붕괴시킴(리뷰 major). 오인 강등
+            //    (데이터 층 소실)이 여분 지붕층(빈 층, 무해)보다 훨씬 나쁨 → 근접 지붕만 보수적 강등.
+            if (kept.Count >= 2)
             {
-                table.DemotedRoofSlabs += kept[kept.Count - 1].SlabCount;
-                kept.RemoveAt(kept.Count - 1);
+                var top = kept[kept.Count - 1];
+                int gapBelow = top.ElevationMm - kept[kept.Count - 2].ElevationMm;
+                if (top.BaseCount == 0 && top.SlabCount > 0 && gapBelow < RoofDemoteMaxGapMm)
+                {
+                    table.DemotedRoofSlabs += top.SlabCount;
+                    kept.RemoveAt(kept.Count - 1);
+                }
             }
 
-            // 7) 층고: 다음 층까지 거리, 최상층 = 폴백
+            // 7) 층고 = 다음 존속 층까지 거리, 최상층 = 폴백.
+            //    (드롭된 중간 클러스터가 있어도 kept 인접이 실제 상하층 = 물리적 층고. 드롭은 노이즈라
+            //     층 아님 — 아래층이 그 위 실층까지 이어지는 게 맞음. 비정상 복층은 그대로 방출.)
             for (int i = 0; i < kept.Count; i++)
                 kept[i].HeightMm = i + 1 < kept.Count ? kept[i + 1].ElevationMm - kept[i].ElevationMm : DefaultTopHeightMm;
 

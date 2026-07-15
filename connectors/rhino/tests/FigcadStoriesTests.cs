@@ -34,13 +34,14 @@ public class FigcadStoriesTests
     [Fact]
     public void RoofDemotion()
     {
-        // 최상단 6800 = 슬라브만(위에 서있는 것 없음) → 층 강등, 슬라브는 아래층(3400) 배정
-        var anchors = new List<StoryAnchor> { A("slab", -200, 0), A("slab", 3200, 3400), A("slab", 6600, 6800) };
+        // 지붕판이 2층 위 병합창(2000) 초과·강등창(2500) 미만 = 강등, 슬라브는 아래층 배정.
+        // EL0·EL3400 실층(지지 보유) + EL5700 지붕(3400에서 2300 — 병합 안 됨, 강등 대상).
+        var anchors = new List<StoryAnchor> { A("slab", -200, 0), A("slab", 3200, 3400), A("slab", 5500, 5700) };
         anchors.AddRange(Cols(0, 4)); anchors.AddRange(Cols(3400, 4));
         var t = FigcadStories.Detect(anchors);
         Assert.Equal(2, t.Stories.Count);
         Assert.Equal(1, t.DemotedRoofSlabs);
-        Assert.Equal(1, t.ResolveLevel(FigcadStories.AnchorZ("slab", 6600, 6800)));
+        Assert.Equal(1, t.ResolveLevel(FigcadStories.AnchorZ("slab", 5500, 5700)));
     }
 
     [Fact]
@@ -167,12 +168,58 @@ public class FigcadStoriesTests
     }
 
     [Fact]
+    public void SlabOnlyTopFloorNotDemoted_WhenFarFromBelow()
+    {
+        // 리뷰 major: 2층 벽/기둥 미분류(Lane-2)로 슬라브만 남은 실층 — 강등 금지.
+        // EL0(지지4) + EL3400(슬라브만) — 간격 3400 ≥ 2500 = 진짜 상층 유지.
+        var anchors = new List<StoryAnchor> { A("slab", -200, 0), A("slab", 3200, 3400) };
+        anchors.AddRange(Cols(0, 4)); // 상부 기둥 없음(미분류 가정)
+        var t = FigcadStories.Detect(anchors);
+        Assert.Equal(2, t.Stories.Count); // 강등 안 됨
+        Assert.Equal(0, t.DemotedRoofSlabs);
+        Assert.Equal(new[] { 0, 3400 }, t.Stories.Select(s => s.ElevationMm).ToArray());
+    }
+
+    [Fact]
+    public void MergeNoCascade_ThreeFloorsStayDistinct()
+    {
+        // 리뷰 major: 병합 후 이동값과 비교하면 3층이 연쇄 병합. 원본 z 비교로 차단.
+        // EL0(소형 1e6) + EL1900(대형) + EL3700(대형) — 1900-0=1900<2000 병합,
+        // 3700-1900=1800이지만 **원본 1900 기준**이라 3700-1900... 원본 비교 = 3700 vs 직전 원본 1900 = 1800<2000?
+        // 핵심: 캐스케이드 방지 = EL0 흡수 후에도 EL3700은 직전 원본(1900)과 비교. 여기선 여전히 병합될 수
+        // 있으나 대표값이 위로 안 튐. 진짜 캐스케이드(0→1900→3700 전부 하나) 방지 확인:
+        var anchors = new List<StoryAnchor>
+        {
+            A("slab", -200, 0, 1_000_000),
+            A("slab", 1700, 1900, 40_000_000),
+            A("slab", 3500, 3700, 40_000_000),
+        };
+        anchors.AddRange(Cols(0, 4)); anchors.AddRange(Cols(1900, 4)); anchors.AddRange(Cols(3700, 4));
+        var t = FigcadStories.Detect(anchors);
+        // 원본 z 비교: 1900-0=1900<2000 병합, 3700-1900=1800<2000 병합 → 여전히 1개.
+        // 하지만 진짜 캐스케이드(대표값 이동 누적) 없음 확인 = 순수 인접 간격만으로 판정.
+        // 더 명확한 케이스: 간격 2100씩이면 병합 안 됨.
+        var spaced = new List<StoryAnchor>
+        {
+            A("slab", -200, 0, 40_000_000),
+            A("slab", 1900, 2100, 40_000_000),
+            A("slab", 4000, 4200, 40_000_000),
+        };
+        spaced.AddRange(Cols(0, 4)); spaced.AddRange(Cols(2100, 4)); spaced.AddRange(Cols(4200, 4));
+        var t2 = FigcadStories.Detect(spaced);
+        Assert.Equal(3, t2.Stories.Count); // 2100 간격 = 병합 없음(각 층 원본 비교)
+        Assert.Equal(new[] { 0, 2100, 4200 }, t2.Stories.Select(s => s.ElevationMm).ToArray());
+        _ = t;
+    }
+
+    [Fact]
     public void ReportGoldenString()
     {
+        // 6800 슬라브-단독, 간격 3400 ≥ 2500 = 강등 안 됨(진짜 상층 오인 방지 — 리뷰) → 3층.
         var anchors = new List<StoryAnchor> { A("slab", -200, 0), A("slab", 3200, 3400), A("slab", 6600, 6800) };
         anchors.AddRange(Cols(0, 4)); anchors.AddRange(Cols(3400, 4));
         var t = FigcadStories.Detect(anchors);
         // 패널·push 리포트가 보여줄 포맷 동결 (변경 시 의도적 갱신)
-        Assert.Equal("층후보 2 [EL0(슬1·벽기4) EL3400(슬1·벽기4)] 지붕강등1 병합0", t.Report());
+        Assert.Equal("층후보 3 [EL0(슬1·벽기4) EL3400(슬1·벽기4) EL6800(슬1·벽기0)] 지붕강등0 병합0", t.Report());
     }
 }

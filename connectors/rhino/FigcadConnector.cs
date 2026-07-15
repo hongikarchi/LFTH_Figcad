@@ -611,26 +611,35 @@ namespace Figcad
 
             // --- POST-C: 요소 ops — {TYPEID}·{LEVELID:k} 치환 + &dedup=1(재푸시 정확중첩 차단) ---
             //     레벨 토큰 치환은 dedup POST *전* — 서버 절대z 키가 실 레벨 id를 해석해야 크로스레벨 매칭.
-            var elOps = new List<string>();
-            foreach (var op in c.Ops)
+            //     구서버(add_level 미지원): 재사용 레벨 요소만 착지시키면 절대z dedup 부재로 토글 OFF
+            //     재푸시 시 중복(리뷰). 부분 착지 대신 전량 스킵 = 정직 — "서버 M2 배포 먼저" 유도.
+            if (r.OldServerLevels)
             {
-                string tmpl = op.JsonTemplate;
-                if (op.TypeKey != null)
-                {
-                    string tid;
-                    if (typeIds.TryGetValue(op.TypeKey, out tid)) tmpl = tmpl.Replace("{TYPEID}", tid);
-                    else { r.DroppedNoType++; continue; } // 타입 생성 실패분 — 조용히 근사하지 않고 드롭 카운트
-                }
-                // 긴 토큰(자릿수 큰 k) 먼저 치환 — 종료 구분자 '#'로 substring 충돌은 이미 차단되나
-                // 결정적 순서 유지. levelIds 키 = "{LEVELID:k#}".
-                foreach (var kv in levelIds) tmpl = tmpl.Replace(kv.Key, kv.Value);
-                if (tmpl.Contains("{LEVELID:")) { r.DroppedNoLevel++; continue; } // 미해석 레벨 — 지오 오염 대신 드롭
-                elOps.Add(tmpl);
+                r.DroppedNoLevel += c.Ops.Count;
             }
-            if (elOps.Count > 0)
+            else
             {
-                var outC = PostOps(cfg, elOps, true);
-                r.Applied = outC.Applied; r.Failed = outC.Failed; r.Deduped = outC.Deduped;
+                var elOps = new List<string>();
+                foreach (var op in c.Ops)
+                {
+                    string tmpl = op.JsonTemplate;
+                    if (op.TypeKey != null)
+                    {
+                        string tid;
+                        if (typeIds.TryGetValue(op.TypeKey, out tid)) tmpl = tmpl.Replace("{TYPEID}", tid);
+                        else { r.DroppedNoType++; continue; } // 타입 생성 실패분 — 조용히 근사하지 않고 드롭 카운트
+                    }
+                    // 긴 토큰(자릿수 큰 k) 먼저 치환 — 종료 구분자 '#'로 substring 충돌은 이미 차단되나
+                    // 결정적 순서 유지. levelIds 키 = "{LEVELID:k#}".
+                    foreach (var kv in levelIds) tmpl = tmpl.Replace(kv.Key, kv.Value);
+                    if (tmpl.Contains("{LEVELID:")) { r.DroppedNoLevel++; continue; } // 미해석 레벨 — 지오 오염 대신 드롭
+                    elOps.Add(tmpl);
+                }
+                if (elOps.Count > 0)
+                {
+                    var outC = PostOps(cfg, elOps, true);
+                    r.Applied = outC.Applied; r.Failed = outC.Failed; r.Deduped = outC.Deduped;
+                }
             }
 
             // --- Lane-2 잔여 통과(자유곡면·기울·열린brep·메시) — 버리지 않고 오버레이(§9.3) ---
@@ -678,7 +687,7 @@ namespace Figcad
             if (r.C.LevelTable.Count > 1 || r.LevelsNew > 0)
                 sb.Append(" · 레벨 신규" + r.LevelsNew + "·재사용" + r.LevelsReused);
             if (r.DroppedNoLevel > 0) sb.Append(" · 레벨미해석 드롭" + r.DroppedNoLevel);
-            if (r.OldServerLevels) sb.Append(" · 서버 구버전 — 층 자동 구조화 미지원(신규층 요소 드롭 — 토글 끄고 재푸시)");
+            if (r.OldServerLevels) sb.Append(" · 서버 구버전 — 층 자동 구조화 미지원(전 요소 스킵: 서버 M2 배포 먼저, 또는 토글 끄고 재푸시)");
             sb.Append(r.StoryNote);
             sb.Append(r.Lane2Note);
             return sb.ToString();
@@ -722,11 +731,13 @@ namespace Figcad
             double levelElev = 0;
             // 스냅샷 레벨 전수 (M3 재사용 매칭·이름 충돌 검사) — 첫 레벨 = 레거시/OFF 경로 기준.
             var snapLevels = new List<(string Id, double Elev, string Name)>();
+            int maxSnapOrder = -1; // 신규 레벨 order 기저 (재사용 레벨 order와 충돌 방지 — 리뷰)
             foreach (Dictionary<string, object> l in (List<object>)snap["levels"])
             {
                 string lid = (string)l["id"];
                 double le = Opt(l, "elevation", 0);
                 snapLevels.Add((lid, le, l.ContainsKey("name") ? l["name"] as string : null));
+                maxSnapOrder = Math.Max(maxSnapOrder, (int)Opt(l, "order", 0));
                 if (levelId == null) { levelId = lid; levelElev = le; }
             }
             foreach (Dictionary<string, object> t in (List<object>)snap["types"])
@@ -854,6 +865,7 @@ namespace Figcad
             {
                 var takenNames = new HashSet<string>();
                 foreach (var sl in snapLevels) if (sl.Name != null) takenNames.Add(sl.Name);
+                int nextOrder = maxSnapOrder + 1; // 신규 레벨은 기존 max 위에서 증분 — 재사용 order와 충돌 없음
                 for (int k = 0; k < result.Stories.Stories.Count; k++)
                 {
                     var st = result.Stories.Stories[k];
@@ -874,8 +886,9 @@ namespace Figcad
                         // (Replace는 substring 매칭 → 10층+ 모델서 {LEVELID:1}이 {LEVELID:10} 앞부분 오염).
                         string token = "{LEVELID:" + k + "#}";
                         result.LevelTokens.Add(token);
+                        // order = 스냅샷 max+1부터 증분 (k는 감지 인덱스 — 재사용 레벨 stored order와 충돌 가능, 리뷰).
                         result.LevelCreateOps.Add("{\"op\":\"add_level\",\"args\":{\"name\":\"" + JStr(name) +
-                            "\",\"elevation\":" + st.ElevationMm + ",\"height\":" + st.HeightMm + ",\"order\":" + k + "}}");
+                            "\",\"elevation\":" + st.ElevationMm + ",\"height\":" + st.HeightMm + ",\"order\":" + (nextOrder++) + "}}");
                         result.LevelTable.Add(new StoryLevelRef { Ref = token, IsToken = true, Elev = st.ElevationMm });
                     }
                 }

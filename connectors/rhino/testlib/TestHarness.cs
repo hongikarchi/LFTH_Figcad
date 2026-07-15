@@ -171,8 +171,9 @@ namespace Figcad
             sb.Append("Lane-2:"); foreach (var kv in c.Lane2Reasons) sb.Append(" " + kv.Key + "=" + kv.Value); sb.AppendLine();
             sb.Append("타입 필요:"); foreach (var k in c.TypeNeeds.Keys) sb.Append(" [" + k + "]"); sb.AppendLine();
 
-            // 층 감지 census (M1 리포트-온리) — 실모델 튜닝 게이트의 1차 산출물.
-            var stories = FigcadConnector.DetectStories(c.Candidates);
+            // 층 감지 census (M1 리포트-온리) — emission이 쓰는 prepass 테이블(c.Stories)로 통일
+            // (DetectStories(c.Candidates)는 Lane-2 잔여를 빼 emission과 불일치 — 리뷰 major).
+            var stories = c.Stories ?? FigcadConnector.DetectStories(c.Candidates);
             sb.AppendLine("층: " + stories.Report());
 
             // 상세(≤80) 또는 레이어×처분 집계(대형 실문서) — 처분 문자열은 단일 포매터(두 갈래 표기 드리프트 방지).
@@ -306,7 +307,7 @@ namespace Figcad
                     // 층별 × kind 집계 (census 상세는 ≤80만 개별행 — 대형 실모델용 요약)
                     var cfg = new FigcadConfig { BaseUrl = baseUrl, Room = room };
                     var c = FigcadConnector.ClassifyForPush(doc, cfg, null, false, volTol);
-                    var stories = FigcadConnector.DetectStories(c.Candidates);
+                    var stories = c.Stories ?? FigcadConnector.DetectStories(c.Candidates); // prepass 통일(리뷰)
                     var agg = new SortedDictionary<string, int>();
                     foreach (var cand in c.Candidates)
                     {
