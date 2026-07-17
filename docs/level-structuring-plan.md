@@ -24,7 +24,8 @@
 
 > **상태 (2026-07-14)**: M1~M4 구현+리뷰 완료·미배포. 커밋 = M1+M2 TS `0caeaa0`, C#/문서 `7f2038b`, 토큰 substring `b33ddcc`, **S2/S3 리뷰 수정 `b9c762b`**.
 > **리뷰 완료**: S1(TS) 제기 13/확정 5, S2/S3(C#) 제기 11/확정 7(opus 36에이전트) — 전부 수정. 주요: 지붕 강등 오탐(실층 붕괴)·병합 캐스케이드·census≠emission 앵커셋·add_level order 충돌·구서버 부분착지 중복. dotnet test 14→16.
-> **검증 그린**: typecheck · vitest 688 · dotnet test 16/16 · story-smoke · 스모크 28/29(comment-e2e = 환경 flaky, 레벨 트랙 무관).
+> **리뷰 rejected 2건 재검증 → 실증 수정 (`3d79203`)**: float 나이프에지 zOffset(합산후round=재푸시 중복)·층고 파생 높이 무관 오매칭. absBaseZ 각 항 개별 round(요소 저장 대칭) + height 미명시 시 레벨 층고 폴드. 회귀 +4.
+> **검증 그린**: typecheck · vitest 689 · dotnet test 16/16 · story-smoke · connector-e2e · 스모크(comment-e2e만 환경 flaky, 레벨 트랙 무관).
 > **deferred 게이트(사용자 Rhino 세션)** = GoldenMultiPush ×2 · StoryCensusToFile(260629 파일 필요) · 배포(서버 M2 먼저 — 구서버는 전 요소 스킵). 오너 결정 7건 중 M1 census 필요분(datum·이름 관례)은 실모델 census 후 확정 — 현재 코드는 절대표고 유지·'N층' 오름차순 디폴트.
 
 ### M1 — Report-only story detector (telemetry, zero product change)
