@@ -26,7 +26,8 @@
 > **리뷰 완료**: S1(TS) 제기 13/확정 5, S2/S3(C#) 제기 11/확정 7(opus 36에이전트) — 전부 수정. 주요: 지붕 강등 오탐(실층 붕괴)·병합 캐스케이드·census≠emission 앵커셋·add_level order 충돌·구서버 부분착지 중복. dotnet test 14→16.
 > **리뷰 rejected 2건 재검증 → 실증 수정 (`3d79203`)**: float 나이프에지 zOffset(합산후round=재푸시 중복)·층고 파생 높이 무관 오매칭. absBaseZ 각 항 개별 round(요소 저장 대칭) + height 미명시 시 레벨 층고 폴드. 회귀 +4.
 > **검증 그린**: typecheck · vitest 689 · dotnet test 16/16 · story-smoke · connector-e2e · 스모크(comment-e2e만 환경 flaky, 레벨 트랙 무관).
-> **deferred 게이트(사용자 Rhino 세션)** = GoldenMultiPush ×2 · StoryCensusToFile(260629 파일 필요) · 배포(서버 M2 먼저 — 구서버는 전 요소 스킵). 오너 결정 7건 중 M1 census 필요분(datum·이름 관례)은 실모델 census 후 확정 — 현재 코드는 절대표고 유지·'N층' 오름차순 디폴트.
+> **서버 M2 배포됨 (2026-07-16, master `8482c86`, deployment `ac042c43`, 라이브 `index-CoR15s0e.js`)** — dedup 절대z 정규화·update_element 층이동·band lint 라이브. 커넥터 v0.7 왕복 이제 안전(구서버 전요소 스킵 회피됨).
+> **deferred 게이트(사용자 Rhino 세션만 남음)** = GoldenMultiPush ×2 · StoryCensusToFile(260629 파일 필요) — 커넥터 C#는 사용자가 Rhino에 수동 로드(서버보다 늦음 = 순서 안전). 오너 결정 7건 중 M1 census 필요분(datum·이름 관례)은 실모델 census 후 확정 — 현재 코드는 절대표고 유지·'N층' 오름차순 디폴트.
 
 ### M1 — Report-only story detector (telemetry, zero product change)
 - In connector `ClassifyForPush`: anchors = slab top-z (area-weighted primary) + wall/column base-z; beams excluded. Gap-split clustering + weighted median + min-support threshold; roof-slab demotion rule.
