@@ -154,6 +154,74 @@ describe('커넥터 멱등화 v2 — 절대 z 폴드', () => {
     );
     expect(seen.has(structured!)).toBe(true);
   });
+
+  it('(h) float 나이프에지 zOffset — 각 항 개별 round로 저장 요소와 멱등 유지 (S2/S3 리뷰)', () => {
+    const { store, seed, l2, lookup } = setup(); // l2 elevation 3400 — 큰 정수라 float 정밀도 손실 발현
+    // op 인자 zOffset 0.4999...94: 저장 시 quantize→0. 합산 후 round면 3400+0.4999가 IEEE754서
+    // 3400.5로 반올림→round 3401. 각 항 개별 round = 3400+round(0.4999)=3400 = 저장 요소와 일치.
+    const args = {
+      levelId: l2,
+      typeId: seed.slabTypeId,
+      boundary: [[0, 0], [5000, 0], [5000, 5000], [0, 5000]] as [number, number][],
+      zOffset: 0.49999999999999994,
+    };
+    store.createSlab(args);
+    const el = store.listElements().find((e) => e.kind === 'slab')!;
+    expect((el as { zOffset?: number }).zOffset ?? 0).toBe(0); // 저장 시 quantize
+    const seen = new Set(store.listElements().map((e) => elementContentKey(e, lookup)));
+    const opKey = createOpContentKey('create_slab', args, lookup)!;
+    expect(opKey).toContain('zabs:3400'); // 3401 아님 (합산후round 버그였다면 3401)
+    expect(seen.has(opKey)).toBe(true); // 동일 재푸시 = dedup (중복 없음)
+  });
+
+  it('(i) height 미명시 벽 — 층고 다른 두 레벨은 파생 높이 달라 키 구분 (S2/S3 리뷰)', () => {
+    const store = new DocStore();
+    const seed = seedDocument(store);
+    const l2 = store.addLevel({ name: '2층', elevation: 3400, height: 2800, order: 1 }); // 층고 다름
+    const lookup: LevelLookup = new Map(
+      store.listLevels().map((l) => [l.id, { elevation: l.elevation, height: l.height }]),
+    );
+    // 1층(층고 3000) baseOffset 3400, height 미명시 → 파생 높이 3000
+    store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [3000, 0],
+      baseOffset: 3400,
+    });
+    const seen = new Set(store.listElements().map((el) => elementContentKey(el, lookup)));
+    // 2층(층고 2800) height 미명시 → 파생 높이 2800 = 다른 벽. 절대 base z는 같아도 키 달라야.
+    const structured = createOpContentKey(
+      'create_wall',
+      { levelId: l2, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [3000, 0] },
+      lookup,
+    );
+    expect(seen.has(structured!)).toBe(false);
+  });
+
+  it('(j) height 명시 벽 — 층고 무관 절대 z 크로스레벨 매칭 (명시가 파생 대리 상회)', () => {
+    const store = new DocStore();
+    const seed = seedDocument(store);
+    const l2 = store.addLevel({ name: '2층', elevation: 3400, height: 2800, order: 1 });
+    const lookup: LevelLookup = new Map(
+      store.listLevels().map((l) => [l.id, { elevation: l.elevation, height: l.height }]),
+    );
+    store.createWall({
+      levelId: seed.levelId,
+      typeId: seed.wallTypeIds[0]!,
+      a: [0, 0],
+      b: [3000, 0],
+      baseOffset: 3400,
+      height: 3000,
+    });
+    const seen = new Set(store.listElements().map((el) => elementContentKey(el, lookup)));
+    const structured = createOpContentKey(
+      'create_wall',
+      { levelId: l2, typeId: seed.wallTypeIds[0]!, a: [0, 0], b: [3000, 0], height: 3000 },
+      lookup,
+    );
+    expect(seen.has(structured!)).toBe(true); // 명시 3000 동일 = 매칭
+  });
 });
 
 describe('update_element — levelId/baseOffset (레벨 구조화 M1 수정)', () => {

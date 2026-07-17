@@ -64,13 +64,22 @@ function vertKey(src: Record<string, unknown>): string {
   return out;
 }
 
-/** 크기 파라미터 키 (절대 z 폴드 시 — 위치성 zOffset/baseOffset은 zabs가 대체). */
-function sizeKey(src: Record<string, unknown>): string {
+// height가 level.height에서 파생되는 kind — 명시 없으면 레벨 height가 실제 높이(파생 대리).
+const LEVEL_HEIGHT_KINDS = new Set<Element['kind']>(['wall', 'column', 'curtainwall', 'zone']);
+
+/**
+ * 크기 파라미터 키 (절대 z 폴드 시 — 위치성 zOffset/baseOffset은 zabs가 대체).
+ * height 미명시 + height가 레벨 파생인 kind면 lv.height 폴드 — 안 그러면 층고 다른 두 레벨의
+ * 벽이(파생 높이 3000 vs 2800) 같은 키로 오매칭(리뷰 실증). 명시 height는 그대로 우선.
+ */
+function sizeKey(kind: Element['kind'], src: Record<string, unknown>, lv: LevelInfo): string {
   let out = '';
   for (const k of ['height', 'rise', 'thicknessOverride']) {
     const v = src[k];
     if (typeof v === 'number') out += `|${k}:${Math.round(v)}`;
   }
+  if (typeof src['height'] !== 'number' && LEVEL_HEIGHT_KINDS.has(kind))
+    out += `|lh:${Math.round(lv.height)}`;
   return out;
 }
 
@@ -79,20 +88,26 @@ function sizeKey(src: Record<string, unknown>): string {
  * slab=상면(elev+zOffset)·roof=처마(elev+height+baseOffset)·beam=축(elev+zOffset, **명시 시만** —
  * 부재 시 파생 기본값 height−vHalf는 타입 단면 없이 계산 불가 → null = 폴드 포기, 레벨 국한 v1 키 유지)·
  * 그 외(벽/기둥/계단/난간/커튼월/존…)=base(elev+baseOffset??0). lint level-band-mismatch와 공유.
+ *
+ * **각 항 개별 round 후 합산** — 요소 저장(store.updateElement가 각 필드 quantize)과 대칭.
+ * 합산 후 round면 op float 인자(예 zOffset 0.4999...94)가 elev+0.4999=3400.4999→round 3401이 되어
+ * 저장 요소(quantize(0.4999)=0 → elev+0=3400)와 키 불일치 = 동일 재푸시 중복 생성(리뷰 실증 float 버그).
  */
+const rz = (n: number) => Math.round(n);
 export function absBaseZ(
   kind: Element['kind'],
   src: Record<string, unknown>,
   lv: LevelInfo,
 ): number | null {
   const num = (k: string) => (typeof src[k] === 'number' ? (src[k] as number) : undefined);
+  const elev = rz(lv.elevation);
   if (kind === 'beam') {
     const z = num('zOffset');
-    return z === undefined ? null : Math.round(lv.elevation + z);
+    return z === undefined ? null : elev + rz(z);
   }
-  if (kind === 'slab') return Math.round(lv.elevation + (num('zOffset') ?? 0));
-  if (kind === 'roof') return Math.round(lv.elevation + lv.height + (num('baseOffset') ?? 0));
-  return Math.round(lv.elevation + (num('baseOffset') ?? 0));
+  if (kind === 'slab') return elev + rz(num('zOffset') ?? 0);
+  if (kind === 'roof') return elev + rz(lv.height) + rz(num('baseOffset') ?? 0);
+  return elev + rz(num('baseOffset') ?? 0);
 }
 
 function contentKey(
@@ -106,7 +121,7 @@ function contentKey(
   const lv = levels?.get(levelId);
   if (lv) {
     const z = absBaseZ(kind, src, lv);
-    if (z !== null) return `${kind}|Z|${typeId}|${pos}|zabs:${z}${sizeKey(src)}`;
+    if (z !== null) return `${kind}|Z|${typeId}|${pos}|zabs:${z}${sizeKey(kind, src, lv)}`;
   }
   return `${kind}|${levelId}|${typeId}|${pos}${vertKey(src)}`; // v1 — back-compat
 }
